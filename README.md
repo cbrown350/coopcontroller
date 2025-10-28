@@ -11,10 +11,3 @@ Access the web UI at anytime by going to http://coopcontroller.local
 
 Web UI
 Web UI code is a SolidJS app with vite in the /web folder, it comes with a mock server. Just run `npm i && npm run dev` in the web folder. Use `npm i --include=dev`, `npm run build` in the /web folder to copy code into the /data folder, followed by Upload file sytem image command from PlatformIO
-
-
-
-34 - temp/meter
-35 - temp/meter
-39 - out pump
-36 - out light

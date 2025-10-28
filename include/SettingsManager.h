@@ -11,6 +11,21 @@ struct user_settings
     bool   ap_mode;
     bool   enabled;
     bool   has_connected;
+    
+    // Coop Controller specific settings
+    float  temp_threshold_f;        // Temperature threshold in Fahrenheit (default 34F)
+    int    pump_on_time_seconds;    // Pump ON time in seconds (default 300 = 5 minutes)
+    int    pump_off_time_seconds;   // Pump OFF time in seconds (default 600 = 10 minutes)
+    bool   pump_auto_mode;          // Enable automatic pump control based on temperature
+    bool   light_auto_mode;         // Enable automatic light control (future feature)
+    int    light_on_hour;           // Hour to turn on light (24-hour format)
+    int    light_off_hour;          // Hour to turn off light (24-hour format)
+    bool   debug_enabled;           // Enable debug logging for troubleshooting
+    
+    // WiFi connection settings
+    int    wifi_max_retries;        // Maximum number of WiFi connection retries (default 5)
+    int    wifi_retry_delay_seconds;  // Delay between WiFi retry attempts in seconds (default 30)
+    int    wifi_ap_duration_minutes;  // How long to stay in AP mode before retrying (default 10)
 };
 
 class SettingsManager
@@ -42,12 +57,42 @@ class SettingsManager
     bool   isAPMode();
     bool   getEnabled();
     bool   getHasConnected();
+    
+    // Coop Controller getters
+    float  getTempThresholdF();
+    int    getPumpOnTimeSeconds();
+    int    getPumpOffTimeSeconds();
+    bool   getPumpAutoMode();
+    bool   getLightAutoMode();
+    int    getLightOnHour();
+    int    getLightOffHour();
+    bool   getDebugEnabled();
+    
+    // WiFi connection settings getters
+    int    getWifiMaxRetries();
+    int    getWifiRetryDelaySeconds();
+    int    getWifiAPDurationMinutes();
 
     void setSSID(const String &ssid);
     void setPassword(const String &password);
     void setAPMode(bool apMode);
     void setEnabled(bool enabled);
     void setHasConnected(bool hasConnected);
+    
+    // Coop Controller setters
+    void setTempThresholdF(float threshold);
+    void setPumpOnTimeSeconds(int seconds);
+    void setPumpOffTimeSeconds(int seconds);
+    void setPumpAutoMode(bool enabled);
+    void setLightAutoMode(bool enabled);
+    void setLightOnHour(int hour);
+    void setLightOffHour(int hour);
+    void setDebugEnabled(bool enabled);
+    
+    // WiFi connection settings setters
+    void setWifiMaxRetries(int retries);
+    void setWifiRetryDelaySeconds(int seconds);
+    void setWifiAPDurationMinutes(int minutes);
 
     String toJson(bool includePassword = true) const;
 };

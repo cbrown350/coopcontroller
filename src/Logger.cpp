@@ -19,27 +19,27 @@ Logger::Logger()
 
 void Logger::log(const String &message)
 {
-  // Print to serial first
-  Serial.println(message);
+    // Temporarily use millis() instead of getTime() to avoid NTP issues
+    unsigned long timestamp = millis() / 1000; // Use millis for timestamp
+    
+    // Print to serial with timestamp
+    Serial.printf("[%lu] %s\n", timestamp, message.c_str());
 
-  // Generate UUID for this log entry
-  uuidGenerator.generate();
-  auto uuid = String(uuidGenerator.toCharArray());
+    // Generate UUID for this log entry
+    uuidGenerator.generate();
+    auto uuid = String(uuidGenerator.toCharArray());
 
-  // Get current timestamp
-  unsigned long timestamp = getTime();
+    // Store in circular buffer
+    logBuffer[currentIndex].uuid = uuid;
+    logBuffer[currentIndex].timestamp = timestamp;
+    logBuffer[currentIndex].message = message;
 
-  // Store in circular buffer
-  logBuffer[currentIndex].uuid = uuid;
-  logBuffer[currentIndex].timestamp = timestamp;
-  logBuffer[currentIndex].message = message;
-
-  // Update indices
-  currentIndex = (currentIndex + 1) % MAX_LOG_ENTRIES;
-  if (totalEntries < MAX_LOG_ENTRIES)
-  {
-    totalEntries++;
-  }
+    // Update indices
+    currentIndex = (currentIndex + 1) % MAX_LOG_ENTRIES;
+    if (totalEntries < MAX_LOG_ENTRIES)
+    {
+        totalEntries++;
+    }
 }
 
 void Logger::log(const char *message)

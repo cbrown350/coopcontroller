@@ -3,12 +3,18 @@
 #include <AsyncJson.h>
 
 #include "Logger.h"
+#include "TempSensor.h"
+#include "PumpController.h"
 
 #define SPIFFS LittleFS
 
-// External reference to firmware version from main.cpp
+// External references to firmware version from main.cpp
 extern const char *firmwareVersion;
 extern const char *chipFamily;
+
+// External references to coop controller components
+extern TempSensor tempSensor;
+extern PumpController pumpController;
 
 WebServer::WebServer(int port) : server(port) {}
 
@@ -30,13 +36,36 @@ void WebServer::begin()
         {
             JsonObject jsonObj = json.as<JsonObject>();
             settingsManager.setSSID(jsonObj["ssid"].as<String>());
-            settingsManager.setSSID(jsonObj["ssid"].as<String>());
-            if (jsonObj["passwd"].is<String>() && jsonObj["passwd"].as<String>().length() > 0)
-            {
-                settingsManager.setPassword(jsonObj["passwd"].as<String>());
-            }
+            settingsManager.setPassword(jsonObj["passwd"].as<String>());
             settingsManager.setAPMode(jsonObj["ap_mode"].as<bool>());
             settingsManager.setEnabled(jsonObj["enabled"].as<bool>());
+            
+            // Handle coop controller settings
+            if (jsonObj["temp_threshold_f"].is<float>()) {
+                settingsManager.setTempThresholdF(jsonObj["temp_threshold_f"].as<float>());
+            }
+            if (jsonObj["pump_on_time_seconds"].is<int>()) {
+                settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
+            }
+            if (jsonObj["pump_off_time_seconds"].is<int>()) {
+                settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
+            }
+            if (jsonObj["pump_auto_mode"].is<bool>()) {
+                settingsManager.setPumpAutoMode(jsonObj["pump_auto_mode"].as<bool>());
+            }
+            if (jsonObj["light_auto_mode"].is<bool>()) {
+                settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
+            }
+            if (jsonObj["light_on_hour"].is<int>()) {
+                settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
+            }
+            if (jsonObj["light_off_hour"].is<int>()) {
+                settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
+            }
+            if (jsonObj["debug_enabled"].is<bool>()) {
+                settingsManager.setDebugEnabled(jsonObj["debug_enabled"].as<bool>());
+            }
+            
             settingsManager.save();
             jsonObj.clear();
             request->send(200, "text/plain", "ok");
@@ -49,13 +78,109 @@ void WebServer::begin()
     server.on("/sensor_status", HTTP_GET,
               [this](AsyncWebServerRequest *request)
               {
-                  // Add status information using singleton
-
                   JsonDocument jsonDoc;
+                  
+                  // Temperature sensor data
+                  JsonObject sensor1 = jsonDoc["sensor1"].to<JsonObject>();
+                  sensor1["type"] = tempSensor.getSensor1Type();
+                  sensor1["connected"] = tempSensor.isSensor1Connected();
+                  sensor1["temperature_f"] = tempSensor.getTemperature1F();
+                  sensor1["flow_rate"] = tempSensor.getFlowRate1();
+                  sensor1["pulse_count"] = tempSensor.getPulseCount1();
+                  sensor1["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor1Data());
+                  
+                  JsonObject sensor2 = jsonDoc["sensor2"].to<JsonObject>();
+                  sensor2["type"] = tempSensor.getSensor2Type();
+                  sensor2["connected"] = tempSensor.isSensor2Connected();
+                  sensor2["temperature_f"] = tempSensor.getTemperature2F();
+                  sensor2["flow_rate"] = tempSensor.getFlowRate2();
+                  sensor2["pulse_count"] = tempSensor.getPulseCount2();
+                  sensor2["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor2Data());
+                  
+                  // Pump controller data
+                  JsonObject pump = jsonDoc["pump"].to<JsonObject>();
+                  pump["state"] = pumpController.getStateString();
+                  pump["is_active"] = pumpController.isPumpOn();
+                  pump["temperature_f"] = pumpController.getCurrentTemperature();
+                  pump["temperature_below_threshold"] = tempSensor.isTemperatureBelowThreshold(settingsManager.getTempThresholdF());
+                  pump["flow_error"] = pumpController.hasFlowError();
+                  pump["current_cycle_time"] = pumpController.getCurrentCycleTime() / 1000;
+                  pump["time_until_next_switch"] = pumpController.getTimeUntilNextSwitch() / 1000;
+                  pump["total_on_time"] = pumpController.getTotalOnTime() / 1000;
+                  pump["total_cycles"] = pumpController.getTotalCycles();
+                  
+                  // System status
+                  JsonObject system = jsonDoc["system"].to<JsonObject>();
+                  system["temp_threshold_f"] = settingsManager.getTempThresholdF();
+                  system["pump_on_time_seconds"] = settingsManager.getPumpOnTimeSeconds();
+                  system["pump_off_time_seconds"] = settingsManager.getPumpOffTimeSeconds();
+                  system["pump_auto_mode"] = settingsManager.getPumpAutoMode();
+                  system["light_auto_mode"] = settingsManager.getLightAutoMode();
+                  system["light_on_hour"] = settingsManager.getLightOnHour();
+                  system["light_off_hour"] = settingsManager.getLightOffHour();
+                  system["debug_enabled"] = settingsManager.getDebugEnabled();
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
                   request->send(200, "application/json", jsonResponse);
+              });
+
+    // Pump control endpoints
+    server.on("/pump/on", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  pumpController.turnOn();
+                  request->send(200, "text/plain", "Pump turned on");
+              });
+
+    server.on("/pump/off", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  pumpController.turnOff();
+                  request->send(200, "text/plain", "Pump turned off");
+              });
+
+    server.on("/pump/auto", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  pumpController.setAutoMode(true);
+                  request->send(200, "text/plain", "Pump set to auto mode");
+              });
+
+    server.on("/pump/force_cycle", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  pumpController.forceCycle();
+                  request->send(200, "text/plain", "Pump cycle forced");
+              });
+
+    server.on("/pump/reset_stats", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  pumpController.resetStatistics();
+                  request->send(200, "text/plain", "Pump statistics reset");
+              });
+
+    server.on("/pump/clear_error", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  pumpController.clearFlowError();
+                  request->send(200, "text/plain", "Pump flow error cleared");
+              });
+
+    // Water meter reset endpoints
+    server.on("/water/reset/1", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  tempSensor.resetPulseCount(1);
+                  request->send(200, "text/plain", "Water meter 1 reset");
+              });
+
+    server.on("/water/reset/2", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  tempSensor.resetPulseCount(2);
+                  request->send(200, "text/plain", "Water meter 2 reset");
               });
 
     // Logs endpoint

@@ -1,59 +1,59 @@
 import { createSignal, onMount, onCleanup, Show } from 'solid-js'
 
+// Sensor type mapping
+const SENSOR_TYPE_MAP = {
+  0: 'None',
+  1: 'Dallas Temperature',
+  2: 'Water Meter'
+}
 
-
-const PRINT_STATUS_MAP = {
-  0: 'Idle',
-  1: 'Homing',
-  2: 'Dropping',
-  3: 'Exposing',
-  4: 'Lifting',
-  5: 'Pausing',
-  6: 'Paused',
-  7: 'Stopping',
-  8: 'Stopped',
-  9: 'Complete',
-  10: 'File Checking',
-  13: 'Printing',
-  15: 'Unknown: 15',
-  16: 'Heating',
-  18: 'Unknown: 18',
-  19: 'Unknown: 19',
-  20: 'Bed Leveling',
-  21: 'Unknown: 21',
+// Pump state mapping
+const PUMP_STATE_MAP = {
+  'OFF': 'Off',
+  'ON': 'On',
+  'AUTO': 'Auto',
+  'ERROR': 'Error'
 }
 
 function Status() {
 
   const [loading, setLoading] = createSignal(true)
   const [sensorStatus, setSensorStatus] = createSignal({
-    stopped: false,
-    filamentRunout: false,
-    elegoo: {
-      lastStatusUpdateTimestamp: 0,
-      mainboardID: '',
-      printStatus: 0,
-      isPrinting: false,
-      currentLayer: 0,
-      totalLayer: 0,
-      progress: 0,
-      currentTicks: 0,
-      totalTicks: 0,
-      PrintSpeedPct: 0,
-      isWebsocketConnected: false,
-      nozzleTempC: null,
-      nozzleTargetTempC: null,
-      bedTempC: null,
-      bedTargetTempC: null,
-      chamberTempC: null,
-      chamberTargetTempC: null
+    sensor1: {
+      type: 0,
+      connected: false,
+      temperature_f: 0,
+      flow_rate: 0,
+      pulse_count: 0,
+      status: 'Not Connected'
     },
-    heater: {
-      chamberTempC: null,
-      chamberTargetTempC: null,
-      timerActive: false,
-      remainingTime: null,
-      isAuto: false
+    sensor2: {
+      type: 0,
+      connected: false,
+      temperature_f: 0,
+      flow_rate: 0,
+      pulse_count: 0,
+      status: 'Not Connected'
+    },
+    pump: {
+      state: 'OFF',
+      is_active: false,
+      temperature_f: 0,
+      temperature_below_threshold: false,
+      flow_error: false,
+      current_cycle_time: 0,
+      time_until_next_switch: 0,
+      total_on_time: 0,
+      total_cycles: 0
+    },
+    system: {
+      temp_threshold_f: 34,
+      pump_on_time_seconds: 300,
+      pump_off_time_seconds: 600,
+      pump_auto_mode: true,
+      light_auto_mode: false,
+      light_on_hour: 6,
+      light_off_hour: 20
     }
   })
 
@@ -62,6 +62,35 @@ function Status() {
     const data = await response.json()
     setSensorStatus(data)
     setLoading(false)
+  }
+
+  const handlePumpControl = async (action: string) => {
+    try {
+      const response = await fetch(`/pump/${action}`, { method: 'GET' })
+      if (response.ok) {
+        await refreshSensorStatus() // Refresh status after action
+      }
+    } catch (error) {
+      console.error('Pump control error:', error)
+    }
+  }
+
+  const handleWaterReset = async (sensor: number) => {
+    try {
+      const response = await fetch(`/water/reset/${sensor}`, { method: 'GET' })
+      if (response.ok) {
+        await refreshSensorStatus() // Refresh status after action
+      }
+    } catch (error) {
+      console.error('Water reset error:', error)
+    }
+  }
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    return `${hours}h ${minutes}m ${secs}s`
   }
 
   onMount(async () => {
@@ -80,118 +109,188 @@ function Status() {
         <p>Loading status... <span class="loading loading-spinner loading-xl"></span></p>
       ) : (
         <div>
-          <div class="stats w-full shadow bg-base-200">
-            <div class="stat">
-              <div class="stat-title">Printer Connected</div>
-              <div class={`stat-value ${sensorStatus().elegoo.isWebsocketConnected ? 'text-success' : 'text-error'}`}> {sensorStatus().elegoo.isWebsocketConnected ? 'Yes' : 'No'}
-              </div>
-                <Show when={sensorStatus().elegoo.isWebsocketConnected}>
-                  <span class="stat-title">Last {new Date(sensorStatus().elegoo.lastStatusUpdateTimestamp * 1000).toLocaleDateString()} {new Date(sensorStatus().elegoo.lastStatusUpdateTimestamp * 1000).toLocaleTimeString()}</span>
-                </Show>
-            </div>
-            {sensorStatus().elegoo.isWebsocketConnected && <>
-              <div class="stat">
-                <div class="stat-title">Filament Stopped</div>
-                <div class={`stat-value ${sensorStatus().stopped ? 'text-error' : 'text-success'}`}> {sensorStatus().stopped ? 'Yes' : 'No'}</div>
-              </div>
-              <div class="stat">
-                <div class="stat-title">Filament Runout</div>
-                <div class={`stat-value ${sensorStatus().filamentRunout ? 'text-error' : 'text-success'}`}> {sensorStatus().filamentRunout ? 'Yes' : 'No'}</div>
-              </div>
-            </>     
-            }
-          </div>
-          
-          <div class="card w-full mt-8 bg-base-200 card-sm shadow-sm">
+          {/* Temperature Sensors Section */}
+          <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
             <div class="card-body">
-              <h2 class="card-title">Temperatures</h2>
-              <div class="text-sm flex gap-4 flex-wrap">
-                <div>
-                  <h3 class="font-bold">Nozzle</h3>
-                  Set <Show when={sensorStatus().elegoo.nozzleTargetTempC} fallback={<span>--°C</span>}>
-                    <span>{sensorStatus().elegoo.nozzleTargetTempC}°C</span>
-                  </Show>/Current <Show when={sensorStatus().elegoo.nozzleTempC} fallback={<span>--°C</span>}>
-                    <span>{sensorStatus().elegoo.nozzleTempC}°C</span>
-                  </Show>
-                </div>
-                <div>
-                  <h3 class="font-bold">Bed</h3>
-                  Set <Show when={sensorStatus().elegoo.bedTargetTempC} fallback={<span>--°C</span>}>
-                    <span>{sensorStatus().elegoo.bedTargetTempC}°C</span>
-                  </Show>/Current <Show when={sensorStatus().elegoo.bedTempC} fallback={<span>--°C</span>}>
-                    <span>{sensorStatus().elegoo.bedTempC}°C</span>
-                  </Show>
-                </div>
-                <div>
-                  <h3 class="font-bold">Chamber</h3>
-                  Set <Show when={sensorStatus().elegoo.chamberTargetTempC} fallback={<span>--°C</span>}>
-                    <span>{sensorStatus().elegoo.chamberTargetTempC}°C</span>
-                  </Show>/Current <Show when={sensorStatus().elegoo.chamberTempC} fallback={<span>--°C</span>}>
-                    <span>{sensorStatus().elegoo.chamberTempC}°C</span>
-                  </Show>
-                </div>
-                <div>
-                  <h3 class="font-bold">Chamber Heater</h3>
-                  <div>
-                    Set <Show when={sensorStatus().heater.chamberTargetTempC} fallback={<span>--°C</span>}>
-                      <span>{sensorStatus().heater.chamberTargetTempC}°C</span>
-                    </Show>/Current <Show when={sensorStatus().heater.chamberTempC} fallback={<span>--°C</span>}>
-                      <span>{sensorStatus().heater.chamberTempC}°C </span>
-                    </Show> Timer: <Show when={sensorStatus().heater.timerActive} fallback={<span class="stat-value text-error text-sm">Off</span>}>
-                      <span class="stat-value text-success text-sm">{sensorStatus()?.heater?.remainingTime ? 
-                        Math.floor(sensorStatus()?.heater?.remainingTime! / 3600) + 'h ' + 
-                        Math.floor((sensorStatus()?.heater?.remainingTime! % 3600) / 60) + 'm ' + 
-                        Math.floor(sensorStatus()?.heater?.remainingTime! % 60) + 's'
-                        : '--:--:--'}</span>
-                    </Show>
-                    <Show when={sensorStatus().heater.isAuto}>
-                      <span class="stat-value text-success text-sm">Auto</span>
-                    </Show>
+              <h2 class="card-title">Temperature & Water Sensors</h2>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Sensor 1 */}
+                <div class="stat">
+                  <div class="stat-title">Sensor 1</div>
+                  <div class="stat-value text-sm">
+                    {SENSOR_TYPE_MAP[sensorStatus().sensor1.type as keyof typeof SENSOR_TYPE_MAP]}
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="card w-full mt-8 bg-base-200 card-sm shadow-sm">
-            <div class="card-body">
-              <h2 class="card-title">More Information</h2>
-              <div class="text-sm flex gap-4 flex-wrap">
-                <div>
-                  <h3 class="font-bold">Mainboard ID</h3>
-                  <p>{sensorStatus().elegoo.mainboardID}</p>
-                </div>
-                <div>
-                  <h3 class="font-bold">Currently Printing</h3>
-                  <p>{sensorStatus().elegoo.isPrinting ? 'Yes' : 'No'}</p>
-                </div>
-                <div>
-                  <h3 class="font-bold">Print Status</h3>
-                  <p>{PRINT_STATUS_MAP[sensorStatus().elegoo.printStatus as keyof typeof PRINT_STATUS_MAP]}</p>
+                  <div class="stat-desc text-xs">
+                    Status: {sensorStatus().sensor1.status}
+                  </div>
+                  <Show when={sensorStatus().sensor1.type === 1}>
+                    <div class="stat-desc text-xs">
+                      Temperature: {sensorStatus().sensor1.temperature_f.toFixed(1)}°F
+                    </div>
+                  </Show>
+                  <Show when={sensorStatus().sensor1.type === 2}>
+                    <div class="stat-desc text-xs">
+                      Flow: {sensorStatus().sensor1.flow_rate.toFixed(2)} GPM
+                    </div>
+                    <div class="stat-desc text-xs">
+                      Pulses: {sensorStatus().sensor1.pulse_count}
+                    </div>
+                    <button 
+                      class="btn btn-xs btn-outline mt-2"
+                      onClick={() => handleWaterReset(1)}
+                    >
+                      Reset Counter
+                    </button>
+                  </Show>
                 </div>
 
-                <div>
-                  <h3 class="font-bold">Current Layer</h3>
-                  <p>{sensorStatus().elegoo.currentLayer}</p>
+                {/* Sensor 2 */}
+                <div class="stat">
+                  <div class="stat-title">Sensor 2</div>
+                  <div class="stat-value text-sm">
+                    {SENSOR_TYPE_MAP[sensorStatus().sensor2.type as keyof typeof SENSOR_TYPE_MAP]}
+                  </div>
+                  <div class="stat-desc text-xs">
+                    Status: {sensorStatus().sensor2.status}
+                  </div>
+                  <Show when={sensorStatus().sensor2.type === 1}>
+                    <div class="stat-desc text-xs">
+                      Temperature: {sensorStatus().sensor2.temperature_f.toFixed(1)}°F
+                    </div>
+                  </Show>
+                  <Show when={sensorStatus().sensor2.type === 2}>
+                    <div class="stat-desc text-xs">
+                      Flow: {sensorStatus().sensor2.flow_rate.toFixed(2)} GPM
+                    </div>
+                    <div class="stat-desc text-xs">
+                      Pulses: {sensorStatus().sensor2.pulse_count}
+                    </div>
+                    <button 
+                      class="btn btn-xs btn-outline mt-2"
+                      onClick={() => handleWaterReset(2)}
+                    >
+                      Reset Counter
+                    </button>
+                  </Show>
                 </div>
-                <div>
-                  <h3 class="font-bold">Total Layer</h3>
-                  <p>{sensorStatus().elegoo.totalLayer}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Pump Control Section */}
+          <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">Pump Control</h2>
+              <div class="stats w-full shadow bg-base-300">
+                <div class="stat">
+                  <div class="stat-title">Pump State</div>
+                  <div class={`stat-value ${sensorStatus().pump.flow_error ? 'text-error' : sensorStatus().pump.is_active ? 'text-success' : 'text-warning'}`}>
+                    {PUMP_STATE_MAP[sensorStatus().pump.state as keyof typeof PUMP_STATE_MAP]}
+                  </div>
+                  <Show when={sensorStatus().pump.flow_error}>
+                    <div class="stat-desc text-error">Flow Error Detected!</div>
+                  </Show>
                 </div>
-                <div>
-                  <h3 class="font-bold">Progress</h3>
-                  <p>{sensorStatus().elegoo.progress}</p>
+                
+                <div class="stat">
+                  <div class="stat-title">Current Temperature</div>
+                  <div class="stat-value text-lg">
+                    {sensorStatus().pump.temperature_f.toFixed(1)}°F
+                  </div>
+                  <div class="stat-desc">
+                    Threshold: {sensorStatus().system.temp_threshold_f.toFixed(1)}°F
+                  </div>
                 </div>
-                <div>
-                  <h3 class="font-bold">Current Ticks</h3>
-                  <p>{sensorStatus().elegoo.currentTicks}</p>
+
+                <div class="stat">
+                  <div class="stat-title">Cycle Time</div>
+                  <div class="stat-value text-lg">
+                    {formatTime(sensorStatus().pump.current_cycle_time)}
+                  </div>
+                  <Show when={sensorStatus().pump.state === 'AUTO' && sensorStatus().pump.time_until_next_switch > 0}>
+                    <div class="stat-desc">
+                      Next switch: {formatTime(sensorStatus().pump.time_until_next_switch)}
+                    </div>
+                  </Show>
                 </div>
-                <div>
-                  <h3 class="font-bold">Total Ticks</h3>
-                  <p>{sensorStatus().elegoo.totalTicks}</p>
+              </div>
+
+              {/* Pump Control Buttons */}
+              <div class="flex gap-2 mt-4">
+                <button 
+                  class="btn btn-success btn-sm"
+                  onClick={() => handlePumpControl('on')}
+                  disabled={sensorStatus().pump.state === 'ON'}
+                >
+                  Turn On
+                </button>
+                <button 
+                  class="btn btn-error btn-sm"
+                  onClick={() => handlePumpControl('off')}
+                  disabled={sensorStatus().pump.state === 'OFF'}
+                >
+                  Turn Off
+                </button>
+                <button 
+                  class="btn btn-primary btn-sm"
+                  onClick={() => handlePumpControl('auto')}
+                  disabled={sensorStatus().pump.state === 'AUTO'}
+                >
+                  Auto Mode
+                </button>
+                <button 
+                  class="btn btn-outline btn-sm"
+                  onClick={() => handlePumpControl('force_cycle')}
+                  disabled={sensorStatus().pump.state !== 'AUTO'}
+                >
+                  Force Cycle
+                </button>
+                <Show when={sensorStatus().pump.flow_error}>
+                  <button 
+                    class="btn btn-warning btn-sm"
+                    onClick={() => handlePumpControl('clear_error')}
+                  >
+                    Clear Error
+                  </button>
+                </Show>
+              </div>
+            </div>
+          </div>
+
+          {/* System Information Section */}
+          <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">System Information</h2>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="stat">
+                  <div class="stat-title">Pump Configuration</div>
+                  <div class="stat-desc text-sm">
+                    Auto Mode: <span class={sensorStatus().system.pump_auto_mode ? 'text-success' : 'text-error'}>
+                      {sensorStatus().system.pump_auto_mode ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                  <div class="stat-desc text-sm">
+                    On Time: {formatTime(sensorStatus().system.pump_on_time_seconds)}
+                  </div>
+                  <div class="stat-desc text-sm">
+                    Off Time: {formatTime(sensorStatus().system.pump_off_time_seconds)}
+                  </div>
                 </div>
-                <div>
-                  <h3 class="font-bold">Print Speed</h3>
-                  <p>{sensorStatus().elegoo.PrintSpeedPct}</p>
+
+                <div class="stat">
+                  <div class="stat-title">Pump Statistics</div>
+                  <div class="stat-desc text-sm">
+                    Total Cycles: {sensorStatus().pump.total_cycles}
+                  </div>
+                  <div class="stat-desc text-sm">
+                    Total On Time: {formatTime(sensorStatus().pump.total_on_time)}
+                  </div>
+                  <button 
+                    class="btn btn-xs btn-outline mt-2"
+                    onClick={() => handlePumpControl('reset_stats')}
+                  >
+                    Reset Statistics
+                  </button>
                 </div>
               </div>
             </div>
@@ -203,4 +302,4 @@ function Status() {
   )
 }
 
-export default Status 
+export default Status
