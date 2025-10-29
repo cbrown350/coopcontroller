@@ -68,7 +68,7 @@ bool SettingsManager::load()
     settings.temp_threshold_off_f = doc["temp_threshold_off_f"] | 36.0;
     settings.pump_on_time_seconds = doc["pump_on_time_seconds"] | 150;
     settings.pump_off_time_seconds = doc["pump_off_time_seconds"] | 300;
-    // settings.pump_auto_mode     = doc["pump_auto_mode"] | true;
+    settings.pump_auto_mode     = doc["pump_auto_mode"] | true;
     settings.light_auto_mode     = doc["light_auto_mode"] | false;
     settings.light_on_hour       = doc["light_on_hour"] | 6;
     settings.light_off_hour      = doc["light_off_hour"] | 20;
@@ -183,10 +183,10 @@ int SettingsManager::getPumpOffTimeSeconds()
     return getSettings().pump_off_time_seconds;
 }
 
-// bool SettingsManager::getPumpAutoMode()
-// {
-//     return getSettings().pump_auto_mode;
-// }
+bool SettingsManager::getPumpAutoMode()
+{
+    return getSettings().pump_auto_mode;
+}
 
 bool SettingsManager::getLightAutoMode()
 {
@@ -251,12 +251,12 @@ void SettingsManager::setPumpOffTimeSeconds(int seconds)
     settings.pump_off_time_seconds = seconds;
 }
 
-// void SettingsManager::setPumpAutoMode(bool enabled)
-// {
-//     if (!isLoaded)
-//         load();
-//     settings.pump_auto_mode = enabled;
-// }
+void SettingsManager::setPumpAutoMode(bool enabled)
+{
+    if (!isLoaded)
+        load();
+    settings.pump_auto_mode = enabled;
+}
 
 void SettingsManager::setLightAutoMode(bool enabled)
 {

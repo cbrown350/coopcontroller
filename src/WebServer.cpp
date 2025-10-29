@@ -88,6 +88,29 @@ void WebServer::begin()
 
     // Setup ElegantOTA
     ElegantOTA.begin(&server);
+    // ElegantOTA.setAuth("admin", "admin");  // Optional: add authentication
+    
+    // Configure ElegantOTA for filesystem updates
+    ElegantOTA.onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("OTA Update Progress: %u%%\r", (progress / (total / 100)));
+    });
+    
+    // Add custom callback for filesystem updates
+    ElegantOTA.onStart([]() {
+        Serial.println("Start OTA updating ");
+        LittleFS.end();
+    });
+    
+    ElegantOTA.onEnd([](bool success) {
+        Serial.println("\nOTA update End");
+        if(success) {
+            Serial.println("OTA update completed successfully, restarting...");
+            ESP.restart();
+        } else {
+            Serial.println("OTA update failed");
+            LittleFS.begin();
+        }
+    });
 
     // Sensor status endpoint
     server.on("/sensor_status", HTTP_GET,

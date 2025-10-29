@@ -43,9 +43,15 @@ void PumpController::begin() {
     
     // Start with pump off
     setPumpState(false);
-    status.state = PUMP_OFF;
-    
+    if (settingsManager.getPumpAutoMode()) {
+        status.state = PUMP_AUTO;
+    } else {
+        status.state = PUMP_OFF;
+    }
+
     if (settingsManager.getDebugEnabled()) {
+        Serial.printf("DEBUG: PumpController begin - mode set to %s\n", 
+                      settingsManager.getPumpAutoMode() ? "AUTO" : "OFF");
         Serial.println("DEBUG: Pump controller initialization complete");
     }
 }
@@ -71,9 +77,9 @@ void PumpController::update(float temperature_f, bool has_flow_error) {
     //     status.flow_error = false;
     //     flowErrorDetected = false;
     // }
-    if (settingsManager.getDebugEnabled()) {
-        logger.log("update(): status.flow_error = " + String(status.flow_error ? "true" : "false"));
-    }
+    // if (settingsManager.getDebugEnabled()) {
+    //     logger.log("update(): status.flow_error = " + String(status.flow_error ? "true" : "false"));
+    // }
     
     // Handle different states
     switch (status.state) {
@@ -166,7 +172,13 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                 }
             } else {
                 // In OFF phase - check if it's time to switch to ON
-                unsigned long timeUntilOn = (onTime + offTime) - cycleElapsed;
+                unsigned long timeUntilOn;
+                if (cycleElapsed > (onTime + offTime)) {
+                    // underflow would occur
+                    timeUntilOn = 0;
+                } else {
+                    timeUntilOn = (onTime + offTime) - cycleElapsed;
+                }   
                 if (cycleElapsed >= (onTime + offTime)) {
                     // Start new cycle
                     cycleStartTime = currentTime;
@@ -288,6 +300,10 @@ void PumpController::setAutoMode(bool enabled) {
         status.state = PUMP_OFF;
         setPumpState(false);
         logger.log("Pump AUTO mode disabled");
+    }
+    if (enabled != settingsManager.getPumpAutoMode()) {
+        settingsManager.setPumpAutoMode(enabled);
+        settingsManager.save();
     }
 }
 
