@@ -244,6 +244,13 @@ void PumpController::forceCycle() {
     }
 }
 
+unsigned long PumpController::getCurrentRunStartTime() const {
+    if (status.is_active && status.current_cycle_start > 0) {
+        return status.current_cycle_start;
+    }
+    return 0;
+}
+
 unsigned long PumpController::getCurrentCycleTime() const {
     if (status.current_cycle_start > 0) {
         return millis() - status.current_cycle_start;

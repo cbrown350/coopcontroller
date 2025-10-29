@@ -69,6 +69,8 @@ public:
     float getCurrentTemperature() const { return status.temperature_f; }
     bool hasFlowError() const { return status.flow_error; }
     
+    unsigned long getCurrentRunStartTime() const;
+    
     // Statistics
     unsigned long getTotalOnTime() const { return status.total_on_time; }
     unsigned long getTotalOffTime() const { return status.total_off_time; }

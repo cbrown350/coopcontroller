@@ -382,3 +382,18 @@ bool TempSensor::hasWaterFlowError(int sensorNum) const {
     
     return false;
 }
+
+bool TempSensor::hasActiveWaterMeter() const {
+    return (sensor1.type == SENSOR_TYPE_WATER_METER || sensor2.type == SENSOR_TYPE_WATER_METER);
+}
+
+unsigned long TempSensor::getMostRecentPulseTime() const {
+    unsigned long max_time = 0;
+    if (sensor1.type == SENSOR_TYPE_WATER_METER) {
+        max_time = max(max_time, sensor1.last_pulse_time);
+    }
+    if (sensor2.type == SENSOR_TYPE_WATER_METER) {
+        max_time = max(max_time, sensor2.last_pulse_time);
+    }
+    return max_time;
+}

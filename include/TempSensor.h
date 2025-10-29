@@ -81,6 +81,10 @@ public:
     // Status methods
     String getSensorStatusString(const SensorData& sensor) const;
     bool hasWaterFlowError(int sensor) const;
+    
+    // Water meter specific
+    bool hasActiveWaterMeter() const;
+    unsigned long getMostRecentPulseTime() const;
 };
 
 #endif // __TEMP_SENSOR_H__

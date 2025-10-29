@@ -337,8 +337,19 @@ void loop()
         float currentTemp = tempSensor.getTemperature1F();
         bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold();
         
-        // Check for water flow errors
-        bool flowError = tempSensor.hasWaterFlowError(1) || tempSensor.hasWaterFlowError(2);
+        // Check for water flow errors - only when pump is on and running long enough without flow
+        bool hasWaterMeter = tempSensor.hasActiveWaterMeter();
+        unsigned long lastPulse = tempSensor.getMostRecentPulseTime();
+        unsigned long pumpRunStart = pumpController.getCurrentRunStartTime();
+        unsigned long currentTimeMs = millis();
+        unsigned long pumpRunTime = (pumpRunStart > 0) ? (currentTimeMs - pumpRunStart) : 0;
+        int timeoutSeconds = settingsManager.getWaterFlowErrorTimeoutSeconds();
+        unsigned long timeoutMs = (unsigned long)timeoutSeconds * 1000UL;
+        bool flowError = false;
+        if (hasWaterMeter && pumpController.isPumpOn() && pumpRunTime >= timeoutMs && (currentTimeMs - lastPulse) >= timeoutMs) {
+            flowError = true;
+            logger.log("Flow error detected: pump running without flow for timeout period");
+        }
         
         // Update pump controller with current status
         pumpController.update(
