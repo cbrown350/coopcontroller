@@ -1,5 +1,5 @@
 Import("env") # type: ignore
-import subprocess, platform
+import subprocess, platform, sys
 
 def before_buildfs(source, target, env):
     print("Running pre-action before building file system image...")
@@ -13,5 +13,7 @@ def before_buildfs(source, target, env):
     print(result.stdout)
     if result.returncode != 0:
         print("Error:", result.stderr)
+        print("npm build failed. Stopping build process.")
+        env.Exit(1)  # Exit with error code to stop the build process
 
 env.AddPreAction("$BUILD_DIR/littlefs.bin", before_buildfs) # type: ignore
