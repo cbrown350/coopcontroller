@@ -21,6 +21,7 @@ struct PumpStatus {
     float temperature_f;
     bool temperature_below_threshold;
     bool flow_error;
+    unsigned long time_until_retry; // Time remaining until next retry attempt
     unsigned long total_on_time;
     unsigned long total_off_time;
     unsigned long total_cycles;

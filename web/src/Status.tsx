@@ -28,6 +28,7 @@ function Status() {
       flow_error: false,
       current_cycle_time: 0,
       time_until_next_switch: 0,
+      time_until_retry: 0,
       total_on_time: 0,
       total_off_time: 0,
       total_cycles: 0
@@ -119,7 +120,7 @@ function Status() {
                      sensorStatus().sensor1.type === 2 ? 'Water Meter' : 'None'}
                   </div>
                   <div class="stat-desc text-xs">
-                    Status: {sensorStatus().sensor1.status}
+                    Status: {sensorStatus().sensor1.status && sensorStatus().sensor1.status !=="Not Connected" ? "Connected" : "Not Connected"}
                   </div>
                   <Show when={sensorStatus().sensor1.type === 1}>
                     <div class="stat-desc text-xs">
@@ -150,7 +151,7 @@ function Status() {
                      sensorStatus().sensor2.type === 2 ? 'Water Meter' : 'None'}
                   </div>
                   <div class="stat-desc text-xs">
-                    Status: {sensorStatus().sensor2.status}
+                    Status: {sensorStatus().sensor2.status && sensorStatus().sensor2.status !=="Not Connected" ? "Connected" : "Not Connected"}
                   </div>
                   <Show when={sensorStatus().sensor2.type === 1}>
                     <div class="stat-desc text-xs">
@@ -196,6 +197,9 @@ function Status() {
                   )}
                   <Show when={sensorStatus().pump.flow_error}>
                     <div class="stat-desc text-error">Flow Error Detected!</div>
+                    <Show when={sensorStatus().pump.time_until_retry > 0}>
+                      <div class="stat-desc text-error">Retry in: {formatTime(sensorStatus().pump.time_until_retry)}</div>
+                    </Show>
                   </Show>
                 </div>
                 

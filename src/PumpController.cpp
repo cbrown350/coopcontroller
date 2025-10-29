@@ -100,15 +100,17 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
     // Handle error state with retry logic
     if (status.state == PUMP_ERROR) {
         if (waitingForRetry) {
-            // Check if retry time has elapsed
+            // Calculate and set time remaining until retry
             unsigned long retryTime = settingsManager.getPumpErrorRetrySeconds() * 1000UL;
+            unsigned long timeElapsed = currentTime - errorStartTime;
+            status.time_until_retry = (retryTime > timeElapsed) ? (retryTime - timeElapsed) / 1000 : 0;
+            
             if (currentTime - errorStartTime >= retryTime) {
                 waitingForRetry = false;
                 errorStartTime = 0;
                 // Check if temperature is still below threshold before retrying
                 if (status.temperature_f < onThreshold) {
-                    status.state = PUMP_AUTO;
-                    logger.log("Retry time elapsed, returning to AUTO mode");
+                    logger.log("Retry time elapsed, returning to AUTO cycling");
                 } else {
                     logger.log("Retry time elapsed but temperature above threshold, staying in error state");
                 }
@@ -176,12 +178,13 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
     }
     // If temperature is between ON and OFF thresholds, maintain current state (hysteresis)
     
-    // Check for flow error during pump operation
-    if (status.is_active && status.flow_error) {
-        status.state = PUMP_ERROR;
+    // Check for flow error during pump operation - handle error without changing state
+    if (status.is_active && status.flow_error && status.state == PUMP_AUTO) {
+        // Don't change state to ERROR, keep as AUTO but handle error logic
         errorStartTime = currentTime;
         waitingForRetry = true;
-        logger.log("Flow error detected during pump operation, switching to error state");
+        setPumpState(false); // Turn off pump but keep AUTO state
+        logger.log("Flow error detected during pump operation, pump turned off but staying in AUTO state");
     }
 }
 
@@ -328,6 +331,7 @@ String PumpController::getStatusJson() const {
     json += "\"flow_error\":" + String(status.flow_error ? "true" : "false") + ",";
     json += "\"current_cycle_time\":" + String(getCurrentCycleTime() / 1000) + ",";
     json += "\"time_until_next_switch\":" + String(getTimeUntilNextSwitch() / 1000) + ",";
+    json += "\"time_until_retry\":" + String(status.time_until_retry / 1000) + ",";
     json += "\"total_on_time\":" + String(status.total_on_time / 1000) + ",";
     json += "\"total_off_time\":" + String(status.total_off_time / 1000) + ",";
     json += "\"total_cycles\":" + String(status.total_cycles);
@@ -347,7 +351,11 @@ void PumpController::clearFlowError() {
     flowErrorDetected = false;
     errorStartTime = 0;
     waitingForRetry = false;
-    if (status.state == PUMP_ERROR) {
+    // Clear the flow error flag and restart cycling if in AUTO mode
+    if (status.state == PUMP_AUTO) {
+        logger.log("Flow error cleared, restarting pump cycling in AUTO mode");
+        // Don't change state, just reset error tracking and let normal AUTO logic continue
+    } else if (status.state == PUMP_ERROR) {
         status.state = PUMP_AUTO;
         logger.log("Flow error cleared, returning to AUTO mode");
     }
