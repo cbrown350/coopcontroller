@@ -19,8 +19,8 @@ Logger::Logger()
 
 void Logger::log(const String &message)
 {
-    // Temporarily use millis() instead of getTime() to avoid NTP issues
-    unsigned long timestamp = millis() / 1000; // Use millis for timestamp
+    // unsigned long timestamp = millis() / 1000; // Use millis for timestamp
+    unsigned long timestamp = getTime();
     
     // Print to serial with timestamp
     Serial.printf("[%lu] %s\n", timestamp, message.c_str());

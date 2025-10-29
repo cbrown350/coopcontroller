@@ -284,7 +284,7 @@ unsigned long getTime()
     time_t    now;
     struct tm timeinfo;
     if (!getLocalTime(&timeinfo, 200)) { // Add timeout to prevent hanging
-        // Serial.println("Failed to obtain time");
+        Serial.println("Failed to obtain time"); // Can't call logger since it may call getTime()
         return (0);
     }
     time(&now);

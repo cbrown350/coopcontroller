@@ -35,42 +35,51 @@ void WebServer::begin()
         [this](AsyncWebServerRequest *request, JsonVariant &json)
         {
             JsonObject jsonObj = json.as<JsonObject>();
-            settingsManager.setSSID(jsonObj["ssid"].as<String>());
-            settingsManager.setPassword(jsonObj["passwd"].as<String>());
-            settingsManager.setAPMode(jsonObj["ap_mode"].as<bool>());
-            settingsManager.setEnabled(jsonObj["enabled"].as<bool>());
             
-            // Handle coop controller settings
-            if (jsonObj["temp_threshold_on_f"].is<float>()) {
+            // Only set WiFi settings if provided (i.e., when changing WiFi)
+            if (jsonObj.containsKey("ssid")) {
+                settingsManager.setSSID(jsonObj["ssid"].as<String>());
+            }
+            if (jsonObj.containsKey("passwd")) {
+                settingsManager.setPassword(jsonObj["passwd"].as<String>());
+            }
+            if (jsonObj.containsKey("ap_mode")) {
+                settingsManager.setAPMode(jsonObj["ap_mode"].as<bool>());
+            }
+            
+            // Handle coop controller settings (these don't trigger WiFi changes)
+            if (jsonObj.containsKey("temp_threshold_on_f") && jsonObj["temp_threshold_on_f"].is<float>()) {
                 settingsManager.setTempThresholdOnF(jsonObj["temp_threshold_on_f"].as<float>());
             }
-            if (jsonObj["temp_threshold_off_f"].is<float>()) {
+            if (jsonObj.containsKey("temp_threshold_off_f") && jsonObj["temp_threshold_off_f"].is<float>()) {
                 settingsManager.setTempThresholdOffF(jsonObj["temp_threshold_off_f"].as<float>());
             }
-            if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
+            if (jsonObj.containsKey("water_flow_error_timeout_seconds") && jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
                 settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
             }
-            if (jsonObj["pump_on_time_seconds"].is<int>()) {
+            if (jsonObj.containsKey("pump_on_time_seconds") && jsonObj["pump_on_time_seconds"].is<int>()) {
                 settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
             }
-            if (jsonObj["pump_off_time_seconds"].is<int>()) {
+            if (jsonObj.containsKey("pump_off_time_seconds") && jsonObj["pump_off_time_seconds"].is<int>()) {
                 settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
             }
-            if (jsonObj["pump_auto_mode"].is<bool>()) {
+            if (jsonObj.containsKey("pump_auto_mode") && jsonObj["pump_auto_mode"].is<bool>()) {
                 settingsManager.setPumpAutoMode(jsonObj["pump_auto_mode"].as<bool>());
             }
-            if (jsonObj["light_auto_mode"].is<bool>()) {
+            if (jsonObj.containsKey("light_auto_mode") && jsonObj["light_auto_mode"].is<bool>()) {
                 settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
             }
-            if (jsonObj["light_on_hour"].is<int>()) {
+            if (jsonObj.containsKey("light_on_hour") && jsonObj["light_on_hour"].is<int>()) {
                 settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
             }
-            if (jsonObj["light_off_hour"].is<int>()) {
+            if (jsonObj.containsKey("light_off_hour") && jsonObj["light_off_hour"].is<int>()) {
                 settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
             }
-            if (jsonObj["debug_enabled"].is<bool>()) {
+            if (jsonObj.containsKey("debug_enabled") && jsonObj["debug_enabled"].is<bool>()) {
                 settingsManager.setDebugEnabled(jsonObj["debug_enabled"].as<bool>());
             }
+            
+            // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
             
             settingsManager.save();
             jsonObj.clear();

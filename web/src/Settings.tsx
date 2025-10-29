@@ -72,9 +72,12 @@ function Settings() {
       setError('')
 
       const settings = {
-        ssid: ssid(),
-        passwd: password(),
         ap_mode: false,
+        // Conditionally include WiFi settings only when changing WiFi
+        ...(apMode() && {
+          ssid: ssid(),
+          passwd: password()
+        }),
         // Coop controller settings
         temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
         temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
@@ -201,6 +204,7 @@ function Settings() {
               <Show when={!loaded()}>
                 <input
                   type="text"
+                  placeholder="--"
                   value="--"
                   disabled
                   class="input input-disabled"
@@ -228,6 +232,7 @@ function Settings() {
                 <input
                   type="text"
                   value="--"
+                  placeholder="--"
                   disabled
                   class="input input-disabled"
                 />
@@ -256,6 +261,7 @@ function Settings() {
               <input
                 type="text"
                 value="--"
+                  placeholder="--"
                 disabled
                 class="input input-disabled"
               />
@@ -283,6 +289,7 @@ function Settings() {
                 <input
                   type="text"
                   value="--"
+                  placeholder="--"
                   disabled
                   class="input input-disabled"
                 />
@@ -308,6 +315,7 @@ function Settings() {
                 <input
                   type="text"
                   value="--"
+                  placeholder="--"
                   disabled
                   class="input input-disabled"
                 />
@@ -372,6 +380,7 @@ function Settings() {
                   <input
                     type="text"
                     value="--"
+                  placeholder="--"
                     disabled
                     class="input input-disabled"
                   />
@@ -397,6 +406,7 @@ function Settings() {
                   <input
                     type="text"
                     value="--"
+                    placeholder="--"
                     disabled
                     class="input input-disabled"
                   />
