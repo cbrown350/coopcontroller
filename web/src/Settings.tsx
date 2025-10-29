@@ -20,7 +20,7 @@ function Settings() {
   const [lightOffHour, setLightOffHour] = createSignal<number | null>(null);
   const [debugEnabled, setDebugEnabled] = createSignal<boolean | null>(null);
   const [waterFlowErrorTimeoutSeconds, setWaterFlowErrorTimeoutSeconds] = createSignal<number | null>(null);
-  const [pumpErrorRetrySeconds, setPumpErrorRetrySeconds] = createSignal<number | null>(null);
+  // const [pumpErrorRetrySeconds, setPumpErrorRetrySeconds] = createSignal<number | null>(null);
 
   // Load settings from the server and scan for WiFi networks
   onMount(async () => {
@@ -50,7 +50,7 @@ function Settings() {
       setLightOffHour(settings.light_off_hour ?? null)
       setDebugEnabled(settings.debug_enabled ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
-      setPumpErrorRetrySeconds(settings.pump_error_retry_seconds ?? null)
+      // setPumpErrorRetrySeconds(settings.pump_error_retry_seconds ?? null)
 
       setLoaded(true)
       setError('')
@@ -90,7 +90,7 @@ function Settings() {
         temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
         temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
         water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
-        pump_error_retry_seconds: pumpErrorRetrySeconds() ?? 120,
+        // pump_error_retry_seconds: pumpErrorRetrySeconds() ?? 120,
         pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
         pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
         pump_auto_mode: pumpAutoMode() ?? true,
@@ -298,7 +298,7 @@ function Settings() {
             <div class="fieldset-label">Time without water flow before declaring error (default: 120 seconds)</div>
           </fieldset>
 
-          {/* Pump Error Retry Time */}
+          {/* Pump Error Retry Time
           <fieldset class="fieldset mt-4">
             <legend class="fieldset-legend">Pump Error Retry Time (seconds)</legend>
             <Show when={loaded()}>
@@ -324,7 +324,7 @@ function Settings() {
               />
             </Show>
             <div class="fieldset-label">Time to wait before retrying pump after flow error (default: 120 seconds)</div>
-          </fieldset>
+          </fieldset> */}
 
           {/* Pump Settings */}
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

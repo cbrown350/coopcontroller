@@ -40,13 +40,13 @@ private:
     
     // Error detection
     unsigned long lastFlowCheckTime;
-    bool flowErrorDetected;
+    // bool flowErrorDetected;
     unsigned long errorStartTime; // When error state started
     bool waitingForRetry; // Flag to indicate we're waiting to retry after error
     
     // Private methods
     void setPumpState(bool isOn);
-    void checkFlowError();
+    // void checkFlowError();
     void updateStatistics();
     void handleAutoMode(unsigned long currentTime);
     
@@ -80,6 +80,7 @@ public:
     unsigned long getTotalCycles() const { return status.total_cycles; }
     unsigned long getCurrentCycleTime() const;
     unsigned long getTimeUntilNextSwitch() const;
+    unsigned long getTimeUntilRetry() const { return status.time_until_retry; }
     
     // Status strings
     String getStateString() const;

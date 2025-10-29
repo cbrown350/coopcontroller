@@ -24,7 +24,7 @@ PumpController::PumpController(int pin) : pumpPin(pin) {
     
     // Initialize error detection
     lastFlowCheckTime = 0;
-    flowErrorDetected = false;
+    // flowErrorDetected = false;
     errorStartTime = 0;
     waitingForRetry = false;
 }
@@ -55,13 +55,25 @@ void PumpController::update(float temperature_f, bool has_flow_error) {
     
     // Update status
     status.temperature_f = temperature_f;
-    status.flow_error = has_flow_error;
+    status.flow_error = has_flow_error || status.flow_error;
     
     // Update statistics
     updateStatistics();
     
-    // Check for flow errors
-    checkFlowError();
+    // Check for flow errors and synchronize the two flow error variables
+    // checkFlowError();
+    
+    // Ensure both flow error variables are synchronized
+    // if (has_flow_error || flowErrorDetected) {
+    //     status.flow_error = true;
+    //     flowErrorDetected = true;
+    // } else {
+    //     status.flow_error = false;
+    //     flowErrorDetected = false;
+    // }
+    if (settingsManager.getDebugEnabled()) {
+        logger.log("update(): status.flow_error = " + String(status.flow_error ? "true" : "false"));
+    }
     
     // Handle different states
     switch (status.state) {
@@ -73,6 +85,7 @@ void PumpController::update(float temperature_f, bool has_flow_error) {
             // Manual on state - keep pump on
             if (!status.is_active) {
                 setPumpState(true);
+                clearFlowError();
             }
             break;
             
@@ -98,26 +111,26 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
     float offThreshold = settingsManager.getTempThresholdOffF();
     
     // Handle error state with retry logic
-    if (status.state == PUMP_ERROR) {
-        if (waitingForRetry) {
-            // Calculate and set time remaining until retry
-            unsigned long retryTime = settingsManager.getPumpErrorRetrySeconds() * 1000UL;
-            unsigned long timeElapsed = currentTime - errorStartTime;
-            status.time_until_retry = (retryTime > timeElapsed) ? (retryTime - timeElapsed) / 1000 : 0;
+    // if (status.state == PUMP_ERROR) {
+    //     if (waitingForRetry) {
+    //         // Calculate and set time remaining until retry
+    //         unsigned long retryTime = settingsManager.getPumpErrorRetrySeconds() * 1000UL;
+    //         unsigned long timeElapsed = currentTime - errorStartTime;
+    //         status.time_until_retry = (retryTime > timeElapsed) ? (retryTime - timeElapsed) / 1000 : 0;
             
-            if (currentTime - errorStartTime >= retryTime) {
-                waitingForRetry = false;
-                errorStartTime = 0;
-                // Check if temperature is still below threshold before retrying
-                if (status.temperature_f < onThreshold) {
-                    logger.log("Retry time elapsed, returning to AUTO cycling");
-                } else {
-                    logger.log("Retry time elapsed but temperature above threshold, staying in error state");
-                }
-            }
-        }
-        return;
-    }
+    //         if (currentTime - errorStartTime >= retryTime) {
+    //             waitingForRetry = false;
+    //             errorStartTime = 0;
+    //             // Check if temperature is still below threshold before retrying
+    //             if (status.temperature_f < onThreshold) {
+    //                 logger.log("Retry time elapsed, returning to AUTO cycling");
+    //             } else {
+    //                 logger.log("Retry time elapsed but temperature above threshold, staying in error state");
+    //             }
+    //         }
+    //     }
+    //     return;
+    // }
     
     // Check if temperature is below ON threshold to start cycling
     if (status.temperature_f < onThreshold) {
@@ -127,6 +140,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
             cycleStartTime = currentTime;
             currentlyInOnPhase = true;
             setPumpState(true);
+            clearFlowError();
             status.total_cycles++;
             
             logger.logf("Temperature below ON threshold (%.1f°F < %.1f°F), starting pump cycle - ON phase", 
@@ -158,6 +172,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                     cycleStartTime = currentTime;
                     currentlyInOnPhase = true;
                     setPumpState(true);
+                    clearFlowError();
                     status.total_cycles++;
                     logger.logf("Starting new pump cycle, temperature: %.1f°F - ON phase", status.temperature_f);
                 } else if (settingsManager.getDebugEnabled() && (cycleElapsed % 10000 < 1000)) {
@@ -170,6 +185,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
         // Temperature is above OFF threshold - turn off pump and reset cycle
         if (status.is_active || cycleStartTime != 0) {
             setPumpState(false);
+            // clearFlowError(); // keep flow error flag so it's known it happened
             cycleStartTime = 0; // Reset cycle
             currentlyInOnPhase = false;
             logger.logf("Temperature above OFF threshold (%.1f°F > %.1f°F), pump turned off and cycle reset", 
@@ -217,21 +233,27 @@ void PumpController::setPumpState(bool isOn) {
     }
 }
 
-void PumpController::checkFlowError() {
-    unsigned long currentTime = millis();
+// void PumpController::checkFlowError() {
+//     unsigned long currentTime = millis();
     
-    // Check flow error every 30 seconds
-    if (currentTime - lastFlowCheckTime >= 30000) {
-        lastFlowCheckTime = currentTime;
+//     // Check flow error every 30 seconds
+//     if (currentTime - lastFlowCheckTime >= 30000) {
+//         lastFlowCheckTime = currentTime;
         
-        if (status.is_active && status.flow_error) {
-            flowErrorDetected = true;
-            logger.log("Flow error detected: pump is running but no water flow detected");
-        } else if (!status.is_active) {
-            flowErrorDetected = false;
-        }
-    }
-}
+//         // if (status.is_active && status.flow_error) {
+//         //     flowErrorDetected = true;
+//         //     status.flow_error = true; // Ensure both are synchronized
+//         //     logger.log("Flow error detected: pump is running but no water flow detected");
+//         // } else 
+//         if (!status.is_active) {
+//             // flowErrorDetected = false;
+//             status.flow_error = false; // Ensure both are synchronized
+//         }
+//     }
+//     if (settingsManager.getDebugEnabled()) {
+//         logger.log("checkFlowError(): status.flow_error = " + String(status.flow_error ? "true" : "false"));
+//     }
+// }
 
 void PumpController::updateStatistics() {
     if (status.is_active && status.current_cycle_start > 0) {
@@ -260,7 +282,7 @@ void PumpController::setAutoMode(bool enabled) {
     if (enabled) {
         status.state = PUMP_AUTO;
         cycleStartTime = 0; // Reset cycle to start fresh
-        flowErrorDetected = false;
+        // flowErrorDetected = false;
         logger.log("Pump set to AUTO mode");
     } else {
         status.state = PUMP_OFF;
@@ -348,15 +370,19 @@ void PumpController::resetStatistics() {
 }
 
 void PumpController::clearFlowError() {
-    flowErrorDetected = false;
+    // flowErrorDetected = false;
+    status.flow_error = false; // Also clear the status flow_error
     errorStartTime = 0;
     waitingForRetry = false;
-    // Clear the flow error flag and restart cycling if in AUTO mode
-    if (status.state == PUMP_AUTO) {
-        logger.log("Flow error cleared, restarting pump cycling in AUTO mode");
+    logger.log("Flow error cleared");
+    
+    // Only resume cycling if temperature conditions are met
+    float onThreshold = settingsManager.getTempThresholdOnF();
+    if (status.temperature_f < onThreshold) {
+        logger.log("Flow error cleared and temperature below threshold - resuming AUTO cycling");
         // Don't change state, just reset error tracking and let normal AUTO logic continue
-    } else if (status.state == PUMP_ERROR) {
-        status.state = PUMP_AUTO;
-        logger.log("Flow error cleared, returning to AUTO mode");
+    } else {
+        logger.log("Flow error cleared but temperature above threshold - staying in error state");
+        // Keep in error state until temperature drops below threshold
     }
 }

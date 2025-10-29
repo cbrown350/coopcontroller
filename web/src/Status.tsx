@@ -53,8 +53,16 @@ function Status() {
         throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`)
       }
       const data = await response.json()
+      
+      // Add debug logging to see what's happening
+      console.log('Pump status data received:', data)
+      console.log('Pump flow_error:', data.pump.flow_error)
+      console.log('Pump state:', data.pump.state)
+      
       setSensorStatus(data)
       setLoading(false)
+      // Clear any existing error when data is successfully fetched
+      setError('')
     } catch (err: any) {
       console.error('Failed to fetch sensor status:', err)
       setError(`Error loading sensor status: ${err.message || 'Unknown error'}`)

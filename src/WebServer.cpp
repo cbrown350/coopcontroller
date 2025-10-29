@@ -37,45 +37,45 @@ void WebServer::begin()
             JsonObject jsonObj = json.as<JsonObject>();
             
             // Only set WiFi settings if provided (i.e., when changing WiFi)
-            if (jsonObj.containsKey("ssid")) {
+            if (jsonObj["ssid"].is<const char*>()) {
                 settingsManager.setSSID(jsonObj["ssid"].as<String>());
             }
-            if (jsonObj.containsKey("passwd")) {
+            if (jsonObj["passwd"].is<const char*>()) {
                 settingsManager.setPassword(jsonObj["passwd"].as<String>());
             }
-            if (jsonObj.containsKey("ap_mode")) {
+            if (jsonObj["ap_mode"].is<bool>()) {
                 settingsManager.setAPMode(jsonObj["ap_mode"].as<bool>());
             }
             
             // Handle coop controller settings (these don't trigger WiFi changes)
-            if (jsonObj.containsKey("temp_threshold_on_f") && jsonObj["temp_threshold_on_f"].is<float>()) {
+            if (jsonObj["temp_threshold_on_f"].is<float>()) {
                 settingsManager.setTempThresholdOnF(jsonObj["temp_threshold_on_f"].as<float>());
             }
-            if (jsonObj.containsKey("temp_threshold_off_f") && jsonObj["temp_threshold_off_f"].is<float>()) {
+            if (jsonObj["temp_threshold_off_f"].is<float>()) {
                 settingsManager.setTempThresholdOffF(jsonObj["temp_threshold_off_f"].as<float>());
             }
-            if (jsonObj.containsKey("water_flow_error_timeout_seconds") && jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
+            if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
                 settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
             }
-            if (jsonObj.containsKey("pump_on_time_seconds") && jsonObj["pump_on_time_seconds"].is<int>()) {
+            if (jsonObj["pump_on_time_seconds"].is<int>()) {
                 settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
             }
-            if (jsonObj.containsKey("pump_off_time_seconds") && jsonObj["pump_off_time_seconds"].is<int>()) {
+            if (jsonObj["pump_off_time_seconds"].is<int>()) {
                 settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
             }
-            if (jsonObj.containsKey("pump_auto_mode") && jsonObj["pump_auto_mode"].is<bool>()) {
+            if (jsonObj["pump_auto_mode"].is<bool>()) {
                 settingsManager.setPumpAutoMode(jsonObj["pump_auto_mode"].as<bool>());
             }
-            if (jsonObj.containsKey("light_auto_mode") && jsonObj["light_auto_mode"].is<bool>()) {
+            if (jsonObj["light_auto_mode"].is<bool>()) {
                 settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
             }
-            if (jsonObj.containsKey("light_on_hour") && jsonObj["light_on_hour"].is<int>()) {
+            if (jsonObj["light_on_hour"].is<int>()) {
                 settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
             }
-            if (jsonObj.containsKey("light_off_hour") && jsonObj["light_off_hour"].is<int>()) {
+            if (jsonObj["light_off_hour"].is<int>()) {
                 settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
             }
-            if (jsonObj.containsKey("debug_enabled") && jsonObj["debug_enabled"].is<bool>()) {
+            if (jsonObj["debug_enabled"].is<bool>()) {
                 settingsManager.setDebugEnabled(jsonObj["debug_enabled"].as<bool>());
             }
             
@@ -124,6 +124,7 @@ void WebServer::begin()
                   pump["total_on_time"] = pumpController.getTotalOnTime() / 1000;
                   pump["total_off_time"] = pumpController.getTotalOffTime() / 1000;
                   pump["total_cycles"] = pumpController.getTotalCycles();
+                  pump["time_until_retry"] = pumpController.getTimeUntilRetry() / 1000;
                   
                   // System status
                   JsonObject system = jsonDoc["system"].to<JsonObject>();

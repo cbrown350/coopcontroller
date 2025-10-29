@@ -23,7 +23,7 @@ struct user_settings
     int    light_off_hour;          // Hour to turn off light (24-hour format)
     bool   debug_enabled;           // Enable debug logging for troubleshooting
     int    water_flow_error_timeout_seconds; // Timeout for water flow error detection in seconds (default 120 = 2 minutes)
-    int    pump_error_retry_seconds; // Time to wait before retrying pump after flow error (default 120 = 2 minutes)
+    // int    pump_error_retry_seconds; // Time to wait before retrying pump after flow error (default 120 = 2 minutes)
     
     // WiFi connection settings
     int    wifi_max_retries;        // Maximum number of WiFi connection retries (default 5)

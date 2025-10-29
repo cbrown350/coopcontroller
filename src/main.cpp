@@ -335,7 +335,6 @@ void loop()
         
         // Get temperature status
         float currentTemp = tempSensor.getTemperature1F();
-        bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold();
         
         // Check for water flow errors - only when pump is on and running long enough without flow
         bool hasWaterMeter = tempSensor.hasActiveWaterMeter();
