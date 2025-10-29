@@ -188,7 +188,8 @@ function Status() {
                   </div>
                   <div class="stat-desc">
                     {sensorStatus().pump.state === 'AUTO' ? 'Automatic temperature control' : 
-                     sensorStatus().pump.state === 'ON' ? 'Manual ON' : 'Manual OFF'}
+                     sensorStatus().pump.state === 'ON' ? 'Manual ON' : 
+                     sensorStatus().pump.state === 'ERROR' ? 'Flow Error - Pump Off' : 'Manual OFF'}
                   </div>
                   {error() && (
                     <div class="stat-desc text-error">Error: {error()}</div>
@@ -274,7 +275,16 @@ function Status() {
                 <div class="stat">
                   <div class="stat-title">Pump Configuration</div>
                   <div class="stat-desc text-sm">
-                    Auto Mode: <span class={sensorStatus().system.pump_auto_mode ? 'text-success' : 'text-error'}>
+                    Current Mode: <span class={sensorStatus().pump.state === 'AUTO' ? 'text-success' : 
+                                                     sensorStatus().pump.state === 'ON' ? 'text-success' : 
+                                                     sensorStatus().pump.state === 'ERROR' ? 'text-error' : 'text-warning'}>
+                      {sensorStatus().pump.state === 'AUTO' ? 'Auto Mode' : 
+                       sensorStatus().pump.state === 'ON' ? 'Manual ON' : 
+                       sensorStatus().pump.state === 'ERROR' ? 'Flow Error' : 'Manual OFF'}
+                    </span>
+                  </div>
+                  <div class="stat-desc text-sm">
+                    Auto Mode Setting: <span class={sensorStatus().system.pump_auto_mode ? 'text-success' : 'text-error'}>
                       {sensorStatus().system.pump_auto_mode ? 'Enabled' : 'Disabled'}
                     </span>
                   </div>

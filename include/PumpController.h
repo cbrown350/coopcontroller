@@ -40,6 +40,8 @@ private:
     // Error detection
     unsigned long lastFlowCheckTime;
     bool flowErrorDetected;
+    unsigned long errorStartTime; // When error state started
+    bool waitingForRetry; // Flag to indicate we're waiting to retry after error
     
     // Private methods
     void setPumpState(bool isOn);
@@ -54,7 +56,7 @@ public:
     void begin();
     
     // Main update function - call this in loop()
-    void update(float temperature_f, bool temperature_below_threshold, bool has_flow_error);
+    void update(float temperature_f, bool has_flow_error);
     
     // Control methods
     void turnOn();

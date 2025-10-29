@@ -20,6 +20,7 @@ function Settings() {
   const [lightOffHour, setLightOffHour] = createSignal<number | null>(null);
   const [debugEnabled, setDebugEnabled] = createSignal<boolean | null>(null);
   const [waterFlowErrorTimeoutSeconds, setWaterFlowErrorTimeoutSeconds] = createSignal<number | null>(null);
+  const [pumpErrorRetrySeconds, setPumpErrorRetrySeconds] = createSignal<number | null>(null);
 
   // Load settings from the server and scan for WiFi networks
   onMount(async () => {
@@ -49,6 +50,7 @@ function Settings() {
       setLightOffHour(settings.light_off_hour ?? null)
       setDebugEnabled(settings.debug_enabled ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
+      setPumpErrorRetrySeconds(settings.pump_error_retry_seconds ?? null)
 
       setLoaded(true)
       setError('')
@@ -67,6 +69,12 @@ function Settings() {
       setError('Settings not loaded. Please refresh the page.')
       return
     }
+
+    // Validate temperature thresholds
+    if (!validateThresholds()) {
+      return
+    }
+
     try {
       setSaveSuccess(false)
       setError('')
@@ -82,6 +90,7 @@ function Settings() {
         temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
         temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
         water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
+        pump_error_retry_seconds: pumpErrorRetrySeconds() ?? 120,
         pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
         pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
         pump_auto_mode: pumpAutoMode() ?? true,
@@ -115,6 +124,20 @@ function Settings() {
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
     return `${minutes}m ${remainingSeconds}s`
+  }
+
+  const validateThresholds = () => {
+    if (tempThresholdOnF() !== null && tempThresholdOffF() !== null) {
+      if (tempThresholdOnF()! > tempThresholdOffF()!) {
+        setError('ON threshold must be less than or equal to OFF threshold')
+        return false
+      } else {
+        // Clear error if thresholds are now valid
+        setError('')
+        return true
+      }
+    }
+    return true
   }
 
   return (
@@ -193,7 +216,10 @@ function Settings() {
                   type="number"
                   id="temp_threshold_on_f"
                   value={tempThresholdOnF()!}
-                  onInput={(e) => setTempThresholdOnF(parseFloat(e.target.value))}
+                  onInput={(e) => {
+                    setTempThresholdOnF(parseFloat(e.target.value))
+                    validateThresholds()
+                  }}
                   placeholder="34"
                   step="0.1"
                   min="0"
@@ -220,7 +246,10 @@ function Settings() {
                   type="number"
                   id="temp_threshold_off_f"
                   value={tempThresholdOffF()!}
-                  onInput={(e) => setTempThresholdOffF(parseFloat(e.target.value))}
+                  onInput={(e) => {
+                    setTempThresholdOffF(parseFloat(e.target.value))
+                    validateThresholds()
+                  }}
                   placeholder="36"
                   step="0.1"
                   min="0"
@@ -267,6 +296,34 @@ function Settings() {
               />
             </Show>
             <div class="fieldset-label">Time without water flow before declaring error (default: 120 seconds)</div>
+          </fieldset>
+
+          {/* Pump Error Retry Time */}
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Pump Error Retry Time (seconds)</legend>
+            <Show when={loaded()}>
+              <input
+                type="number"
+                id="pump_error_retry_seconds"
+                value={pumpErrorRetrySeconds()!}
+                onInput={(e) => setPumpErrorRetrySeconds(parseInt(e.target.value))}
+                placeholder="120"
+                step="1"
+                min="10"
+                max="600"
+                class="input"
+              />
+            </Show>
+            <Show when={!loaded()}>
+              <input
+                type="text"
+                value="--"
+                  placeholder="--"
+                disabled
+                class="input input-disabled"
+              />
+            </Show>
+            <div class="fieldset-label">Time to wait before retrying pump after flow error (default: 120 seconds)</div>
           </fieldset>
 
           {/* Pump Settings */}

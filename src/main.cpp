@@ -354,7 +354,6 @@ void loop()
         // Update pump controller with current status
         pumpController.update(
             currentTemp, // Use actual temperature reading
-            tempBelowThreshold,
             flowError
         );
     }

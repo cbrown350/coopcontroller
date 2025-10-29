@@ -23,6 +23,7 @@ struct user_settings
     int    light_off_hour;          // Hour to turn off light (24-hour format)
     bool   debug_enabled;           // Enable debug logging for troubleshooting
     int    water_flow_error_timeout_seconds; // Timeout for water flow error detection in seconds (default 120 = 2 minutes)
+    int    pump_error_retry_seconds; // Time to wait before retrying pump after flow error (default 120 = 2 minutes)
     
     // WiFi connection settings
     int    wifi_max_retries;        // Maximum number of WiFi connection retries (default 5)
@@ -64,6 +65,7 @@ class SettingsManager
     float  getTempThresholdOnF();
     float  getTempThresholdOffF();
     int    getWaterFlowErrorTimeoutSeconds();
+    int    getPumpErrorRetrySeconds();
     int    getPumpOnTimeSeconds();
     int    getPumpOffTimeSeconds();
     bool   getPumpAutoMode();
@@ -87,6 +89,7 @@ class SettingsManager
     void setTempThresholdOnF(float threshold);
     void setTempThresholdOffF(float threshold);
     void setWaterFlowErrorTimeoutSeconds(int timeout);
+    void setPumpErrorRetrySeconds(int seconds);
     void setPumpOnTimeSeconds(int seconds);
     void setPumpOffTimeSeconds(int seconds);
     void setPumpAutoMode(bool enabled);

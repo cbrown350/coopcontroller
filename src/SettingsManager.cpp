@@ -33,6 +33,7 @@ SettingsManager::SettingsManager()
     settings.light_off_hour      = 20;        // Default turn off at 8 PM
     settings.debug_enabled       = false;     // Debug disabled by default
     settings.water_flow_error_timeout_seconds = 120; // Default 2 minutes (120 seconds)
+    settings.pump_error_retry_seconds = 120; // Default 2 minutes (120 seconds)
 }
 
 bool SettingsManager::load()
@@ -78,6 +79,7 @@ bool SettingsManager::load()
     settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 30;
     settings.wifi_ap_duration_minutes = doc["wifi_ap_duration_minutes"] | 10;
     settings.water_flow_error_timeout_seconds = doc["water_flow_error_timeout_seconds"] | 120;
+    settings.pump_error_retry_seconds = doc["pump_error_retry_seconds"] | 120;
 
     isLoaded = true;
     return true;
@@ -166,6 +168,11 @@ int SettingsManager::getWaterFlowErrorTimeoutSeconds()
     return getSettings().water_flow_error_timeout_seconds;
 }
 
+int SettingsManager::getPumpErrorRetrySeconds()
+{
+    return getSettings().pump_error_retry_seconds;
+}
+
 int SettingsManager::getPumpOnTimeSeconds()
 {
     return getSettings().pump_on_time_seconds;
@@ -221,6 +228,13 @@ void SettingsManager::setWaterFlowErrorTimeoutSeconds(int timeout)
     if (!isLoaded)
         load();
     settings.water_flow_error_timeout_seconds = timeout;
+}
+
+void SettingsManager::setPumpErrorRetrySeconds(int seconds)
+{
+    if (!isLoaded)
+        load();
+    settings.pump_error_retry_seconds = seconds;
 }
 
 void SettingsManager::setPumpOnTimeSeconds(int seconds)
@@ -383,6 +397,7 @@ String SettingsManager::toJson(bool includePassword) const
     doc["light_off_hour"] = settings.light_off_hour;
     doc["debug_enabled"] = settings.debug_enabled;
     doc["water_flow_error_timeout_seconds"] = settings.water_flow_error_timeout_seconds;
+    doc["pump_error_retry_seconds"] = settings.pump_error_retry_seconds;
 
     if (includePassword)
     {
