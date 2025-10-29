@@ -19,7 +19,7 @@ SettingsManager::SettingsManager()
     settings.ap_mode             = false;
     settings.ssid                = "";
     settings.passwd              = "";
-    settings.enabled             = false;
+    // settings.enabled             = false;
     settings.has_connected       = false;
     
     // Initialize coop controller settings with defaults
@@ -27,7 +27,7 @@ SettingsManager::SettingsManager()
     settings.temp_threshold_off_f = 35.0;      // Default 36°F to turn OFF
     settings.pump_on_time_seconds = 150;     // Default 2.5 minutes (150 seconds)
     settings.pump_off_time_seconds = 300;    // Default 5 minutes (300 seconds)
-    settings.pump_auto_mode     = true;      // Enable automatic pump control by default
+    // settings.pump_auto_mode     = true;      // Enable automatic pump control by default
     settings.light_auto_mode     = false;     // Disable automatic light control initially
     settings.light_on_hour       = 6;         // Default turn on at 6 AM
     settings.light_off_hour      = 20;        // Default turn off at 8 PM
@@ -60,7 +60,7 @@ bool SettingsManager::load()
     settings.ap_mode             = doc["ap_mode"] | false;
     settings.ssid                = doc["ssid"] | "";
     settings.passwd              = doc["passwd"] | "";
-    settings.enabled             = doc["enabled"] | true;
+    // settings.enabled             = doc["enabled"] | true;
     settings.has_connected       = doc["has_connected"] | false;
     
     // Load coop controller settings with defaults
@@ -68,7 +68,7 @@ bool SettingsManager::load()
     settings.temp_threshold_off_f = doc["temp_threshold_off_f"] | 36.0;
     settings.pump_on_time_seconds = doc["pump_on_time_seconds"] | 150;
     settings.pump_off_time_seconds = doc["pump_off_time_seconds"] | 300;
-    settings.pump_auto_mode     = doc["pump_auto_mode"] | true;
+    // settings.pump_auto_mode     = doc["pump_auto_mode"] | true;
     settings.light_auto_mode     = doc["light_auto_mode"] | false;
     settings.light_on_hour       = doc["light_on_hour"] | 6;
     settings.light_off_hour      = doc["light_off_hour"] | 20;
@@ -142,10 +142,10 @@ bool SettingsManager::isAPMode()
     return getSettings().ap_mode;
 }
 
-bool SettingsManager::getEnabled()
-{
-    return getSettings().enabled;
-}
+// bool SettingsManager::getEnabled()
+// {
+//     return getSettings().enabled;
+// }
 
 bool SettingsManager::getHasConnected()
 {
@@ -183,10 +183,10 @@ int SettingsManager::getPumpOffTimeSeconds()
     return getSettings().pump_off_time_seconds;
 }
 
-bool SettingsManager::getPumpAutoMode()
-{
-    return getSettings().pump_auto_mode;
-}
+// bool SettingsManager::getPumpAutoMode()
+// {
+//     return getSettings().pump_auto_mode;
+// }
 
 bool SettingsManager::getLightAutoMode()
 {
@@ -251,12 +251,12 @@ void SettingsManager::setPumpOffTimeSeconds(int seconds)
     settings.pump_off_time_seconds = seconds;
 }
 
-void SettingsManager::setPumpAutoMode(bool enabled)
-{
-    if (!isLoaded)
-        load();
-    settings.pump_auto_mode = enabled;
-}
+// void SettingsManager::setPumpAutoMode(bool enabled)
+// {
+//     if (!isLoaded)
+//         load();
+//     settings.pump_auto_mode = enabled;
+// }
 
 void SettingsManager::setLightAutoMode(bool enabled)
 {
@@ -360,13 +360,13 @@ void SettingsManager::setAPMode(bool apMode)
     }
 }
 
-void SettingsManager::setEnabled(bool enabled)
-{
-    if (!isLoaded)
-        load();
-    settings.enabled = enabled;
-    // Don't request restart for enabled setting
-}
+// void SettingsManager::setEnabled(bool enabled)
+// {
+//     if (!isLoaded)
+//         load();
+//     settings.enabled = enabled;
+//     // Don't request restart for enabled setting
+// }
 
 void SettingsManager::setHasConnected(bool hasConnected)
 {
@@ -383,7 +383,7 @@ String SettingsManager::toJson(bool includePassword) const
 
     doc["ap_mode"]             = settings.ap_mode;
     doc["ssid"]                = settings.ssid;
-    doc["enabled"]             = settings.enabled;
+    // doc["enabled"]             = settings.enabled;
     doc["has_connected"]       = settings.has_connected;
     
     // Coop controller settings
@@ -391,7 +391,7 @@ String SettingsManager::toJson(bool includePassword) const
     doc["temp_threshold_off_f"] = settings.temp_threshold_off_f;
     doc["pump_on_time_seconds"] = settings.pump_on_time_seconds;
     doc["pump_off_time_seconds"] = settings.pump_off_time_seconds;
-    doc["pump_auto_mode"] = settings.pump_auto_mode;
+    // doc["pump_auto_mode"] = settings.pump_auto_mode;
     doc["light_auto_mode"] = settings.light_auto_mode;
     doc["light_on_hour"] = settings.light_on_hour;
     doc["light_off_hour"] = settings.light_off_hour;

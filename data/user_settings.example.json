@@ -2,5 +2,7 @@
   "ssid": "",
   "passwd": "",
   "ap_mode": false,
-  "enabled": false
+  "enabled": false,
+  "timeout": 2000,
+  "pump_auto_mode": true
 }

@@ -14,7 +14,7 @@ function Settings() {
   const [tempThresholdOffF, setTempThresholdOffF] = createSignal<number | null>(null);
   const [pumpOnTimeSeconds, setPumpOnTimeSeconds] = createSignal<number | null>(null);
   const [pumpOffTimeSeconds, setPumpOffTimeSeconds] = createSignal<number | null>(null);
-  const [pumpAutoMode, setPumpAutoMode] = createSignal<boolean | null>(null);
+  // const [pumpAutoMode, setPumpAutoMode] = createSignal<boolean | null>(null);
   const [lightAutoMode, setLightAutoMode] = createSignal<boolean | null>(null);
   const [lightOnHour, setLightOnHour] = createSignal<number | null>(null);
   const [lightOffHour, setLightOffHour] = createSignal<number | null>(null);
@@ -44,7 +44,7 @@ function Settings() {
       setTempThresholdOffF(settings.temp_threshold_off_f ?? null)
       setPumpOnTimeSeconds(settings.pump_on_time_seconds ?? null)
       setPumpOffTimeSeconds(settings.pump_off_time_seconds ?? null)
-      setPumpAutoMode(settings.pump_auto_mode ?? null)
+      // setPumpAutoMode(settings.pump_auto_mode ?? null)
       setLightAutoMode(settings.light_auto_mode ?? null)
       setLightOnHour(settings.light_on_hour ?? null)
       setLightOffHour(settings.light_off_hour ?? null)
@@ -93,7 +93,7 @@ function Settings() {
         // pump_error_retry_seconds: pumpErrorRetrySeconds() ?? 120,
         pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
         pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
-        pump_auto_mode: pumpAutoMode() ?? true,
+        // pump_auto_mode: pumpAutoMode() ?? true,
         light_auto_mode: lightAutoMode() ?? false,
         light_on_hour: lightOnHour() ?? 6,
         light_off_hour: lightOffHour() ?? 20,
@@ -381,7 +381,7 @@ function Settings() {
             </fieldset>
           </div>
 
-          {/* Auto Mode Settings */}
+          {/* Auto Mode Settings
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <fieldset class="fieldset">
               <legend class="fieldset-legend">Pump Auto Mode</legend>
@@ -414,7 +414,7 @@ function Settings() {
                 <span class="label-text">Enable automatic light control (future feature)</span>
               </label>
             </fieldset>
-          </div>
+          </div> */}
 
           {/* Light Schedule */}
           <Show when={lightAutoMode()}>

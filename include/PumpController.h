@@ -13,7 +13,7 @@ enum PumpState {
 
 // Pump status structure
 struct PumpStatus {
-    PumpState state;
+    PumpState state = PUMP_AUTO;
     bool is_active;
     unsigned long last_switch_time;
     unsigned long current_cycle_start;

@@ -63,9 +63,9 @@ void WebServer::begin()
             if (jsonObj["pump_off_time_seconds"].is<int>()) {
                 settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
             }
-            if (jsonObj["pump_auto_mode"].is<bool>()) {
-                settingsManager.setPumpAutoMode(jsonObj["pump_auto_mode"].as<bool>());
-            }
+            // if (jsonObj["pump_auto_mode"].is<bool>()) {
+            //     settingsManager.setPumpAutoMode(jsonObj["pump_auto_mode"].as<bool>());
+            // }
             if (jsonObj["light_auto_mode"].is<bool>()) {
                 settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
             }
@@ -132,7 +132,7 @@ void WebServer::begin()
                   system["temp_threshold_off_f"] = settingsManager.getTempThresholdOffF();
                   system["pump_on_time_seconds"] = settingsManager.getPumpOnTimeSeconds();
                   system["pump_off_time_seconds"] = settingsManager.getPumpOffTimeSeconds();
-                  system["pump_auto_mode"] = settingsManager.getPumpAutoMode();
+                //   system["pump_auto_mode"] = settingsManager.getPumpAutoMode();
                   system["light_auto_mode"] = settingsManager.getLightAutoMode();
                   system["light_on_hour"] = settingsManager.getLightOnHour();
                   system["light_off_hour"] = settingsManager.getLightOffHour();

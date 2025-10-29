@@ -358,16 +358,16 @@ void loop()
     }
 
     // Set pump auto mode based on settings (only when it changes)
-    static bool lastPumpAutoMode = false;
-    bool currentPumpAutoMode = settingsManager.getPumpAutoMode();
-    if (currentPumpAutoMode != lastPumpAutoMode) {
-        if (currentPumpAutoMode) {
-            pumpController.setAutoMode(true);
-        } else {
-            pumpController.turnOff();
-        }
-        lastPumpAutoMode = currentPumpAutoMode;
-    }
+    // static bool lastPumpAutoMode = false;
+    // bool currentPumpAutoMode = settingsManager.getPumpAutoMode();
+    // if (currentPumpAutoMode != lastPumpAutoMode) {
+    //     if (currentPumpAutoMode) {
+    //         pumpController.setAutoMode(true);
+    //     } else {
+    //         pumpController.turnOff();
+    //     }
+    //     lastPumpAutoMode = currentPumpAutoMode;
+    // }
     
     // Log sensor readings periodically
     static unsigned long lastSensorLog = 0;

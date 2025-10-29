@@ -17,7 +17,7 @@ struct user_settings
     float  temp_threshold_off_f;    // Temperature threshold to turn OFF pump in Fahrenheit (default 36F)
     int    pump_on_time_seconds;    // Pump ON time in seconds (default 150)
     int    pump_off_time_seconds;   // Pump OFF time in seconds (default 300)
-    bool   pump_auto_mode;          // Enable automatic pump control based on temperature
+    // bool   pump_auto_mode;          // Enable automatic pump control based on temperature
     bool   light_auto_mode;         // Enable automatic light control (future feature)
     int    light_on_hour;           // Hour to turn on light (24-hour format)
     int    light_off_hour;          // Hour to turn off light (24-hour format)
@@ -58,7 +58,7 @@ class SettingsManager
     String getSSID();
     String getPassword();
     bool   isAPMode();
-    bool   getEnabled();
+    // bool   getEnabled();
     bool   getHasConnected();
     
     // Coop Controller getters
@@ -82,7 +82,7 @@ class SettingsManager
     void setSSID(const String &ssid);
     void setPassword(const String &password);
     void setAPMode(bool apMode);
-    void setEnabled(bool enabled);
+    // void setEnabled(bool enabled);
     void setHasConnected(bool hasConnected);
     
     // Coop Controller setters

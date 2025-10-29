@@ -19,7 +19,7 @@ const mockSettings = {
   temp_threshold_off_f: 36.0,     // Temperature to turn pump OFF
   pump_on_time_seconds: 150,       
   pump_off_time_seconds: 300,      
-  pump_auto_mode: true,            // Auto mode enabled
+  // pump_auto_mode: true,            // Auto mode enabled
   light_auto_mode: false,           // Light auto mode disabled
   light_on_hour: 6,               // Light on at 6 AM
   light_off_hour: 20,              // Light off at 8 PM
@@ -331,7 +331,7 @@ const getSensorStatus = () => ({
     temp_threshold_off_f: mockSettings.temp_threshold_off_f,
     pump_on_time_seconds: mockSettings.pump_on_time_seconds,
     pump_off_time_seconds: mockSettings.pump_off_time_seconds,
-    pump_auto_mode: mockSettings.pump_auto_mode,
+    // pump_auto_mode: mockSettings.pump_auto_mode,
     light_auto_mode: mockSettings.light_auto_mode,
     light_on_hour: mockSettings.light_on_hour,
     light_off_hour: mockSettings.light_off_hour
@@ -386,9 +386,9 @@ async function createServer() {
       if (settings.pump_off_time_seconds !== undefined) {
         mockSettings.pump_off_time_seconds = settings.pump_off_time_seconds;
       }
-      if (settings.pump_auto_mode !== undefined) {
-        mockSettings.pump_auto_mode = settings.pump_auto_mode;
-      }
+      // if (settings.pump_auto_mode !== undefined) {
+      //   mockSettings.pump_auto_mode = settings.pump_auto_mode;
+      // }
       if (settings.light_auto_mode !== undefined) {
         mockSettings.light_auto_mode = settings.light_auto_mode;
       }

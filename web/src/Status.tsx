@@ -38,7 +38,7 @@ function Status() {
       temp_threshold_off_f: 36,
       pump_on_time_seconds: 300,
       pump_off_time_seconds: 600,
-      pump_auto_mode: true,
+      // pump_auto_mode: true,
       light_auto_mode: false,
       light_on_hour: 6,
       light_off_hour: 20
@@ -295,11 +295,11 @@ function Status() {
                        sensorStatus().pump.state === 'ERROR' ? 'Flow Error' : 'Manual OFF'}
                     </span>
                   </div>
-                  <div class="stat-desc text-sm">
+                  {/* <div class="stat-desc text-sm">
                     Auto Mode Setting: <span class={sensorStatus().system.pump_auto_mode ? 'text-success' : 'text-error'}>
                       {sensorStatus().system.pump_auto_mode ? 'Enabled' : 'Disabled'}
                     </span>
-                  </div>
+                  </div> */}
                   <div class="stat-desc text-sm">
                     On Time: {formatTime(sensorStatus().system.pump_on_time_seconds)}
                   </div>
