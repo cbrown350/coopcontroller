@@ -13,12 +13,14 @@ PumpController::PumpController(int pin) : pumpPin(pin) {
     status.temperature_below_threshold = false;
     status.flow_error = false;
     status.total_on_time = 0;
+    status.total_off_time = 0;
     status.total_cycles = 0;
     
     // Initialize timing variables
     lastUpdateTime = 0;
     cycleStartTime = 0;
     currentlyInOnPhase = false;
+    offPhaseStartTime = 0;
     
     // Initialize error detection
     lastFlowCheckTime = 0;
@@ -114,6 +116,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                 if (cycleElapsed >= onTime) {
                     // Switch to off phase
                     currentlyInOnPhase = false;
+                    offPhaseStartTime = currentTime;
                     setPumpState(false);
                     logger.logf("Pump cycle: switching to OFF phase for %d seconds", settingsManager.getPumpOffTimeSeconds());
                 } else if (settingsManager.getDebugEnabled() && (cycleElapsed % 10000 < 1000)) {
@@ -202,6 +205,9 @@ void PumpController::updateStatistics() {
     if (status.is_active && status.current_cycle_start > 0) {
         // Update total on time
         status.total_on_time = millis() - status.current_cycle_start;
+    } else if (!status.is_active && offPhaseStartTime > 0) {
+        // Update total off time when in off phase
+        status.total_off_time = millis() - offPhaseStartTime;
     }
 }
 
@@ -213,6 +219,8 @@ void PumpController::turnOn() {
 void PumpController::turnOff() {
     status.state = PUMP_OFF;
     cycleStartTime = 0; // Reset any auto cycle
+    currentlyInOnPhase = false;
+    setPumpState(false); // Force pump off immediately
     logger.log("Pump set to manual OFF mode");
 }
 
@@ -261,12 +269,12 @@ unsigned long PumpController::getTimeUntilNextSwitch() const {
 }
 
 String PumpController::getStateString() const {
-    switch (status.state) {
-        case PUMP_OFF: return "OFF";
-        case PUMP_ON: return "ON";
-        case PUMP_AUTO: return "AUTO";
-        case PUMP_ERROR: return "ERROR";
-        default: return "UNKNOWN";
+    // Show actual pump state (ON/OFF) even when there's a flow error
+    // The error condition is indicated separately in the UI
+    if (status.is_active) {
+        return "ON";
+    } else {
+        return "OFF";
     }
 }
 
@@ -280,6 +288,7 @@ String PumpController::getStatusJson() const {
     json += "\"current_cycle_time\":" + String(getCurrentCycleTime() / 1000) + ",";
     json += "\"time_until_next_switch\":" + String(getTimeUntilNextSwitch() / 1000) + ",";
     json += "\"total_on_time\":" + String(status.total_on_time / 1000) + ",";
+    json += "\"total_off_time\":" + String(status.total_off_time / 1000) + ",";
     json += "\"total_cycles\":" + String(status.total_cycles);
     json += "}";
     return json;

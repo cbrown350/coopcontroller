@@ -22,6 +22,7 @@ struct PumpStatus {
     bool temperature_below_threshold;
     bool flow_error;
     unsigned long total_on_time;
+    unsigned long total_off_time;
     unsigned long total_cycles;
 };
 
@@ -34,6 +35,7 @@ private:
     unsigned long lastUpdateTime;
     unsigned long cycleStartTime;
     bool currentlyInOnPhase;
+    unsigned long offPhaseStartTime;
     
     // Error detection
     unsigned long lastFlowCheckTime;
@@ -69,6 +71,7 @@ public:
     
     // Statistics
     unsigned long getTotalOnTime() const { return status.total_on_time; }
+    unsigned long getTotalOffTime() const { return status.total_off_time; }
     unsigned long getTotalCycles() const { return status.total_cycles; }
     unsigned long getCurrentCycleTime() const;
     unsigned long getTimeUntilNextSwitch() const;

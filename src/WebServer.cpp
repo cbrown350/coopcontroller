@@ -41,8 +41,14 @@ void WebServer::begin()
             settingsManager.setEnabled(jsonObj["enabled"].as<bool>());
             
             // Handle coop controller settings
-            if (jsonObj["temp_threshold_f"].is<float>()) {
-                settingsManager.setTempThresholdF(jsonObj["temp_threshold_f"].as<float>());
+            if (jsonObj["temp_threshold_on_f"].is<float>()) {
+                settingsManager.setTempThresholdOnF(jsonObj["temp_threshold_on_f"].as<float>());
+            }
+            if (jsonObj["temp_threshold_off_f"].is<float>()) {
+                settingsManager.setTempThresholdOffF(jsonObj["temp_threshold_off_f"].as<float>());
+            }
+            if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
+                settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
             }
             if (jsonObj["pump_on_time_seconds"].is<int>()) {
                 settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
@@ -102,16 +108,18 @@ void WebServer::begin()
                   pump["state"] = pumpController.getStateString();
                   pump["is_active"] = pumpController.isPumpOn();
                   pump["temperature_f"] = pumpController.getCurrentTemperature();
-                  pump["temperature_below_threshold"] = tempSensor.isTemperatureBelowThreshold(settingsManager.getTempThresholdF());
+                  pump["temperature_below_threshold"] = tempSensor.isTemperatureBelowThreshold();
                   pump["flow_error"] = pumpController.hasFlowError();
                   pump["current_cycle_time"] = pumpController.getCurrentCycleTime() / 1000;
                   pump["time_until_next_switch"] = pumpController.getTimeUntilNextSwitch() / 1000;
                   pump["total_on_time"] = pumpController.getTotalOnTime() / 1000;
+                  pump["total_off_time"] = pumpController.getTotalOffTime() / 1000;
                   pump["total_cycles"] = pumpController.getTotalCycles();
                   
                   // System status
                   JsonObject system = jsonDoc["system"].to<JsonObject>();
-                  system["temp_threshold_f"] = settingsManager.getTempThresholdF();
+                  system["temp_threshold_on_f"] = settingsManager.getTempThresholdOnF();
+                  system["temp_threshold_off_f"] = settingsManager.getTempThresholdOffF();
                   system["pump_on_time_seconds"] = settingsManager.getPumpOnTimeSeconds();
                   system["pump_off_time_seconds"] = settingsManager.getPumpOffTimeSeconds();
                   system["pump_auto_mode"] = settingsManager.getPumpAutoMode();
@@ -119,6 +127,7 @@ void WebServer::begin()
                   system["light_on_hour"] = settingsManager.getLightOnHour();
                   system["light_off_hour"] = settingsManager.getLightOffHour();
                   system["debug_enabled"] = settingsManager.getDebugEnabled();
+                  system["water_flow_error_timeout_seconds"] = settingsManager.getWaterFlowErrorTimeoutSeconds();
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);

@@ -1,20 +1,5 @@
 import { createSignal, onMount, onCleanup, Show } from 'solid-js'
 
-// Sensor type mapping
-const SENSOR_TYPE_MAP = {
-  0: 'None',
-  1: 'Dallas Temperature',
-  2: 'Water Meter'
-}
-
-// Pump state mapping
-const PUMP_STATE_MAP = {
-  'OFF': 'Off',
-  'ON': 'On',
-  'AUTO': 'Auto',
-  'ERROR': 'Error'
-}
-
 function Status() {
 
   const [loading, setLoading] = createSignal(true)
@@ -44,10 +29,12 @@ function Status() {
       current_cycle_time: 0,
       time_until_next_switch: 0,
       total_on_time: 0,
+      total_off_time: 0,
       total_cycles: 0
     },
     system: {
-      temp_threshold_f: 34,
+      temp_threshold_on_f: 34,
+      temp_threshold_off_f: 36,
       pump_on_time_seconds: 300,
       pump_off_time_seconds: 600,
       pump_auto_mode: true,
@@ -56,12 +43,22 @@ function Status() {
       light_off_hour: 20
     }
   })
+  const [error, setError] = createSignal('')
 
   const refreshSensorStatus = async () => {
-    const response = await fetch('/sensor_status')
-    const data = await response.json()
-    setSensorStatus(data)
-    setLoading(false)
+    try {
+      const response = await fetch('/sensor_status')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`)
+      }
+      const data = await response.json()
+      setSensorStatus(data)
+      setLoading(false)
+    } catch (err: any) {
+      console.error('Failed to fetch sensor status:', err)
+      setError(`Error loading sensor status: ${err.message || 'Unknown error'}`)
+      setLoading(false)
+    }
   }
 
   const handlePumpControl = async (action: string) => {
@@ -102,7 +99,7 @@ function Status() {
       clearInterval(intervalId)
     })
   })
- 
+
   return (
     <div>
       {loading() ? (
@@ -118,7 +115,8 @@ function Status() {
                 <div class="stat">
                   <div class="stat-title">Sensor 1</div>
                   <div class="stat-value text-sm">
-                    {SENSOR_TYPE_MAP[sensorStatus().sensor1.type as keyof typeof SENSOR_TYPE_MAP]}
+                    {sensorStatus().sensor1.type === 1 ? 'Dallas Temperature' : 
+                     sensorStatus().sensor1.type === 2 ? 'Water Meter' : 'None'}
                   </div>
                   <div class="stat-desc text-xs">
                     Status: {sensorStatus().sensor1.status}
@@ -148,7 +146,8 @@ function Status() {
                 <div class="stat">
                   <div class="stat-title">Sensor 2</div>
                   <div class="stat-value text-sm">
-                    {SENSOR_TYPE_MAP[sensorStatus().sensor2.type as keyof typeof SENSOR_TYPE_MAP]}
+                    {sensorStatus().sensor2.type === 1 ? 'Dallas Temperature' : 
+                     sensorStatus().sensor2.type === 2 ? 'Water Meter' : 'None'}
                   </div>
                   <div class="stat-desc text-xs">
                     Status: {sensorStatus().sensor2.status}
@@ -184,9 +183,16 @@ function Status() {
               <div class="stats w-full shadow bg-base-300">
                 <div class="stat">
                   <div class="stat-title">Pump State</div>
-                  <div class={`stat-value ${sensorStatus().pump.flow_error ? 'text-error' : sensorStatus().pump.is_active ? 'text-success' : 'text-warning'}`}>
-                    {PUMP_STATE_MAP[sensorStatus().pump.state as keyof typeof PUMP_STATE_MAP]}
+                  <div class={`stat-value text-lg ${sensorStatus().pump.flow_error ? 'text-error' : sensorStatus().pump.is_active ? 'text-success' : 'text-warning'}`}>
+                    {sensorStatus().pump.state === 'AUTO' ? 'AUTO' : sensorStatus().pump.state === 'ON' ? 'ON' : 'OFF'}
                   </div>
+                  <div class="stat-desc">
+                    {sensorStatus().pump.state === 'AUTO' ? 'Automatic temperature control' : 
+                     sensorStatus().pump.state === 'ON' ? 'Manual ON' : 'Manual OFF'}
+                  </div>
+                  {error() && (
+                    <div class="stat-desc text-error">Error: {error()}</div>
+                  )}
                   <Show when={sensorStatus().pump.flow_error}>
                     <div class="stat-desc text-error">Flow Error Detected!</div>
                   </Show>
@@ -198,7 +204,10 @@ function Status() {
                     {sensorStatus().pump.temperature_f.toFixed(1)}°F
                   </div>
                   <div class="stat-desc">
-                    Threshold: {sensorStatus().system.temp_threshold_f.toFixed(1)}°F
+                    ON Threshold: {sensorStatus().system.temp_threshold_on_f.toFixed(1)}°F
+                  </div>
+                  <div class="stat-desc">
+                    OFF Threshold: {sensorStatus().system.temp_threshold_off_f.toFixed(1)}°F
                   </div>
                 </div>
 
@@ -284,6 +293,9 @@ function Status() {
                   </div>
                   <div class="stat-desc text-sm">
                     Total On Time: {formatTime(sensorStatus().pump.total_on_time)}
+                  </div>
+                  <div class="stat-desc text-sm">
+                    Total Off Time: {formatTime(sensorStatus().pump.total_off_time)}
                   </div>
                   <button 
                     class="btn btn-xs btn-outline mt-2"

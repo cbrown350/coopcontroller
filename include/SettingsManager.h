@@ -13,14 +13,16 @@ struct user_settings
     bool   has_connected;
     
     // Coop Controller specific settings
-    float  temp_threshold_f;        // Temperature threshold in Fahrenheit (default 34F)
-    int    pump_on_time_seconds;    // Pump ON time in seconds (default 300 = 5 minutes)
-    int    pump_off_time_seconds;   // Pump OFF time in seconds (default 600 = 10 minutes)
+    float  temp_threshold_on_f;     // Temperature threshold to turn ON pump in Fahrenheit (default 34F)
+    float  temp_threshold_off_f;    // Temperature threshold to turn OFF pump in Fahrenheit (default 36F)
+    int    pump_on_time_seconds;    // Pump ON time in seconds (default 150)
+    int    pump_off_time_seconds;   // Pump OFF time in seconds (default 300)
     bool   pump_auto_mode;          // Enable automatic pump control based on temperature
     bool   light_auto_mode;         // Enable automatic light control (future feature)
     int    light_on_hour;           // Hour to turn on light (24-hour format)
     int    light_off_hour;          // Hour to turn off light (24-hour format)
     bool   debug_enabled;           // Enable debug logging for troubleshooting
+    int    water_flow_error_timeout_seconds; // Timeout for water flow error detection in seconds (default 120 = 2 minutes)
     
     // WiFi connection settings
     int    wifi_max_retries;        // Maximum number of WiFi connection retries (default 5)
@@ -59,7 +61,9 @@ class SettingsManager
     bool   getHasConnected();
     
     // Coop Controller getters
-    float  getTempThresholdF();
+    float  getTempThresholdOnF();
+    float  getTempThresholdOffF();
+    int    getWaterFlowErrorTimeoutSeconds();
     int    getPumpOnTimeSeconds();
     int    getPumpOffTimeSeconds();
     bool   getPumpAutoMode();
@@ -80,7 +84,9 @@ class SettingsManager
     void setHasConnected(bool hasConnected);
     
     // Coop Controller setters
-    void setTempThresholdF(float threshold);
+    void setTempThresholdOnF(float threshold);
+    void setTempThresholdOffF(float threshold);
+    void setWaterFlowErrorTimeoutSeconds(int timeout);
     void setPumpOnTimeSeconds(int seconds);
     void setPumpOffTimeSeconds(int seconds);
     void setPumpAutoMode(bool enabled);

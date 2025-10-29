@@ -261,15 +261,15 @@ void TempSensor::calculateFlowRate(SensorData& sensor) {
     
     // Calculate flow rate every minute
     if (currentTime - sensor.last_reading_time >= FLOW_CALCULATION_INTERVAL) {
-        // Simple flow rate calculation based on pulses in the last minute
-        static unsigned long lastPulseCount1 = 0;
-        static unsigned long lastPulseCount2 = 0;
-        
+        // Calculate pulses in the last minute
         unsigned long pulseDelta;
+        
         if (&sensor == &sensor1) {
+            static unsigned long lastPulseCount1 = 0;
             pulseDelta = sensor.pulse_count - lastPulseCount1;
             lastPulseCount1 = sensor.pulse_count;
         } else {
+            static unsigned long lastPulseCount2 = 0;
             pulseDelta = sensor.pulse_count - lastPulseCount2;
             lastPulseCount2 = sensor.pulse_count;
         }
@@ -298,21 +298,40 @@ float TempSensor::celsiusToFahrenheit(float celsius) const {
     return (celsius * 9.0f / 5.0f) + 32.0f;
 }
 
-bool TempSensor::isTemperatureBelowThreshold(float threshold_f) const {
-    // Check if any temperature sensor is below threshold
+bool TempSensor::isTemperatureBelowThreshold() const {
+    float onThreshold = settingsManager.getTempThresholdOnF();
+    float offThreshold = settingsManager.getTempThresholdOffF();
+    
+    // Check if any temperature sensor is below the ON threshold
+    bool anySensorBelowOnThreshold = false;
     if (sensor1.type == SENSOR_TYPE_DALLAS_TEMP && sensor1.is_connected) {
-        if (sensor1.temperature_f < threshold_f) {
-            return true;
+        if (sensor1.temperature_f < onThreshold) {
+            anySensorBelowOnThreshold = true;
         }
     }
     
     if (sensor2.type == SENSOR_TYPE_DALLAS_TEMP && sensor2.is_connected) {
-        if (sensor2.temperature_f < threshold_f) {
-            return true;
+        if (sensor2.temperature_f < onThreshold) {
+            anySensorBelowOnThreshold = true;
         }
     }
     
-    return false;
+    // Check if any temperature sensor is above the OFF threshold
+    bool anySensorAboveOffThreshold = false;
+    if (sensor1.type == SENSOR_TYPE_DALLAS_TEMP && sensor1.is_connected) {
+        if (sensor1.temperature_f > offThreshold) {
+            anySensorAboveOffThreshold = true;
+        }
+    }
+    
+    if (sensor2.type == SENSOR_TYPE_DALLAS_TEMP && sensor2.is_connected) {
+        if (sensor2.temperature_f > offThreshold) {
+            anySensorAboveOffThreshold = true;
+        }
+    }
+    
+    // Return true if any sensor is below ON threshold AND no sensor is above OFF threshold
+    return anySensorBelowOnThreshold && !anySensorAboveOffThreshold;
 }
 
 void TempSensor::resetPulseCount(int sensorNum) {
@@ -349,12 +368,14 @@ bool TempSensor::hasWaterFlowError(int sensorNum) const {
         return false;
     }
     
-    // Check if there's been no pulse activity for 2 minutes
+    // Check if there's been no pulse activity for the configured timeout period
     unsigned long currentTime = millis();
-    if (currentTime - sensor->last_pulse_time > 120000) { // 2 minutes
+    int timeoutSeconds = settingsManager.getWaterFlowErrorTimeoutSeconds();
+    unsigned long timeoutMs = (unsigned long)timeoutSeconds * 1000;
+    if (currentTime - sensor->last_pulse_time > timeoutMs) {
         if (settingsManager.getDebugEnabled()) {
-            Serial.printf("DEBUG: Water flow error detected on sensor %d - no flow for %lu ms\n", 
-                       sensorNum, currentTime - sensor->last_pulse_time);
+            Serial.printf("DEBUG: Water flow error detected on sensor %d - no flow for %lu ms (timeout: %d seconds)\n", 
+                       sensorNum, currentTime - sensor->last_pulse_time, timeoutSeconds);
         }
         return true;
     }

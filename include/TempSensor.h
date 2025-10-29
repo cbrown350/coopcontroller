@@ -75,7 +75,7 @@ public:
     
     // Utility methods
     float celsiusToFahrenheit(float celsius) const;
-    bool isTemperatureBelowThreshold(float threshold_f) const;
+    bool isTemperatureBelowThreshold() const;
     void resetPulseCount(int sensor);
     
     // Status methods

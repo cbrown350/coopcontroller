@@ -23,19 +23,16 @@ SettingsManager::SettingsManager()
     settings.has_connected       = false;
     
     // Initialize coop controller settings with defaults
-    settings.temp_threshold_f    = 34.0;      // Default 34°F
-    settings.pump_on_time_seconds = 300;     // Default 5 minutes (300 seconds)
-    settings.pump_off_time_seconds = 600;    // Default 10 minutes (600 seconds)
+    settings.temp_threshold_on_f  = 33.0;      // Default 34°F to turn ON
+    settings.temp_threshold_off_f = 35.0;      // Default 36°F to turn OFF
+    settings.pump_on_time_seconds = 150;     // Default 2.5 minutes (150 seconds)
+    settings.pump_off_time_seconds = 300;    // Default 5 minutes (300 seconds)
     settings.pump_auto_mode     = true;      // Enable automatic pump control by default
     settings.light_auto_mode     = false;     // Disable automatic light control initially
     settings.light_on_hour       = 6;         // Default turn on at 6 AM
     settings.light_off_hour      = 20;        // Default turn off at 8 PM
     settings.debug_enabled       = false;     // Debug disabled by default
-    
-    // Initialize WiFi connection settings with defaults
-    settings.wifi_max_retries = 5;          // Default 5 retries
-    settings.wifi_retry_delay_seconds = 30;   // Default 30 seconds between retries
-    settings.wifi_ap_duration_minutes = 10;   // Default 10 minutes in AP mode
+    settings.water_flow_error_timeout_seconds = 120; // Default 2 minutes (120 seconds)
 }
 
 bool SettingsManager::load()
@@ -66,9 +63,10 @@ bool SettingsManager::load()
     settings.has_connected       = doc["has_connected"] | false;
     
     // Load coop controller settings with defaults
-    settings.temp_threshold_f    = doc["temp_threshold_f"] | 34.0;
-    settings.pump_on_time_seconds = doc["pump_on_time_seconds"] | 300;
-    settings.pump_off_time_seconds = doc["pump_off_time_seconds"] | 600;
+    settings.temp_threshold_on_f  = doc["temp_threshold_on_f"] | 34.0;
+    settings.temp_threshold_off_f = doc["temp_threshold_off_f"] | 36.0;
+    settings.pump_on_time_seconds = doc["pump_on_time_seconds"] | 150;
+    settings.pump_off_time_seconds = doc["pump_off_time_seconds"] | 300;
     settings.pump_auto_mode     = doc["pump_auto_mode"] | true;
     settings.light_auto_mode     = doc["light_auto_mode"] | false;
     settings.light_on_hour       = doc["light_on_hour"] | 6;
@@ -79,6 +77,7 @@ bool SettingsManager::load()
     settings.wifi_max_retries = doc["wifi_max_retries"] | 5;
     settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 30;
     settings.wifi_ap_duration_minutes = doc["wifi_ap_duration_minutes"] | 10;
+    settings.water_flow_error_timeout_seconds = doc["water_flow_error_timeout_seconds"] | 120;
 
     isLoaded = true;
     return true;
@@ -152,9 +151,19 @@ bool SettingsManager::getHasConnected()
 }
 
 // Coop Controller getters
-float SettingsManager::getTempThresholdF()
+float SettingsManager::getTempThresholdOnF()
 {
-    return getSettings().temp_threshold_f;
+    return getSettings().temp_threshold_on_f;
+}
+
+float SettingsManager::getTempThresholdOffF()
+{
+    return getSettings().temp_threshold_off_f;
+}
+
+int SettingsManager::getWaterFlowErrorTimeoutSeconds()
+{
+    return getSettings().water_flow_error_timeout_seconds;
 }
 
 int SettingsManager::getPumpOnTimeSeconds()
@@ -192,11 +201,26 @@ bool SettingsManager::getDebugEnabled()
     return getSettings().debug_enabled;
 }
 
-void SettingsManager::setTempThresholdF(float threshold)
+// Coop Controller setters - don't request restart for these
+void SettingsManager::setTempThresholdOnF(float threshold)
 {
     if (!isLoaded)
         load();
-    settings.temp_threshold_f = threshold;
+    settings.temp_threshold_on_f = threshold;
+}
+
+void SettingsManager::setTempThresholdOffF(float threshold)
+{
+    if (!isLoaded)
+        load();
+    settings.temp_threshold_off_f = threshold;
+}
+
+void SettingsManager::setWaterFlowErrorTimeoutSeconds(int timeout)
+{
+    if (!isLoaded)
+        load();
+    settings.water_flow_error_timeout_seconds = timeout;
 }
 
 void SettingsManager::setPumpOnTimeSeconds(int seconds)
@@ -264,12 +288,13 @@ int SettingsManager::getWifiAPDurationMinutes()
     return getSettings().wifi_ap_duration_minutes;
 }
 
-// WiFi connection settings setters
+// WiFi connection settings setters - request restart for these
 void SettingsManager::setWifiMaxRetries(int retries)
 {
     if (!isLoaded)
         load();
     settings.wifi_max_retries = retries;
+    wifiChanged = true;
 }
 
 void SettingsManager::setWifiRetryDelaySeconds(int seconds)
@@ -277,6 +302,7 @@ void SettingsManager::setWifiRetryDelaySeconds(int seconds)
     if (!isLoaded)
         load();
     settings.wifi_retry_delay_seconds = seconds;
+    wifiChanged = true;
 }
 
 void SettingsManager::setWifiAPDurationMinutes(int minutes)
@@ -284,6 +310,7 @@ void SettingsManager::setWifiAPDurationMinutes(int minutes)
     if (!isLoaded)
         load();
     settings.wifi_ap_duration_minutes = minutes;
+    wifiChanged = true;
 }
 
 void SettingsManager::setSSID(const String &ssid)
@@ -324,6 +351,7 @@ void SettingsManager::setEnabled(bool enabled)
     if (!isLoaded)
         load();
     settings.enabled = enabled;
+    // Don't request restart for enabled setting
 }
 
 void SettingsManager::setHasConnected(bool hasConnected)
@@ -331,6 +359,7 @@ void SettingsManager::setHasConnected(bool hasConnected)
     if (!isLoaded)
         load();
     settings.has_connected = hasConnected;
+    // Don't request restart for has_connected setting
 }
 
 String SettingsManager::toJson(bool includePassword) const
@@ -344,19 +373,16 @@ String SettingsManager::toJson(bool includePassword) const
     doc["has_connected"]       = settings.has_connected;
     
     // Coop controller settings
-    doc["temp_threshold_f"]    = settings.temp_threshold_f;
+    doc["temp_threshold_on_f"] = settings.temp_threshold_on_f;
+    doc["temp_threshold_off_f"] = settings.temp_threshold_off_f;
     doc["pump_on_time_seconds"] = settings.pump_on_time_seconds;
     doc["pump_off_time_seconds"] = settings.pump_off_time_seconds;
-    doc["pump_auto_mode"]     = settings.pump_auto_mode;
-    doc["light_auto_mode"]     = settings.light_auto_mode;
-    doc["light_on_hour"]       = settings.light_on_hour;
-    doc["light_off_hour"]      = settings.light_off_hour;
-    doc["debug_enabled"]       = settings.debug_enabled;
-    
-    // WiFi connection settings
-    doc["wifi_max_retries"] = settings.wifi_max_retries;
-    doc["wifi_retry_delay_seconds"] = settings.wifi_retry_delay_seconds;
-    doc["wifi_ap_duration_minutes"] = settings.wifi_ap_duration_minutes;
+    doc["pump_auto_mode"] = settings.pump_auto_mode;
+    doc["light_auto_mode"] = settings.light_auto_mode;
+    doc["light_on_hour"] = settings.light_on_hour;
+    doc["light_off_hour"] = settings.light_off_hour;
+    doc["debug_enabled"] = settings.debug_enabled;
+    doc["water_flow_error_timeout_seconds"] = settings.water_flow_error_timeout_seconds;
 
     if (includePassword)
     {

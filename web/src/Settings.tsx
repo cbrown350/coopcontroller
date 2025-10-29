@@ -4,19 +4,22 @@ function Settings() {
   const [ssid, setSsid] = createSignal('')
   const [password, setPassword] = createSignal('')
   const [loading, setLoading] = createSignal(true)
+  const [loaded, setLoaded] = createSignal(false)
   const [error, setError] = createSignal('')
   const [saveSuccess, setSaveSuccess] = createSignal(false)
   const [apMode, setApMode] = createSignal<boolean | null>(null);
   
   // Coop controller settings
-  const [tempThresholdF, setTempThresholdF] = createSignal(34.0);
-  const [pumpOnTimeSeconds, setPumpOnTimeSeconds] = createSignal(300);
-  const [pumpOffTimeSeconds, setPumpOffTimeSeconds] = createSignal(600);
-  const [pumpAutoMode, setPumpAutoMode] = createSignal(true);
-  const [lightAutoMode, setLightAutoMode] = createSignal(false);
-  const [lightOnHour, setLightOnHour] = createSignal(6);
-  const [lightOffHour, setLightOffHour] = createSignal(20);
-  const [debugEnabled, setDebugEnabled] = createSignal(false);
+  const [tempThresholdOnF, setTempThresholdOnF] = createSignal<number | null>(null);
+  const [tempThresholdOffF, setTempThresholdOffF] = createSignal<number | null>(null);
+  const [pumpOnTimeSeconds, setPumpOnTimeSeconds] = createSignal<number | null>(null);
+  const [pumpOffTimeSeconds, setPumpOffTimeSeconds] = createSignal<number | null>(null);
+  const [pumpAutoMode, setPumpAutoMode] = createSignal<boolean | null>(null);
+  const [lightAutoMode, setLightAutoMode] = createSignal<boolean | null>(null);
+  const [lightOnHour, setLightOnHour] = createSignal<number | null>(null);
+  const [lightOffHour, setLightOffHour] = createSignal<number | null>(null);
+  const [debugEnabled, setDebugEnabled] = createSignal<boolean | null>(null);
+  const [waterFlowErrorTimeoutSeconds, setWaterFlowErrorTimeoutSeconds] = createSignal<number | null>(null);
 
   // Load settings from the server and scan for WiFi networks
   onMount(async () => {
@@ -30,23 +33,27 @@ function Settings() {
       }
       const settings = await response.json()
 
-      setSsid(settings.ssid || '')
+      setSsid(settings.ssid ?? '')
       // Password won't be loaded from server for security
       setPassword('')
-      setApMode(settings.ap_mode || null)
+      setApMode(settings.ap_mode ?? null)
       
       // Load coop controller settings
-      setTempThresholdF(settings.temp_threshold_f || 34.0)
-      setPumpOnTimeSeconds(settings.pump_on_time_seconds || 300)
-      setPumpOffTimeSeconds(settings.pump_off_time_seconds || 600)
-      setPumpAutoMode(settings.pump_auto_mode !== undefined ? settings.pump_auto_mode : true)
-      setLightAutoMode(settings.light_auto_mode !== undefined ? settings.light_auto_mode : false)
-      setLightOnHour(settings.light_on_hour || 6)
-      setLightOffHour(settings.light_off_hour || 20)
-      setDebugEnabled(settings.debug_enabled !== undefined ? settings.debug_enabled : false)
+      setTempThresholdOnF(settings.temp_threshold_on_f ?? null)
+      setTempThresholdOffF(settings.temp_threshold_off_f ?? null)
+      setPumpOnTimeSeconds(settings.pump_on_time_seconds ?? null)
+      setPumpOffTimeSeconds(settings.pump_off_time_seconds ?? null)
+      setPumpAutoMode(settings.pump_auto_mode ?? null)
+      setLightAutoMode(settings.light_auto_mode ?? null)
+      setLightOnHour(settings.light_on_hour ?? null)
+      setLightOffHour(settings.light_off_hour ?? null)
+      setDebugEnabled(settings.debug_enabled ?? null)
+      setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
 
+      setLoaded(true)
       setError('')
     } catch (err: any) {
+      setLoaded(false)
       setError(`Error loading settings: ${err.message || 'Unknown error'}`)
       console.error('Failed to load settings:', err)
     } finally {
@@ -56,6 +63,10 @@ function Settings() {
 
 
   const handleSave = async () => {
+    if (!loaded()) {
+      setError('Settings not loaded. Please refresh the page.')
+      return
+    }
     try {
       setSaveSuccess(false)
       setError('')
@@ -65,14 +76,16 @@ function Settings() {
         passwd: password(),
         ap_mode: false,
         // Coop controller settings
-        temp_threshold_f: parseFloat(tempThresholdF().toString()),
-        pump_on_time_seconds: parseInt(pumpOnTimeSeconds().toString()),
-        pump_off_time_seconds: parseInt(pumpOffTimeSeconds().toString()),
-        pump_auto_mode: pumpAutoMode(),
-        light_auto_mode: lightAutoMode(),
-        light_on_hour: parseInt(lightOnHour().toString()),
-        light_off_hour: parseInt(lightOffHour().toString()),
-        debug_enabled: debugEnabled(),
+        temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
+        temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
+        water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
+        pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
+        pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
+        pump_auto_mode: pumpAutoMode() ?? true,
+        light_auto_mode: lightAutoMode() ?? false,
+        light_on_hour: lightOnHour() ?? 6,
+        light_off_hour: lightOffHour() ?? 20,
+        debug_enabled: debugEnabled() ?? false,
       }
 
       const response = await fetch('/update_settings', {
@@ -163,57 +176,143 @@ function Settings() {
             )
           }
 
-          <h2 class="text-lg font-bold mb-4 mt-10">Device Settings</h2>
-
           <h2 class="text-lg font-bold mb-4 mt-10">Coop Controller Settings</h2>
 
-          {/* Temperature Threshold */}
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">Temperature Threshold (°F)</legend>
-            <input
-              type="number"
-              id="temp_threshold_f"
-              value={tempThresholdF()}
-              onInput={(e) => setTempThresholdF(parseFloat(e.target.value))}
-              placeholder="34"
-              step="0.1"
-              min="0"
-              max="100"
-              class="input"
-            />
-            <div class="fieldset-label">When temperature falls below this value, pump cycling will activate</div>
+          {/* Temperature Hysteresis */}
+          <h2 class="text-lg font-bold mb-4 mt-10">Temperature Control Settings</h2>
+
+          {/* Temperature Hysteresis */}
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Temperature ON Threshold (°F)</legend>
+              <Show when={loaded()}>
+                <input
+                  type="number"
+                  id="temp_threshold_on_f"
+                  value={tempThresholdOnF()!}
+                  onInput={(e) => setTempThresholdOnF(parseFloat(e.target.value))}
+                  placeholder="34"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  class="input"
+                />
+              </Show>
+              <Show when={!loaded()}>
+                <input
+                  type="text"
+                  value="--"
+                  disabled
+                  class="input input-disabled"
+                />
+              </Show>
+              <div class="fieldset-label">When temperature falls below this value, pump cycling will activate</div>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Temperature OFF Threshold (°F)</legend>
+              <Show when={loaded()}>
+                <input
+                  type="number"
+                  id="temp_threshold_off_f"
+                  value={tempThresholdOffF()!}
+                  onInput={(e) => setTempThresholdOffF(parseFloat(e.target.value))}
+                  placeholder="36"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  class="input"
+                />
+              </Show>
+              <Show when={!loaded()}>
+                <input
+                  type="text"
+                  value="--"
+                  disabled
+                  class="input input-disabled"
+                />
+              </Show>
+              <div class="fieldset-label">When temperature rises above this value, pump cycling will deactivate (hysteresis)</div>
+            </fieldset>
+          </div>
+
+          {/* Water Flow Error Timeout */}
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Water Flow Error Timeout (seconds)</legend>
+            <Show when={loaded()}>
+              <input
+                type="number"
+                id="water_flow_error_timeout_seconds"
+                value={waterFlowErrorTimeoutSeconds()!}
+                onInput={(e) => setWaterFlowErrorTimeoutSeconds(parseInt(e.target.value))}
+                placeholder="120"
+                step="1"
+                min="10"
+                max="600"
+                class="input"
+              />
+            </Show>
+            <Show when={!loaded()}>
+              <input
+                type="text"
+                value="--"
+                disabled
+                class="input input-disabled"
+              />
+            </Show>
+            <div class="fieldset-label">Time without water flow before declaring error (default: 120 seconds)</div>
           </fieldset>
 
           {/* Pump Settings */}
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <fieldset class="fieldset">
               <legend class="fieldset-legend">Pump ON Time</legend>
-              <input
-                type="number"
-                id="pump_on_time_seconds"
-                value={pumpOnTimeSeconds()}
-                onInput={(e) => setPumpOnTimeSeconds(parseInt(e.target.value))}
-                placeholder="300"
-                min="10"
-                max="3600"
-                class="input"
-              />
-              <div class="fieldset-label">Seconds ({formatTime(pumpOnTimeSeconds())})</div>
+              <Show when={loaded()}>
+                <input
+                  type="number"
+                  id="pump_on_time_seconds"
+                  value={pumpOnTimeSeconds()!}
+                  onInput={(e) => setPumpOnTimeSeconds(parseInt(e.target.value))}
+                  placeholder="300"
+                  min="10"
+                  max="3600"
+                  class="input"
+                />
+              </Show>
+              <Show when={!loaded()}>
+                <input
+                  type="text"
+                  value="--"
+                  disabled
+                  class="input input-disabled"
+                />
+              </Show>
+              <div class="fieldset-label">Seconds ({loaded() ? formatTime(pumpOnTimeSeconds()!) : '--'})</div>
             </fieldset>
 
             <fieldset class="fieldset">
               <legend class="fieldset-legend">Pump OFF Time</legend>
-              <input
-                type="number"
-                id="pump_off_time_seconds"
-                value={pumpOffTimeSeconds()}
-                onInput={(e) => setPumpOffTimeSeconds(parseInt(e.target.value))}
-                placeholder="600"
-                min="10"
-                max="3600"
-                class="input"
-              />
-              <div class="fieldset-label">Seconds ({formatTime(pumpOffTimeSeconds())})</div>
+              <Show when={loaded()}>
+                <input
+                  type="number"
+                  id="pump_off_time_seconds"
+                  value={pumpOffTimeSeconds()!}
+                  onInput={(e) => setPumpOffTimeSeconds(parseInt(e.target.value))}
+                  placeholder="600"
+                  min="10"
+                  max="3600"
+                  class="input"
+                />
+              </Show>
+              <Show when={!loaded()}>
+                <input
+                  type="text"
+                  value="--"
+                  disabled
+                  class="input input-disabled"
+                />
+              </Show>
+              <div class="fieldset-label">Seconds ({loaded() ? formatTime(pumpOffTimeSeconds()!) : '--'})</div>
             </fieldset>
           </div>
 
@@ -222,13 +321,15 @@ function Settings() {
             <fieldset class="fieldset">
               <legend class="fieldset-legend">Pump Auto Mode</legend>
               <label class="label cursor-pointer">
-                <input
-                  type="checkbox"
-                  id="pump_auto_mode"
-                  checked={pumpAutoMode()}
-                  onChange={(e) => setPumpAutoMode(e.target.checked)}
-                  class="checkbox checkbox-accent"
-                />
+                <Show when={loaded()} fallback={<input type="checkbox" disabled class="checkbox" />}>
+                  <input
+                    type="checkbox"
+                    id="pump_auto_mode"
+                    checked={pumpAutoMode()!}
+                    onChange={(e) => setPumpAutoMode(e.target.checked)}
+                    class="checkbox checkbox-accent"
+                  />
+                </Show>
                 <span class="label-text">Enable automatic pump control based on temperature threshold</span>
               </label>
             </fieldset>
@@ -236,13 +337,15 @@ function Settings() {
             <fieldset class="fieldset">
               <legend class="fieldset-legend">Light Auto Mode</legend>
               <label class="label cursor-pointer">
-                <input
-                  type="checkbox"
-                  id="light_auto_mode"
-                  checked={lightAutoMode()}
-                  onChange={(e) => setLightAutoMode(e.target.checked)}
-                  class="checkbox checkbox-accent"
-                />
+                <Show when={loaded()} fallback={<input type="checkbox" disabled class="checkbox" />}>
+                  <input
+                    type="checkbox"
+                    id="light_auto_mode"
+                    checked={lightAutoMode()!}
+                    onChange={(e) => setLightAutoMode(e.target.checked)}
+                    class="checkbox checkbox-accent"
+                  />
+                </Show>
                 <span class="label-text">Enable automatic light control (future feature)</span>
               </label>
             </fieldset>
@@ -253,31 +356,51 @@ function Settings() {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               <fieldset class="fieldset">
                 <legend class="fieldset-legend">Light ON Hour</legend>
-                <input
-                  type="number"
-                  id="light_on_hour"
-                  value={lightOnHour()}
-                  onInput={(e) => setLightOnHour(parseInt(e.target.value))}
-                  placeholder="6"
-                  min="0"
-                  max="23"
-                  class="input"
-                />
+                <Show when={loaded()}>
+                  <input
+                    type="number"
+                    id="light_on_hour"
+                    value={lightOnHour()!}
+                    onInput={(e) => setLightOnHour(parseInt(e.target.value))}
+                    placeholder="6"
+                    min="0"
+                    max="23"
+                    class="input"
+                  />
+                </Show>
+                <Show when={!loaded()}>
+                  <input
+                    type="text"
+                    value="--"
+                    disabled
+                    class="input input-disabled"
+                  />
+                </Show>
                 <div class="fieldset-label">24-hour format (0-23)</div>
               </fieldset>
 
               <fieldset class="fieldset">
                 <legend class="fieldset-legend">Light OFF Hour</legend>
-                <input
-                  type="number"
-                  id="light_off_hour"
-                  value={lightOffHour()}
-                  onInput={(e) => setLightOffHour(parseInt(e.target.value))}
-                  placeholder="20"
-                  min="0"
-                  max="23"
-                  class="input"
-                />
+                <Show when={loaded()}>
+                  <input
+                    type="number"
+                    id="light_off_hour"
+                    value={lightOffHour()!}
+                    onInput={(e) => setLightOffHour(parseInt(e.target.value))}
+                    placeholder="20"
+                    min="0"
+                    max="23"
+                    class="input"
+                  />
+                </Show>
+                <Show when={!loaded()}>
+                  <input
+                    type="text"
+                    value="--"
+                    disabled
+                    class="input input-disabled"
+                  />
+                </Show>
                 <div class="fieldset-label">24-hour format (0-23)</div>
               </fieldset>
             </div>
@@ -289,13 +412,15 @@ function Settings() {
           <fieldset class="fieldset">
             <legend class="fieldset-legend">Debug Mode</legend>
             <label class="label cursor-pointer">
-              <input
-                type="checkbox"
-                id="debug_enabled"
-                checked={debugEnabled()}
-                onChange={(e) => setDebugEnabled(e.target.checked)}
-                class="checkbox checkbox-accent"
-              />
+              <Show when={loaded()} fallback={<input type="checkbox" disabled class="checkbox" />}>
+                <input
+                  type="checkbox"
+                  id="debug_enabled"
+                  checked={debugEnabled()!}
+                  onChange={(e) => setDebugEnabled(e.target.checked)}
+                  class="checkbox checkbox-accent"
+                />
+              </Show>
               <span class="label-text">Enable debug logging for troubleshooting (shows pin states and sensor activity)</span>
             </label>
           </fieldset>
@@ -303,6 +428,7 @@ function Settings() {
           <button
             class="btn btn-accent btn-soft mt-10"
             onClick={handleSave}
+            disabled={!loaded()}
           >
             Save Settings
           </button>

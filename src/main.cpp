@@ -163,7 +163,7 @@ void checkWifiConnection()
     // Check if we're in AP mode and need to retry WiFi connection
     if (isInAPMode) {
         unsigned long apDuration = settingsManager.getWifiAPDurationMinutes() * 60000; // Convert to milliseconds
-        if (millis() - wifiAPModeStart >= apDuration) {
+        if (millis() - wifiAPModeStart >= apDuration && !settingsManager.getSSID().isEmpty()){
             logger.log("AP mode duration expired, attempting WiFi connection");
             settingsManager.setAPMode(false);
             settingsManager.save();
@@ -335,7 +335,7 @@ void loop()
         
         // Get temperature status
         float currentTemp = tempSensor.getTemperature1F();
-        bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold(settingsManager.getTempThresholdF());
+        bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold();
         
         // Check for water flow errors
         bool flowError = tempSensor.hasWaterFlowError(1) || tempSensor.hasWaterFlowError(2);
@@ -364,7 +364,7 @@ void loop()
     static unsigned long lastSensorLog = 0;
     if (currentTime - lastSensorLog >= 30000) { // Log every 30 seconds
         lastSensorLog = currentTime;
-        float threshold = settingsManager.getTempThresholdF();
+        float threshold = settingsManager.getTempThresholdOnF();
         if (tempSensor.isSensor1Connected()) {
             logger.logf("Sensor 1 (Pin %d): %.1f°F %s", TEMP_METER_PIN, tempSensor.getTemperature1F(),
                        tempSensor.getSensor1Type() == SENSOR_TYPE_DALLAS_TEMP ? "(Temperature)" : "(Water Meter)");
@@ -379,11 +379,11 @@ void loop()
         }
         
         float currentTemp = tempSensor.getTemperature1F();
-        bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold(threshold);
+        bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold();
         if (tempBelowThreshold) {
             logger.logf("Temperature below threshold (%.1f°F < %.1f°F)", currentTemp, threshold);
         } else {
-            logger.logf("Temperature above threshold (%.1f°F >= %.1f°F)", currentTemp, threshold);
+            logger.logf("Temperature above threshold (%.1f°F >= %.1f°F)", currentTemp, settingsManager.getTempThresholdOffF());
         }
     }
 
