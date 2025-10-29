@@ -263,7 +263,7 @@ function Status() {
                 <button 
                   class="btn btn-outline btn-sm"
                   onClick={() => handlePumpControl('force_cycle')}
-                  disabled={sensorStatus().pump.state !== 'AUTO'}
+                  disabled={sensorStatus().pump.state !== 'AUTO' || !sensorStatus().pump.temperature_below_threshold}
                 >
                   Force Cycle
                 </button>

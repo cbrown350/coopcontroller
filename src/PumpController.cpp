@@ -138,8 +138,13 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
     //     return;
     // }
     
-    // Check if temperature is below ON threshold to start cycling
+    // If temperature is between ON and OFF thresholds, maintain current state (hysteresis)
     if (status.temperature_f < onThreshold) {
+        status.temperature_below_threshold = true;
+    }
+    
+    // Check if temperature is below ON threshold to start cycling
+    if (status.temperature_below_threshold) {
         // Temperature is below threshold - run cycling
         if (cycleStartTime == 0) {
             // Start new cycle
@@ -172,13 +177,6 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                 }
             } else {
                 // In OFF phase - check if it's time to switch to ON
-                unsigned long timeUntilOn;
-                if (cycleElapsed > (onTime + offTime)) {
-                    // underflow would occur
-                    timeUntilOn = 0;
-                } else {
-                    timeUntilOn = (onTime + offTime) - cycleElapsed;
-                }   
                 if (cycleElapsed >= (onTime + offTime)) {
                     // Start new cycle
                     cycleStartTime = currentTime;
@@ -189,11 +187,13 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                     logger.logf("Starting new pump cycle, temperature: %.1f°F - ON phase", status.temperature_f);
                 } else if (settingsManager.getDebugEnabled() && (cycleElapsed % 10000 < 1000)) {
                     // Log countdown every 10 seconds in debug mode
+                    unsigned long timeUntilOn = (onTime + offTime) - cycleElapsed;
                     logger.logf("Pump OFF phase: %d seconds remaining until ON", (timeUntilOn + 500) / 1000);
                 }
             }
         }
-    } else if (status.temperature_f > offThreshold) {
+    } 
+    if (status.temperature_f > offThreshold) {
         // Temperature is above OFF threshold - turn off pump and reset cycle
         if (status.is_active || cycleStartTime != 0) {
             setPumpState(false);
@@ -203,8 +203,8 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
             logger.logf("Temperature above OFF threshold (%.1f°F > %.1f°F), pump turned off and cycle reset", 
                        status.temperature_f, offThreshold);
         }
+        status.temperature_below_threshold = false;
     }
-    // If temperature is between ON and OFF thresholds, maintain current state (hysteresis)
     
     // Check for flow error during pump operation - handle error without changing state
     if (status.is_active && status.flow_error && status.state == PUMP_AUTO) {
@@ -341,7 +341,7 @@ unsigned long PumpController::getTimeUntilNextSwitch() const {
     if (currentlyInOnPhase) {
         return (onTime - cycleElapsed) > 0 ? (onTime - cycleElapsed) : 0;
     } else {
-        return ((onTime + offTime) - cycleElapsed) > 0 ? ((onTime + offTime) - cycleElapsed) : 0;
+        return (onTime + offTime) > cycleElapsed ? ((onTime + offTime) - cycleElapsed) : 0;
     }
 }
 
@@ -392,13 +392,13 @@ void PumpController::clearFlowError() {
     waitingForRetry = false;
     logger.log("Flow error cleared");
     
-    // Only resume cycling if temperature conditions are met
-    float onThreshold = settingsManager.getTempThresholdOnF();
-    if (status.temperature_f < onThreshold) {
-        logger.log("Flow error cleared and temperature below threshold - resuming AUTO cycling");
-        // Don't change state, just reset error tracking and let normal AUTO logic continue
-    } else {
-        logger.log("Flow error cleared but temperature above threshold - staying in error state");
-        // Keep in error state until temperature drops below threshold
-    }
+    // // Only resume cycling if temperature conditions are met
+    // float onThreshold = settingsManager.getTempThresholdOnF();
+    // if (status.temperature_f < onThreshold) {
+    //     logger.log("Flow error cleared and temperature below threshold - resuming AUTO cycling");
+    //     // Don't change state, just reset error tracking and let normal AUTO logic continue
+    // } else {
+    //     logger.log("Flow error cleared but temperature above threshold - staying in error state");
+    //     // Keep in error state until temperature drops below threshold
+    // }
 }
