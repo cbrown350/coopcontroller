@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 
 #include "LittleFS.h"
 #include "Logger.h"
@@ -28,6 +29,10 @@
 
 const char* firmwareVersion = (strcmp(TOSTRING(FIRMWARE_VERSION_RAW), "") == 0) ? "dev" : TOSTRING(FIRMWARE_VERSION_RAW);
 const char* chipFamily      = (strcmp(TOSTRING(CHIP_FAMILY_RAW), "") == 0) ? "unknown" : TOSTRING(CHIP_FAMILY_RAW);
+
+const char* hostName      = (strcmp(TOSTRING(HOST_NAME), "") == 0) ? "coopcontroller" : TOSTRING(HOST_NAME);
+const char* otaPasswd      = (strcmp(TOSTRING(OTA_PASSWD), "") == 0 || strcmp(TOSTRING(OTA_PASSWD), "") == 1) ? "" : TOSTRING(OTA_PASSWD);
+const char* apPasswd      = (strcmp(TOSTRING(AP_PASSWD), "") == 0 || strcmp(TOSTRING(AP_PASSWD), "") == 1) ? "" : TOSTRING(AP_PASSWD);
 
 #define WIFI_CHECK_INTERVAL 30000     // Check WiFi every 30 seconds
 #define WIFI_RECONNECT_TIMEOUT 10000  // Wait 10 seconds for reconnection
@@ -87,7 +92,12 @@ void wifiSetup()
     if (settingsManager.isAPMode())
     {
         logger.log("Starting AP mode");
-        WiFi.softAP("CoopController", "coopycontroller");
+        if (apPasswd && strlen(apPasswd) >= 0) {
+            WiFi.softAP("CoopController", apPasswd);
+            Serial.println("AP password set: " + String(apPasswd));
+        } else {
+            WiFi.softAP("CoopController", NULL);
+        }
         logger.log("AP mode started, IP address: " + WiFi.softAPIP().toString());
         isInAPMode = true;
         wifiAPModeStart = millis();
@@ -110,9 +120,12 @@ void wifiSetup()
             return;
         }
         
+        if (hostName && strlen(hostName) > 0) {
+            WiFi.setHostname(hostName); // Need to set hostname in all places for mDNS to work
+            logger.logf("Hostname set to: %s", hostName);
+        } 
+        WiFi.persistent(false); // Fix for issues with reconnection, credentials are stored in settingsManager
         logger.logf("Connecting to WiFi: %s", ssid.c_str());
-        WiFi.setHostname("coopcontroller");
-        WiFi.persistent(false);
         WiFi.begin(ssid.c_str(), password.c_str());
         
         int maxRetries = settingsManager.getWifiMaxRetries();
@@ -136,16 +149,23 @@ void wifiSetup()
         if (WiFi.status() == WL_CONNECTED) {
             logger.log("WiFi Connected, IP address: " + WiFi.localIP().toString());
             isInAPMode = false;
+            
+            if (hostName && strlen(hostName) > 0) {
+                int mDNSRetries = 5;
+                while(mDNSRetries > 0 && !MDNS.begin(hostName)) {
+                    Serial.println("Starting mDNS...");
+                    delay(1000);
+                    mDNSRetries--;
+                }
+                
+                Serial.println("MDNS started"); 
+            }
 
             // Mark that WiFi has successfully connected at least once
             if (!settingsManager.getHasConnected()) {
                 settingsManager.setHasConnected(true);
                 settingsManager.save();
                 logger.log("First successful WiFi connection recorded");
-            }
-            if (!MDNS.begin("coopcontroller"))
-            {
-                logger.log("Error setting up MDNS responder!");
             }
             
             // Add logging for WiFi task status
@@ -225,6 +245,18 @@ void checkWifiConnection()
         {
             logger.log("WiFi reconnected successfully");
             isReconnecting = false;
+            
+            
+            if (hostName && strlen(hostName) > 0) {
+                int mDNSRetries = 5;
+                while(mDNSRetries > 0 && !MDNS.begin(hostName)) {
+                    Serial.println("Starting mDNS...");
+                    delay(1000);
+                    mDNSRetries--;
+                }
+                
+                Serial.println("MDNS started"); 
+            }
 
             // Mark that WiFi has successfully connected at least once
             if (!settingsManager.getHasConnected())

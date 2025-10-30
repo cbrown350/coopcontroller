@@ -15,6 +15,9 @@
 extern const char *firmwareVersion;
 extern const char *chipFamily;
 
+extern const char* hostName;
+extern const char* otaPasswd;
+
 // External references to coop controller components
 extern TempSensor tempSensor;
 extern PumpController pumpController;
@@ -89,31 +92,41 @@ void WebServer::begin()
             request->send(200, "text/plain", "ok");
         }));
         
-    // ArduinoOTA.setPassword("your_ota_password"); // Optional for authentication
+    // Setup ArduinoOTA
+
+    if (hostName && strlen(hostName) > 0) {
+        ArduinoOTA.setHostname(hostName); // Need to set hostname in all places for mDNS to work
+    } 
+    if (otaPasswd && strlen(otaPasswd) > 0) {
+        ArduinoOTA.setPassword(otaPasswd); // Optional for authentication
+        Serial.println("OTA password set: " + String(otaPasswd));
+    }
     ArduinoOTA.begin();
 
     // Setup ElegantOTA
     ElegantOTA.begin(&server);
-    // ElegantOTA.setAuth("admin", "admin");  // Optional: add authentication
-    
+    if (otaPasswd && strlen(otaPasswd) > 0) {
+        ElegantOTA.setAuth("admin", otaPasswd);  // Optional: add authentication
+        Serial.println("ElegantOTA admin password set: " + String(otaPasswd));
+    } 
     // Configure ElegantOTA for filesystem updates
     ElegantOTA.onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("OTA Update Progress: %u%%\r", (progress / (total / 100)));
+        logger.logf("OTA Update Progress: %u%%\r", (progress / (total / 100)));
     });
     
     // Add custom callback for filesystem updates
     ElegantOTA.onStart([]() {
-        Serial.println("Start OTA updating ");
+        logger.log("Start OTA updating ");
         LittleFS.end();
     });
     
     ElegantOTA.onEnd([](bool success) {
-        Serial.println("\nOTA update End");
+        logger.log("\nOTA update End");
         if(success) {
-            Serial.println("OTA update completed successfully, restarting...");
+            logger.log("OTA update completed successfully, restarting...");
             ESP.restart();
         } else {
-            Serial.println("OTA update failed");
+            logger.log("OTA update failed");
             LittleFS.begin();
         }
     });
