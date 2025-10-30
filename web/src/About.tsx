@@ -5,7 +5,6 @@ function About() {
     <ul>
       <li><a class="link link-accent" target="_blank" rel="noopener noreferrer" href="https://github.com/bblanchon/ArduinoJson">ArduinoJSON</a> - JSON library</li>
       <li><a class="link link-accent" target="_blank" rel="noopener noreferrer" href="https://github.com/me-no-dev/ESPAsyncWebServer">ESPAsyncWebServer</a> - webserver</li>
-      <li><a class="link link-accent" target="_blank" rel="noopener noreferrer" href="https://github.com/Links2004/arduinoWebSockets">WebSocket Client</a> - websockets</li>
       <li><a class="link link-accent" target="_blank" rel="noopener noreferrer" href="https://github.com/robtillaart/UUID">UUID</a> - uuids</li>
       <li><a class="link link-accent" target="_blank" rel="noopener noreferrer" href="https://github.com/ayushsharma82/ElegantOTA">ElegantOTA</a> - firmware updater</li>
       <li><a class="link link-accent" target="_blank" rel="noopener noreferrer" href="https://www.solidjs.com/">Solid-JS</a> - frontend library</li>
