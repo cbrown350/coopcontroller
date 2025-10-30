@@ -15,7 +15,7 @@ struct LogEntry
 class Logger
 {
 private:
-  static const int MAX_LOG_ENTRIES = 200;
+  static const int MAX_LOG_ENTRIES = 1000;
   LogEntry logBuffer[MAX_LOG_ENTRIES];
   int currentIndex;
   int totalEntries;

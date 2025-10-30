@@ -58,7 +58,6 @@ class SettingsManager
     String getSSID();
     String getPassword();
     bool   isAPMode();
-    // bool   getEnabled();
     bool   getPumpAutoMode();
     bool   getHasConnected();
     
@@ -82,7 +81,6 @@ class SettingsManager
     void setSSID(const String &ssid);
     void setPassword(const String &password);
     void setAPMode(bool apMode);
-    // void setEnabled(bool enabled);
     void setPumpAutoMode(bool pumpAutoMode);
     void setHasConnected(bool hasConnected);
     

@@ -5,7 +5,6 @@
 #include <ArduinoJson.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <ElegantOTA.h>
 #include <LittleFS.h>
 
 #include "SettingsManager.h"

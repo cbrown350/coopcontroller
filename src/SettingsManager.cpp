@@ -19,7 +19,6 @@ SettingsManager::SettingsManager()
     settings.ap_mode             = false;
     settings.ssid                = "";
     settings.passwd              = "";
-    // settings.enabled             = false;
     settings.has_connected       = false;
     
     // Initialize coop controller settings with defaults
@@ -27,13 +26,12 @@ SettingsManager::SettingsManager()
     settings.temp_threshold_off_f = 35.0;      // Default 36°F to turn OFF
     settings.pump_on_time_seconds = 150;     // Default 2.5 minutes (150 seconds)
     settings.pump_off_time_seconds = 300;    // Default 5 minutes (300 seconds)
-    // settings.pump_auto_mode     = true;      // Enable automatic pump control by default
+    settings.pump_auto_mode     = true;      // Enable automatic pump control by default
     settings.light_auto_mode     = false;     // Disable automatic light control initially
     settings.light_on_hour       = 6;         // Default turn on at 6 AM
     settings.light_off_hour      = 20;        // Default turn off at 8 PM
     settings.debug_enabled       = false;     // Debug disabled by default
     settings.water_flow_error_timeout_seconds = 10; // Default 10 seconds
-    // settings.pump_error_retry_seconds = 120; // Default 2 minutes (120 seconds)
 }
 
 bool SettingsManager::load()
@@ -60,7 +58,6 @@ bool SettingsManager::load()
     settings.ap_mode             = doc["ap_mode"] | false;
     settings.ssid                = doc["ssid"] | "";
     settings.passwd              = doc["passwd"] | "";
-    // settings.enabled             = doc["enabled"] | true;
     settings.has_connected       = doc["has_connected"] | false;
     
     // Load coop controller settings with defaults
@@ -79,7 +76,6 @@ bool SettingsManager::load()
     settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 30;
     settings.wifi_ap_duration_minutes = doc["wifi_ap_duration_minutes"] | 10;
     settings.water_flow_error_timeout_seconds = doc["water_flow_error_timeout_seconds"] | 120;
-    // settings.pump_error_retry_seconds = doc["pump_error_retry_seconds"] | 120;
 
     isLoaded = true;
     return true;
@@ -142,11 +138,6 @@ bool SettingsManager::isAPMode()
     return getSettings().ap_mode;
 }
 
-// bool SettingsManager::getEnabled()
-// {
-//     return getSettings().enabled;
-// }
-
 bool SettingsManager::getHasConnected()
 {
     return getSettings().has_connected;
@@ -167,11 +158,6 @@ int SettingsManager::getWaterFlowErrorTimeoutSeconds()
 {
     return getSettings().water_flow_error_timeout_seconds;
 }
-
-// int SettingsManager::getPumpErrorRetrySeconds()
-// {
-//     return getSettings().pump_error_retry_seconds;
-// }
 
 int SettingsManager::getPumpOnTimeSeconds()
 {
@@ -229,13 +215,6 @@ void SettingsManager::setWaterFlowErrorTimeoutSeconds(int timeout)
         load();
     settings.water_flow_error_timeout_seconds = timeout;
 }
-
-// void SettingsManager::setPumpErrorRetrySeconds(int seconds)
-// {
-//     if (!isLoaded)
-//         load();
-//     settings.pump_error_retry_seconds = seconds;
-// }
 
 void SettingsManager::setPumpOnTimeSeconds(int seconds)
 {
@@ -360,14 +339,6 @@ void SettingsManager::setAPMode(bool apMode)
     }
 }
 
-// void SettingsManager::setEnabled(bool enabled)
-// {
-//     if (!isLoaded)
-//         load();
-//     settings.enabled = enabled;
-//     // Don't request restart for enabled setting
-// }
-
 void SettingsManager::setHasConnected(bool hasConnected)
 {
     if (!isLoaded)
@@ -383,7 +354,6 @@ String SettingsManager::toJson(bool includePassword) const
 
     doc["ap_mode"]             = settings.ap_mode;
     doc["ssid"]                = settings.ssid;
-    // doc["enabled"]             = settings.enabled;
     doc["has_connected"]       = settings.has_connected;
     
     // Coop controller settings
@@ -391,13 +361,12 @@ String SettingsManager::toJson(bool includePassword) const
     doc["temp_threshold_off_f"] = settings.temp_threshold_off_f;
     doc["pump_on_time_seconds"] = settings.pump_on_time_seconds;
     doc["pump_off_time_seconds"] = settings.pump_off_time_seconds;
-    // doc["pump_auto_mode"] = settings.pump_auto_mode;
+    doc["pump_auto_mode"] = settings.pump_auto_mode;
     doc["light_auto_mode"] = settings.light_auto_mode;
     doc["light_on_hour"] = settings.light_on_hour;
     doc["light_off_hour"] = settings.light_off_hour;
     doc["debug_enabled"] = settings.debug_enabled;
     doc["water_flow_error_timeout_seconds"] = settings.water_flow_error_timeout_seconds;
-    // doc["pump_error_retry_seconds"] = settings.pump_error_retry_seconds;
 
     if (includePassword)
     {

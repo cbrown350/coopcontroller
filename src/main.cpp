@@ -8,7 +8,7 @@
 #include "WebServer.h"
 #include "time.h"
 
-#include <esp_task_wdt.h>  // Add this for WDT functions
+#include <esp_task_wdt.h>
 
 #include "Buzzer.h"
 #include "TempSensor.h"
@@ -356,18 +356,6 @@ void loop()
             flowError
         );
     }
-
-    // Set pump auto mode based on settings (only when it changes)
-    // static bool lastPumpAutoMode = false;
-    // bool currentPumpAutoMode = settingsManager.getPumpAutoMode();
-    // if (currentPumpAutoMode != lastPumpAutoMode) {
-    //     if (currentPumpAutoMode) {
-    //         pumpController.setAutoMode(true);
-    //     } else {
-    //         pumpController.turnOff();
-    //     }
-    //     lastPumpAutoMode = currentPumpAutoMode;
-    // }
     
     // Log sensor readings periodically
     static unsigned long lastSensorLog = 0;

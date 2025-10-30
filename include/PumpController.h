@@ -40,13 +40,11 @@ private:
     
     // Error detection
     unsigned long lastFlowCheckTime;
-    // bool flowErrorDetected;
     unsigned long errorStartTime; // When error state started
     bool waitingForRetry; // Flag to indicate we're waiting to retry after error
     
     // Private methods
     void setPumpState(bool isOn);
-    // void checkFlowError();
     void updateStatistics();
     void handleAutoMode(unsigned long currentTime);
     

@@ -19,7 +19,6 @@ Logger::Logger()
 
 void Logger::log(const String &message)
 {
-    // unsigned long timestamp = millis() / 1000; // Use millis for timestamp
     unsigned long timestamp = getTime();
     
     // Print to serial with timestamp

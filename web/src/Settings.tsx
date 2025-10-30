@@ -14,13 +14,11 @@ function Settings() {
   const [tempThresholdOffF, setTempThresholdOffF] = createSignal<number | null>(null);
   const [pumpOnTimeSeconds, setPumpOnTimeSeconds] = createSignal<number | null>(null);
   const [pumpOffTimeSeconds, setPumpOffTimeSeconds] = createSignal<number | null>(null);
-  // const [pumpAutoMode, setPumpAutoMode] = createSignal<boolean | null>(null);
   const [lightAutoMode, setLightAutoMode] = createSignal<boolean | null>(null);
   const [lightOnHour, setLightOnHour] = createSignal<number | null>(null);
   const [lightOffHour, setLightOffHour] = createSignal<number | null>(null);
   const [debugEnabled, setDebugEnabled] = createSignal<boolean | null>(null);
   const [waterFlowErrorTimeoutSeconds, setWaterFlowErrorTimeoutSeconds] = createSignal<number | null>(null);
-  // const [pumpErrorRetrySeconds, setPumpErrorRetrySeconds] = createSignal<number | null>(null);
 
   // Load settings from the server and scan for WiFi networks
   onMount(async () => {
@@ -44,13 +42,11 @@ function Settings() {
       setTempThresholdOffF(settings.temp_threshold_off_f ?? null)
       setPumpOnTimeSeconds(settings.pump_on_time_seconds ?? null)
       setPumpOffTimeSeconds(settings.pump_off_time_seconds ?? null)
-      // setPumpAutoMode(settings.pump_auto_mode ?? null)
       setLightAutoMode(settings.light_auto_mode ?? null)
       setLightOnHour(settings.light_on_hour ?? null)
       setLightOffHour(settings.light_off_hour ?? null)
       setDebugEnabled(settings.debug_enabled ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
-      // setPumpErrorRetrySeconds(settings.pump_error_retry_seconds ?? null)
 
       setLoaded(true)
       setError('')
@@ -90,10 +86,8 @@ function Settings() {
         temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
         temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
         water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
-        // pump_error_retry_seconds: pumpErrorRetrySeconds() ?? 120,
         pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
         pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
-        // pump_auto_mode: pumpAutoMode() ?? true,
         light_auto_mode: lightAutoMode() ?? false,
         light_on_hour: lightOnHour() ?? 6,
         light_off_hour: lightOffHour() ?? 20,
@@ -298,34 +292,6 @@ function Settings() {
             <div class="fieldset-label">Time without water flow before declaring error (default: 120 seconds)</div>
           </fieldset>
 
-          {/* Pump Error Retry Time
-          <fieldset class="fieldset mt-4">
-            <legend class="fieldset-legend">Pump Error Retry Time (seconds)</legend>
-            <Show when={loaded()}>
-              <input
-                type="number"
-                id="pump_error_retry_seconds"
-                value={pumpErrorRetrySeconds()!}
-                onInput={(e) => setPumpErrorRetrySeconds(parseInt(e.target.value))}
-                placeholder="120"
-                step="1"
-                min="10"
-                max="600"
-                class="input"
-              />
-            </Show>
-            <Show when={!loaded()}>
-              <input
-                type="text"
-                value="--"
-                  placeholder="--"
-                disabled
-                class="input input-disabled"
-              />
-            </Show>
-            <div class="fieldset-label">Time to wait before retrying pump after flow error (default: 120 seconds)</div>
-          </fieldset> */}
-
           {/* Pump Settings */}
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <fieldset class="fieldset">
@@ -380,41 +346,6 @@ function Settings() {
               <div class="fieldset-label">Seconds ({loaded() ? formatTime(pumpOffTimeSeconds()!) : '--'})</div>
             </fieldset>
           </div>
-
-          {/* Auto Mode Settings
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Pump Auto Mode</legend>
-              <label class="label cursor-pointer">
-                <Show when={loaded()} fallback={<input type="checkbox" disabled class="checkbox" />}>
-                  <input
-                    type="checkbox"
-                    id="pump_auto_mode"
-                    checked={pumpAutoMode()!}
-                    onChange={(e) => setPumpAutoMode(e.target.checked)}
-                    class="checkbox checkbox-accent"
-                  />
-                </Show>
-                <span class="label-text">Enable automatic pump control based on temperature threshold</span>
-              </label>
-            </fieldset>
-
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Light Auto Mode</legend>
-              <label class="label cursor-pointer">
-                <Show when={loaded()} fallback={<input type="checkbox" disabled class="checkbox" />}>
-                  <input
-                    type="checkbox"
-                    id="light_auto_mode"
-                    checked={lightAutoMode()!}
-                    onChange={(e) => setLightAutoMode(e.target.checked)}
-                    class="checkbox checkbox-accent"
-                  />
-                </Show>
-                <span class="label-text">Enable automatic light control (future feature)</span>
-              </label>
-            </fieldset>
-          </div> */}
 
           {/* Light Schedule */}
           <Show when={lightAutoMode()}>
