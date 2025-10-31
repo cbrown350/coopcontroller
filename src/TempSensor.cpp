@@ -3,15 +3,9 @@
 #include "SettingsManager.h"
 #include <FunctionalInterrupt.h>
 
-// Interrupt service routines for water meter pulses 
-// std::atomic<unsigned long> sensor1PulseCount(0);
-// std::atomic<unsigned long> sensor2PulseCount(0);
-// std::atomic<unsigned long> sensor1LastPulseTime(0);
-// std::atomic<unsigned long> sensor2LastPulseTime(0);
 
+// Interrupt service routines for water meter pulses 
 void IRAM_ATTR TempSensor::sensor1PulseISR() {
-    // sensor1PulseCount++;
-    // sensor1LastPulseTime = millis();
     sensor1.pulse_count++;
     sensor1.last_pulse_time = millis();
 }
@@ -30,19 +24,7 @@ TempSensor::TempSensor()
       sensor1{SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0},
       sensor2{SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0},
       pulseToGallons(0.1f)
- {
-    // oneWire1 = nullptr;
-    // oneWire2 = nullptr;
-    // dallasTemp1 = nullptr;
-    // dallasTemp2 = nullptr;
-    
-    // // Initialize sensor data
-    // sensor1 = {SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0};
-    // sensor2 = {SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0};
-    
-    // // Default pulse to gallons conversion (typical water meter: 1 pulse = 0.1 gallons)
-    // pulseToGallons = 0.1f;
-}
+ {}
 
 TempSensor::~TempSensor() {
     if (oneWire1) delete oneWire1;
@@ -77,7 +59,6 @@ void TempSensor::begin() {
         delay(10); // Small delay to let pin stabilize
         
         // Only attach interrupt if we're sure it's a water meter
-        // attachInterrupt(digitalPinToInterrupt(TEMP_METER_PIN), sensor1PulseISR, FALLING);
         attachInterrupt(digitalPinToInterrupt(TEMP_METER_PIN), std::bind(&TempSensor::sensor1PulseISR, this), FALLING);
         logger.logf("Sensor 1 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_PIN);
         if (settingsManager.getDebugEnabled()) {
@@ -169,7 +150,7 @@ void TempSensor::update() {
     if (sensor1.type == SENSOR_TYPE_DALLAS_TEMP) {
         readDallasTemperature(dallasTemp1, sensor1);
     } else if (sensor1.type == SENSOR_TYPE_WATER_METER) {
-        handleWaterMeterPulse(sensor1);
+        logWaterMeterPulse(sensor1);
         calculateFlowRate(sensor1);
     }
     
@@ -177,7 +158,7 @@ void TempSensor::update() {
     if (sensor2.type == SENSOR_TYPE_DALLAS_TEMP) {
         readDallasTemperature(dallasTemp2, sensor2);
     } else if (sensor2.type == SENSOR_TYPE_WATER_METER) {
-        handleWaterMeterPulse(sensor2);
+        logWaterMeterPulse(sensor2);
         calculateFlowRate(sensor2);
     }
 }
@@ -220,23 +201,7 @@ void TempSensor::readDallasTemperature(DallasTemperature* dallas, SensorData& se
     }
 }
 
-void TempSensor::handleWaterMeterPulse(SensorData& sensor) {
-    // noInterrupts();
-    // if (sensor.type == SENSOR_TYPE_WATER_METER) {
-    //     // Update pulse count from volatile variables
-    //     unsigned long currentPulseCount, currentLastPulseTime;
-    //     if (&sensor == &sensor1) {
-    //         currentPulseCount = sensor1PulseCount;
-    //         currentLastPulseTime = sensor1LastPulseTime;
-    //     } else {
-    //         currentPulseCount = sensor2PulseCount;
-    //         currentLastPulseTime = sensor2LastPulseTime;
-    //     }
-        
-    //     sensor.pulse_count = currentPulseCount;
-    //     sensor.last_pulse_time = currentLastPulseTime;
-    // }
-    // interrupts();
+void TempSensor::logWaterMeterPulse(const SensorData& sensor) const {
     
     // Move logging outside interrupt protection - it's not ISR-safe
     if (sensor.type == SENSOR_TYPE_WATER_METER) {
@@ -268,7 +233,7 @@ void TempSensor::handleWaterMeterPulse(SensorData& sensor) {
     }
 }
 
-void TempSensor::calculateFlowRate(SensorData& sensor) {
+void TempSensor::calculateFlowRate(SensorData& sensor) const {
     unsigned long currentTime = millis();
     
     // Calculate flow rate every minute
@@ -347,15 +312,6 @@ bool TempSensor::isTemperatureBelowThreshold() const {
 }
 
 void TempSensor::resetPulseCount(int sensorNum) {
-    // noInterrupts();
-    // if (sensorNum == 1) {
-    //     sensor1PulseCount = 0;
-    //     sensor1.pulse_count = 0;
-    // } else if (sensorNum == 2) {
-    //     sensor2PulseCount = 0;
-    //     sensor2.pulse_count = 0;
-    // }
-    // interrupts();
     if (sensorNum == 1) {
         sensor1.pulse_count = 0;
     } else if (sensorNum == 2) {

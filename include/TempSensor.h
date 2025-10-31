@@ -23,6 +23,7 @@ struct SensorData {
     float flow_rate;  // Calculated flow rate for water meter
     std::atomic<unsigned long> last_pulse_time;
     
+    // Constructor
     explicit SensorData(SensorType t = SENSOR_TYPE_NONE,
                float temp = 0.0f,
                bool connected = false,
@@ -99,8 +100,8 @@ private:
     void sensor2PulseISR();
     void detectSensorType(int pin, SensorData& sensor);
     void readDallasTemperature(DallasTemperature* dallas, SensorData& sensor);
-    void handleWaterMeterPulse(SensorData& sensor);
-    void calculateFlowRate(SensorData& sensor);
+    void logWaterMeterPulse(const SensorData& sensor) const;
+    void calculateFlowRate(SensorData& sensor) const;
     
 public:
     TempSensor();
