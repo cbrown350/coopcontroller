@@ -33,8 +33,9 @@ void PumpController::begin() {
     digitalWrite(pumpPin, LOW);
     
     if (settingsManager.getDebugEnabled()) {
-        Serial.printf("DEBUG: PumpController initialized with pin %d\n", pumpPin);
-        Serial.printf("DEBUG: PumpController begin - pin %d set as OUTPUT, initial state LOW\n", pumpPin);
+        logger.logf("DEBUG: OUT_PUMP_PIN: %d", OUT_PUMP_PIN);
+        logger.logf("DEBUG: PumpController initialized with pin %d\n", pumpPin);
+        logger.logf("DEBUG: PumpController begin - pin %d set as OUTPUT, initial state LOW\n", pumpPin);
     }
     
     logger.log("Pump controller initialized");

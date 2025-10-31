@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <UUID.h>
+#include <SimpleSyslog.h>
 
 struct LogEntry
 {
@@ -15,13 +16,16 @@ struct LogEntry
 class Logger
 {
 private:
-  static const int MAX_LOG_ENTRIES = 1000;
+  static const int MAX_LOG_ENTRIES = 150;
   LogEntry logBuffer[MAX_LOG_ENTRIES];
   int currentIndex;
   int totalEntries;
   UUID uuidGenerator;
 
+  SimpleSyslog* syslog;
+
   Logger();
+  ~Logger();
 
   // Delete copy constructor and assignment operator
   Logger(const Logger &) = delete;

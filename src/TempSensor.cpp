@@ -1,35 +1,47 @@
 #include "TempSensor.h"
 #include "Logger.h"
 #include "SettingsManager.h"
+#include <FunctionalInterrupt.h>
 
-// Interrupt service routines for water meter pulses
-volatile unsigned long sensor1PulseCount = 0;
-volatile unsigned long sensor2PulseCount = 0;
-volatile unsigned long sensor1LastPulseTime = 0;
-volatile unsigned long sensor2LastPulseTime = 0;
+// Interrupt service routines for water meter pulses 
+// std::atomic<unsigned long> sensor1PulseCount(0);
+// std::atomic<unsigned long> sensor2PulseCount(0);
+// std::atomic<unsigned long> sensor1LastPulseTime(0);
+// std::atomic<unsigned long> sensor2LastPulseTime(0);
 
-void IRAM_ATTR sensor1PulseISR() {
-    sensor1PulseCount++;
-    sensor1LastPulseTime = millis();
+void IRAM_ATTR TempSensor::sensor1PulseISR() {
+    // sensor1PulseCount++;
+    // sensor1LastPulseTime = millis();
+    sensor1.pulse_count++;
+    sensor1.last_pulse_time = millis();
 }
 
-void IRAM_ATTR sensor2PulseISR() {
-    sensor2PulseCount++;
-    sensor2LastPulseTime = millis();
+void IRAM_ATTR TempSensor::sensor2PulseISR() {
+    sensor2.pulse_count++;
+    sensor2.last_pulse_time = millis();
 }
 
-TempSensor::TempSensor() {
-    oneWire1 = nullptr;
-    oneWire2 = nullptr;
-    dallasTemp1 = nullptr;
-    dallasTemp2 = nullptr;
+TempSensor::TempSensor()
+    : oneWire1(nullptr),
+      oneWire2(nullptr),
+      dallasTemp1(nullptr),
+      dallasTemp2(nullptr),
+      // Initialize sensor data in the initializer list to avoid assignment issues
+      sensor1{SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0},
+      sensor2{SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0},
+      pulseToGallons(0.1f)
+ {
+    // oneWire1 = nullptr;
+    // oneWire2 = nullptr;
+    // dallasTemp1 = nullptr;
+    // dallasTemp2 = nullptr;
     
-    // Initialize sensor data
-    sensor1 = {SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0};
-    sensor2 = {SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0};
+    // // Initialize sensor data
+    // sensor1 = {SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0};
+    // sensor2 = {SENSOR_TYPE_NONE, 0.0f, false, 0, 0, 0.0f, 0};
     
-    // Default pulse to gallons conversion (typical water meter: 1 pulse = 0.1 gallons)
-    pulseToGallons = 0.1f;
+    // // Default pulse to gallons conversion (typical water meter: 1 pulse = 0.1 gallons)
+    // pulseToGallons = 0.1f;
 }
 
 TempSensor::~TempSensor() {
@@ -44,7 +56,6 @@ void TempSensor::begin() {
     
     if (settingsManager.getDebugEnabled()) {
         logger.logf("DEBUG: Pin configuration - TEMP_METER_PIN: %d, TEMP_METER_2_PIN: %d", TEMP_METER_PIN, TEMP_METER_2_PIN);
-        logger.logf("DEBUG: OUT_PUMP_PIN: %d, OUT_LIGHT_PIN: %d", OUT_PUMP_PIN, OUT_LIGHT_PIN);
     }
     
     // Initialize OneWire instances
@@ -66,7 +77,8 @@ void TempSensor::begin() {
         delay(10); // Small delay to let pin stabilize
         
         // Only attach interrupt if we're sure it's a water meter
-        attachInterrupt(digitalPinToInterrupt(TEMP_METER_PIN), sensor1PulseISR, FALLING);
+        // attachInterrupt(digitalPinToInterrupt(TEMP_METER_PIN), sensor1PulseISR, FALLING);
+        attachInterrupt(digitalPinToInterrupt(TEMP_METER_PIN), std::bind(&TempSensor::sensor1PulseISR, this), FALLING);
         logger.logf("Sensor 1 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_PIN);
         if (settingsManager.getDebugEnabled()) {
             logger.logf("DEBUG: Sensor 1 interrupt attached to pin %d", TEMP_METER_PIN);
@@ -79,7 +91,7 @@ void TempSensor::begin() {
         delay(10); // Small delay to let pin stabilize
         
         // Attach interrupt for water meter pulse detection
-        attachInterrupt(digitalPinToInterrupt(TEMP_METER_2_PIN), sensor2PulseISR, FALLING);
+        attachInterrupt(digitalPinToInterrupt(TEMP_METER_2_PIN), std::bind(&TempSensor::sensor2PulseISR, this), FALLING);
         logger.logf("Sensor 2 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_2_PIN);
         if (settingsManager.getDebugEnabled()) {
             logger.logf("DEBUG: Sensor 2 interrupt attached to pin %d", TEMP_METER_2_PIN);
@@ -209,22 +221,22 @@ void TempSensor::readDallasTemperature(DallasTemperature* dallas, SensorData& se
 }
 
 void TempSensor::handleWaterMeterPulse(SensorData& sensor) {
-    noInterrupts();
-    if (sensor.type == SENSOR_TYPE_WATER_METER) {
-        // Update pulse count from volatile variables
-        unsigned long currentPulseCount, currentLastPulseTime;
-        if (&sensor == &sensor1) {
-            currentPulseCount = sensor1PulseCount;
-            currentLastPulseTime = sensor1LastPulseTime;
-        } else {
-            currentPulseCount = sensor2PulseCount;
-            currentLastPulseTime = sensor2LastPulseTime;
-        }
+    // noInterrupts();
+    // if (sensor.type == SENSOR_TYPE_WATER_METER) {
+    //     // Update pulse count from volatile variables
+    //     unsigned long currentPulseCount, currentLastPulseTime;
+    //     if (&sensor == &sensor1) {
+    //         currentPulseCount = sensor1PulseCount;
+    //         currentLastPulseTime = sensor1LastPulseTime;
+    //     } else {
+    //         currentPulseCount = sensor2PulseCount;
+    //         currentLastPulseTime = sensor2LastPulseTime;
+    //     }
         
-        sensor.pulse_count = currentPulseCount;
-        sensor.last_pulse_time = currentLastPulseTime;
-    }
-    interrupts();
+    //     sensor.pulse_count = currentPulseCount;
+    //     sensor.last_pulse_time = currentLastPulseTime;
+    // }
+    // interrupts();
     
     // Move logging outside interrupt protection - it's not ISR-safe
     if (sensor.type == SENSOR_TYPE_WATER_METER) {
@@ -246,7 +258,7 @@ void TempSensor::handleWaterMeterPulse(SensorData& sensor) {
         if (newPulses > 0) {
             // Always log when flow is detected, not just in debug mode
             logger.logf("Water flow detected on Sensor %d (Pin %d): %lu new pulses, total: %lu", 
-                       sensorNum, sensorPin, newPulses, sensor.pulse_count);
+                       sensorNum, sensorPin, newPulses, sensor.pulse_count.load());
                        
             if (settingsManager.getDebugEnabled()) {
                 Serial.printf("DEBUG: Water meter detected %lu new pulses on sensor %d\n", 
@@ -335,15 +347,20 @@ bool TempSensor::isTemperatureBelowThreshold() const {
 }
 
 void TempSensor::resetPulseCount(int sensorNum) {
-    noInterrupts();
+    // noInterrupts();
+    // if (sensorNum == 1) {
+    //     sensor1PulseCount = 0;
+    //     sensor1.pulse_count = 0;
+    // } else if (sensorNum == 2) {
+    //     sensor2PulseCount = 0;
+    //     sensor2.pulse_count = 0;
+    // }
+    // interrupts();
     if (sensorNum == 1) {
-        sensor1PulseCount = 0;
         sensor1.pulse_count = 0;
     } else if (sensorNum == 2) {
-        sensor2PulseCount = 0;
         sensor2.pulse_count = 0;
     }
-    interrupts();
 }
 
 String TempSensor::getSensorStatusString(const SensorData& sensor) const {
@@ -390,10 +407,16 @@ bool TempSensor::hasActiveWaterMeter() const {
 unsigned long TempSensor::getMostRecentPulseTime() const {
     unsigned long max_time = 0;
     if (sensor1.type == SENSOR_TYPE_WATER_METER) {
-        max_time = max(max_time, sensor1.last_pulse_time);
+        max_time = max(max_time, sensor1.last_pulse_time.load());
+        if (settingsManager.getDebugEnabled()) {
+            Serial.printf("DEBUG: Sensor 1 last pulse time: %lu\n", sensor1.last_pulse_time.load());
+        }
     }
     if (sensor2.type == SENSOR_TYPE_WATER_METER) {
-        max_time = max(max_time, sensor2.last_pulse_time);
+        max_time = max(max_time, sensor2.last_pulse_time.load());
+        if (settingsManager.getDebugEnabled()) {
+            Serial.printf("DEBUG: Sensor 2 last pulse time: %lu\n", sensor2.last_pulse_time.load());
+        }
     }
     return max_time;
 }

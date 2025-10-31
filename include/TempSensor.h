@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <atomic>
 
 // Sensor types for each pin
 enum SensorType {
@@ -18,9 +19,63 @@ struct SensorData {
     float temperature_f;
     bool is_connected;
     unsigned long last_reading_time;
-    unsigned long pulse_count;
+    std::atomic<unsigned long> pulse_count;
     float flow_rate;  // Calculated flow rate for water meter
-    unsigned long last_pulse_time;
+    std::atomic<unsigned long> last_pulse_time;
+    
+    explicit SensorData(SensorType t = SENSOR_TYPE_NONE,
+               float temp = 0.0f,
+               bool connected = false,
+               unsigned long lastRead = 0,
+               unsigned long pulses = 0,
+               float flow = 0.0f,
+               unsigned long lastPulse = 0)
+      : type(t)
+      , temperature_f(temp)
+      , is_connected(connected)
+      , last_reading_time(lastRead)
+      , pulse_count(pulses)
+      , flow_rate(flow)
+      , last_pulse_time(lastPulse)
+    {}
+
+    // Explicit copy constructor - copy atomics using load/store
+    SensorData(const SensorData& other)
+        : type(other.type),
+          temperature_f(other.temperature_f),
+          is_connected(other.is_connected),
+          last_reading_time(other.last_reading_time),
+          pulse_count(other.pulse_count.load()),
+          flow_rate(other.flow_rate),
+          last_pulse_time(other.last_pulse_time.load())
+    {
+        // all initialization done in initializer list
+    }
+
+    // Explicit move constructor
+    SensorData(SensorData&& other) noexcept
+        : type(other.type),
+          temperature_f(other.temperature_f),
+          is_connected(other.is_connected),
+          last_reading_time(other.last_reading_time),
+          pulse_count(other.pulse_count.load()),
+          flow_rate(other.flow_rate),
+          last_pulse_time(other.last_pulse_time.load())
+    {
+        // move is same as copy for these trivials/atomics
+    }
+
+    SensorData& operator=(const SensorData& other) {
+        if (this == &other) return *this;
+        type = other.type;
+        temperature_f = other.temperature_f;
+        is_connected = other.is_connected;
+        pulse_count.store(other.pulse_count.load());
+        last_pulse_time.store(other.last_pulse_time.load());
+        flow_rate = other.flow_rate;
+        last_reading_time = other.last_reading_time;
+        return *this;
+    }
 };
 
 class TempSensor {
@@ -32,14 +87,16 @@ private:
     DallasTemperature* dallasTemp2;
     
     // Sensor data for each pin
-    SensorData sensor1;
-    SensorData sensor2;
+    SensorData  sensor1;
+    SensorData  sensor2;
     
     // Water meter calculation variables
     static const unsigned long FLOW_CALCULATION_INTERVAL = 60000; // 1 minute
     float pulseToGallons;  // Conversion factor for pulses to gallons
     
     // Private methods
+    void sensor1PulseISR();
+    void sensor2PulseISR();
     void detectSensorType(int pin, SensorData& sensor);
     void readDallasTemperature(DallasTemperature* dallas, SensorData& sensor);
     void handleWaterMeterPulse(SensorData& sensor);

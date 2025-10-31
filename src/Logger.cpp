@@ -1,5 +1,15 @@
 #include "Logger.h"
 #include "time.h"
+#include <cstdlib>
+
+#include "SettingsManager.h"
+
+#include <WiFi.h>
+
+
+extern const char* hostName;
+extern const char* syslogServer;
+extern const char* syslogPort;
 
 // External function to get current time (from main.cpp)
 extern unsigned long getTime();
@@ -15,6 +25,24 @@ Logger::Logger()
   currentIndex = 0;
   totalEntries = 0;
   uuidGenerator.generate();
+  
+  log("Initializing SysLog to send logs to " + String(syslogServer) + ":" + String(syslogPort));
+  if (!(syslogServer == nullptr || strlen(syslogServer) == 0 || syslogPort == nullptr || strlen(syslogPort) == 0)) 
+  {
+    syslog = new SimpleSyslog(hostName, "CoopController", syslogServer, atoi(syslogPort), 400); // packet size 400 bytes
+    log("Syslog initialized");
+  } else
+  {
+    log("Syslog not configured");
+  }
+}
+
+Logger::~Logger()
+{
+  if (syslog != nullptr) 
+  {
+    delete syslog;
+  }
 }
 
 void Logger::log(const String &message)
@@ -24,9 +52,13 @@ void Logger::log(const String &message)
     // Print to serial with timestamp
     Serial.printf("[%lu] %s\n", timestamp, message.c_str());
 
+    if (syslog != nullptr && WiFi.isConnected())
+      syslog->printf(FAC_USER, PRI_DEBUG, (char*) "[%lu] %s", timestamp, message.c_str());
+
     // Generate UUID for this log entry
     uuidGenerator.generate();
-    auto uuid = String(uuidGenerator.toCharArray());
+    char* uuidChars = uuidGenerator.toCharArray();
+    String uuid = String(uuidChars);
 
     // Store in circular buffer
     logBuffer[currentIndex].uuid = uuid;
@@ -58,6 +90,12 @@ void Logger::logf(const char *format, ...)
 
 String Logger::getLogsAsJson() const
 {
+  if (settingsManager.getDebugEnabled())
+  {
+    size_t freeHeapBefore = ESP.getFreeHeap();
+    logger.logf("Free heap before JSON log: %d bytes", freeHeapBefore);
+  }
+
   JsonDocument jsonDoc;
   JsonArray logsArray = jsonDoc["logs"].to<JsonArray>();
 
@@ -75,9 +113,18 @@ String Logger::getLogsAsJson() const
     logEntry["timestamp"] = logBuffer[bufferIndex].timestamp;
     logEntry["message"] = logBuffer[bufferIndex].message;
   }
+  
+  if (jsonDoc.overflowed()) {
+    logger.log("JSON document overflowed - logs may be truncated");
+    return "{\"error\":\"JSON overflow\",\"logs\":[]}";
+  }
 
   String jsonResponse;
   serializeJson(jsonDoc, jsonResponse);
+  
+  if (settingsManager.getDebugEnabled())
+    logger.logf("JSON log response entries: %d, size: %d bytes, free heap: %d bytes", totalEntries,
+              jsonResponse.length(), ESP.getFreeHeap());
   return jsonResponse;
 }
 

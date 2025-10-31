@@ -30,9 +30,12 @@
 const char* firmwareVersion = (strcmp(TOSTRING(FIRMWARE_VERSION_RAW), "") == 0) ? "dev" : TOSTRING(FIRMWARE_VERSION_RAW);
 const char* chipFamily      = (strcmp(TOSTRING(CHIP_FAMILY_RAW), "") == 0) ? "unknown" : TOSTRING(CHIP_FAMILY_RAW);
 
+const char* syslogServer = (strcmp(TOSTRING(SYSLOG_SERVER), "") == 0 || strcmp(TOSTRING(SYSLOG_SERVER), "1") == 0) ? "" : TOSTRING(SYSLOG_SERVER);
+const char* syslogPort = (strcmp(TOSTRING(SYSLOG_PORT), "") == 0 || strcmp(TOSTRING(SYSLOG_PORT), "1") == 0) ? "" : TOSTRING(SYSLOG_PORT);
+
 const char* hostName      = (strcmp(TOSTRING(HOST_NAME), "") == 0) ? "coopcontroller" : TOSTRING(HOST_NAME);
-const char* otaPasswd      = (strcmp(TOSTRING(OTA_PASSWD), "") == 0 || strcmp(TOSTRING(OTA_PASSWD), "") == 1) ? "" : TOSTRING(OTA_PASSWD);
-const char* apPasswd      = (strcmp(TOSTRING(AP_PASSWD), "") == 0 || strcmp(TOSTRING(AP_PASSWD), "") == 1) ? "" : TOSTRING(AP_PASSWD);
+const char* otaPasswd      = (strcmp(TOSTRING(OTA_PASSWD), "") == 0 || strcmp(TOSTRING(OTA_PASSWD), "1") == 0) ? "" : TOSTRING(OTA_PASSWD);
+const char* apPasswd      = (strcmp(TOSTRING(AP_PASSWD), "") == 0 || strcmp(TOSTRING(AP_PASSWD), "1") == 0) ? "" : TOSTRING(AP_PASSWD);
 
 #define WIFI_CHECK_INTERVAL 30000     // Check WiFi every 30 seconds
 #define WIFI_RECONNECT_TIMEOUT 10000  // Wait 10 seconds for reconnection
@@ -67,19 +70,19 @@ void failWifi()
     // Only revert to AP mode if WiFi has never successfully connected
     if (!settingsManager.getHasConnected())
     {
-    settingsManager.setAPMode(true);
-    if (settingsManager.save())
-    {
-        logger.log("Failed to connect to wifi, reverted to AP mode");
-    }
-    else
-    {
-        logger.log("Failed to update settings");
-    }
+        settingsManager.setAPMode(true);
+        if (settingsManager.save())
+        {
+            logger.log("Failed to connect to wifi, reverted to AP mode");
+        }
+        else
+        {
+            logger.log("Failed to update settings");
+        }
 
-    delay(1000);  // Give time for serial output
-    ESP.restart();
-}
+        delay(1000);  // Give time for serial output
+        ESP.restart();
+    }
     else
     {
         logger.log("WiFi connection failed, retrying in 30 seconds");
@@ -132,7 +135,7 @@ void wifiSetup()
         int retryDelay = settingsManager.getWifiRetryDelaySeconds();
         
         wifiRetryCount = 0;
-        while (WiFi.status() != WL_CONNECTED && wifiRetryCount < maxRetries)
+        while (!WiFi.isConnected() && wifiRetryCount < maxRetries)
         {
             Serial.print('.');
             delay(retryDelay * 1000);
@@ -146,7 +149,7 @@ void wifiSetup()
 
         Serial.println();
         
-        if (WiFi.status() == WL_CONNECTED) {
+        if (WiFi.isConnected()) {
             logger.log("WiFi Connected, IP address: " + WiFi.localIP().toString());
             isInAPMode = false;
             
@@ -200,7 +203,7 @@ void checkWifiConnection()
     }
 
     // Check if WiFi is connected
-    if (WiFi.status() != WL_CONNECTED)
+    if (!WiFi.isConnected())
     {
         if (!isReconnecting)
         {
@@ -380,6 +383,10 @@ void loop()
         if (hasWaterMeter && pumpController.isPumpOn() && pumpRunTime >= timeoutMs && (currentTimeMs - lastPulse) >= timeoutMs) {
             flowError = true;
             logger.log("Flow error detected: pump running without flow for timeout period");
+            if (settingsManager.getDebugEnabled()) {
+                logger.logf("DEBUG: Pump run time: %lu ms, Current time: %lu ms, Last pulse time: %lu ms, Timeout: %lu ms\n", 
+                              pumpRunTime, currentTimeMs, lastPulse, timeoutMs);
+            }
         }
         
         // Update pump controller with current status
@@ -419,4 +426,18 @@ void loop()
     webServer.loop();
 
     delay(10);
+
+    // log the uptime and heap size every 10 seconds
+    if (settingsManager.getDebugEnabled()) {
+        static unsigned long lastStatusLog = 0;
+        if (currentTime - lastStatusLog >= 10000) {
+            lastStatusLog = currentTime;
+            unsigned long uptime = millis();
+            unsigned long hours = uptime / 3600000;
+            unsigned long minutes = (uptime % 3600000) / 60000;
+            unsigned long seconds = (uptime % 60000) / 1000;
+            logger.logf("Uptime: %lu hours, %lu minutes, %lu seconds, Free heap: %d bytes", 
+                        hours, minutes, seconds, ESP.getFreeHeap());
+        }
+    }
 }
