@@ -43,6 +43,7 @@
 - Optimize web UI for mobile devices
 - Make water meter pulse calibration factor configurable from web UI settings instead of hardcoded as pulseToGallons in constructor of TempSensor.cpp
 - Rename TempSensor to SensorManager since it handles both temperature and water meter sensors
+- Change enums to enum class for better type safety and make sure web components are updated accordingly to be compatible with the web server JSON handling using string states instead of numeric values
 
 ## Implemented Features
 
@@ -137,7 +138,7 @@
   - Adhere to coding style guidelines outlined above.
 - Testing requirements: Write unit tests for new components, use Jest for JavaScript/TypeScript testing, and Google Test for C++ testing.
 - Components and related functionality should be written in their own classes and files as appropriate to maintain separation of concerns.
-- Documentation needs: Update README.md and inline documentation for new components; ensure clear explanations of functionality and design decisions; fully document code with comments.
+- Documentation needs: Update README.md and inline documentation for new components; ensure clear explanations of functionality and design decisions and commands to set up and build the project; fully document code with comments.
 
 ## Pull Request and Collaboration Guidelines
 
