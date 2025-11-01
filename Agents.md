@@ -17,29 +17,50 @@
 - The web interface should provide real-time updates on temperature readings, pump status, and water flow rate, along with configuration options for the various settings.
 - The code should be well-documented, with clear explanations of the functionality and any important design decisions.
 
-
 ## Development Environment
 
-<!-- - Setup instructions
+- Setup instructions
+  1. Install Platform.io IDE or use VSCode with the Platform.io extension.
+  2. Clone the repository from GitHub.
+  3. Open the project in Platform.io.
+  4. Install any required libraries via Platform.io Library Manager.
+  5. Use available MCP tools, such as Context7 for the latest references for AI-assisted coding, playwright for web testing, and Kilo Code for code generation and completion.
 - Key commands for building, running, and testing
-- Any environment variables or dependencies -->
+  - Build: `pio run`
+  - Upload: `pio run --target upload`
+  - Monitor: `pio device monitor`
+- References:
+  - In project root, .url files link to important resources, ESP32 pinout images, and related documentation.
+  - Platform.io Documentation: https://docs.platformio.org
+  - Platform.io registry for libraries: https://registry.platformio.org
+  - ESP32 Documentation: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/
+  - SolidJS Documentation: https://www.solidjs.com/docs/latest
+  - Use MCP tools as necessary, including brave_search, to retrieve up-to-date information and coding assistance on the web.
 
 ## Coding Style Guidelines
 
-<!-- - Naming conventions
-- Formatting rules
-- Preferred technologies and libraries
-- Error handling approaches -->
+- Naming conventions: camelCase for variables and functions, PascalCase for classes in C++, kebab-case for files in the web project
+- Formatting rules: 4 spaces for indentation, max line length of 100 characters
+- Commenting standards: Use JSDoc for JavaScript/TypeScript, Doxygen for C++
+- Commit message conventions: Use imperative mood, include issue references
+- Preferred technologies and libraries: ESP32 with Platform.io for firmware, SolidJS for web interface; make sure C++ code is compatible with ESP32 environment, but modern C++ features are encouraged, std=c++17 for most and std=c++11 where needed for compatibility
+- Error handling approaches: Use try-catch blocks where appropriate, validate inputs, and provide meaningful error messages
+- Linting: Use ESLint for JavaScript/TypeScript, cpplint for C++; ensure code passes linting before committing
+- Testing: Write unit tests for critical functions, use Jest for JavaScript/TypeScript testing, and Google Test for C++ testing
+- Documentation: Maintain up-to-date README.md and inline documentation
 
 ## Restricted or Sensitive Files
 
-<!-- - List files or directories that AI agents should not access or modify. -->
+- data/user_settings.json
 
 ## Component / Feature Creation Rules
 
-<!-- - Instructions for component structure and design
-- Testing requirements
-- Documentation needs -->
+- Instructions for component structure and design:
+  - Follow the existing project structure for new components.
+  - Ensure components are modular and reusable.
+  - Adhere to coding style guidelines outlined above.
+- Testing requirements: Write unit tests for new components, use Jest for JavaScript/TypeScript testing, and Google Test for C++ testing.
+- Documentation needs: Update README.md and inline documentation for new components; ensure clear explanations of functionality and design decisions; fully document code with comments.
 
 ## Pull Request and Collaboration Guidelines
 
@@ -51,9 +72,6 @@
 
 <!-- - Any other important info to guide AI coding agents -->
 
-
 ---
 
-<!-- Fill in each section with concise and clear instructions for AI tools like Kilo Code to follow, ensuring your project conventions and restrictions are respected.
-
-This outline is based on best practices for AGENTS.md files used to provide context and instructions to AI coding assistants [web:2][web:12]. -->
+<!-- This outline is based on best practices for AGENTS.md files used to provide context and instructions to AI coding assistants [web:2][web:12]. -->
