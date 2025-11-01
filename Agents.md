@@ -44,6 +44,7 @@
 - Make water meter pulse calibration factor configurable from web UI settings instead of hardcoded as pulseToGallons in constructor of TempSensor.cpp
 - Rename TempSensor to SensorManager since it handles both temperature and water meter sensors
 - Change enums to enum class for better type safety and make sure web components are updated accordingly to be compatible with the web server JSON handling using string states instead of numeric values
+- Add Home Assistant integration support using library with MQTT settinsgs on web UI
 
 ## Implemented Features
 
@@ -104,6 +105,7 @@
   - SolidJS Documentation: https://www.solidjs.com/docs/latest
   - Use MCP tools as necessary, including brave_search, to retrieve up-to-date information and coding assistance on the web.
 - Any ambiguities or questions should be directed clarified before coding.
+- Web UI settings should be stored in `data/user_settings.json` and should not be hardcoded in the firmware.
 
 ## Pin Configuration
 
@@ -139,6 +141,7 @@
 - Testing requirements: Write unit tests for new components, use Jest for JavaScript/TypeScript testing, and Google Test for C++ testing.
 - Components and related functionality should be written in their own classes and files as appropriate to maintain separation of concerns.
 - Documentation needs: Update README.md and inline documentation for new components; ensure clear explanations of functionality and design decisions and commands to set up and build the project; fully document code with comments.
+- If a better library or approach is found for existing functionality or a new feature than a library that's in use, discuss with the team before making changes.
 
 ## Pull Request and Collaboration Guidelines
 
