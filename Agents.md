@@ -41,6 +41,8 @@
 - Display uptime since last reboot in web UI status
 - Make sure no web-related calls are made when not connected to WiFi (e.g., OpenWeather, OpenAI)
 - Optimize web UI for mobile devices
+- Make water meter pulse calibration factor configurable from web UI settings instead of hardcoded as pulseToGallons in constructor of TempSensor.cpp
+- Rename TempSensor to SensorManager since it handles both temperature and water meter sensors
 
 ## Implemented Features
 
