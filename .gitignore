@@ -12,4 +12,6 @@ data/user_settings.json
 
 *.url
 
+logs
+
 .DS_Store
