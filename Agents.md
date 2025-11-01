@@ -128,7 +128,7 @@
 
 ## Restricted or Sensitive Files
 
-- data/user_settings.json (contains WiFi/email/API/etc. credentials and system configuration); ensure this file is excluded from version control (.gitignore) and handle with care; user_settings.example.json is to be provided as a template without user/password/key data.
+- data/user_settings.json (contains WiFi/email/API/etc. credentials and system configuration); ensure this file is excluded from version control (.gitignore) and handle with care; user_settings.example.json is to be provided as a template without user/password/key data, but rather placeholder values.
 
 ## Component / Feature Creation Rules
 
