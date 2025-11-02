@@ -31,6 +31,7 @@ SettingsManager::SettingsManager()
     settings.light_on_hour       = 6;         // Default turn on at 6 AM
     settings.light_off_hour      = 20;        // Default turn off at 8 PM
     settings.log_level           = "INFO";    // Default log level
+    settings.watchdog_timeout_seconds = 30;   // Default watchdog timeout 30 seconds
 }
 
 bool SettingsManager::load()
@@ -262,6 +263,11 @@ int SettingsManager::getWifiAPDurationMinutes()
     return getSettings().wifi_ap_duration_minutes;
 }
 
+int SettingsManager::getWatchdogTimeoutSeconds()
+{
+    return getSettings().watchdog_timeout_seconds;
+}
+
 // WiFi connection settings setters - request restart for these
 void SettingsManager::setWifiMaxRetries(int retries)
 {
@@ -285,6 +291,14 @@ void SettingsManager::setWifiAPDurationMinutes(int minutes)
         load();
     settings.wifi_ap_duration_minutes = minutes;
     wifiChanged = true;
+}
+
+void SettingsManager::setWatchdogTimeoutSeconds(int seconds)
+{
+    if (!isLoaded)
+        load();
+    settings.watchdog_timeout_seconds = seconds;
+    // Note: Changing watchdog timeout requires restart to take effect
 }
 
 void SettingsManager::setSSID(const String &ssid)
@@ -347,6 +361,7 @@ String SettingsManager::toJson(bool includePassword) const
     doc["light_on_hour"] = settings.light_on_hour;
     doc["light_off_hour"] = settings.light_off_hour;
     doc["log_level"] = settings.log_level;
+    doc["watchdog_timeout_seconds"] = settings.watchdog_timeout_seconds;
 
     if (includePassword)
     {

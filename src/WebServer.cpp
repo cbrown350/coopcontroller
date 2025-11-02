@@ -94,6 +94,11 @@ void WebServer::begin()
                 }
             }
             
+            if (jsonObj["watchdog_timeout_seconds"].is<int>()) {
+                settingsManager.setWatchdogTimeoutSeconds(jsonObj["watchdog_timeout_seconds"].as<int>());
+                logger.log("Watchdog timeout updated - restart required for changes to take effect");
+            }
+            
             // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
             
             settingsManager.save();
@@ -186,6 +191,7 @@ void WebServer::begin()
                   system["pump_auto_mode"] = settingsManager.getPumpAutoMode();
                   system["light_auto_mode"] = settingsManager.getLightAutoMode();
                   system["log_level"] = settingsManager.getLogLevel();
+                  system["watchdog_timeout_seconds"] = settingsManager.getWatchdogTimeoutSeconds();
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);

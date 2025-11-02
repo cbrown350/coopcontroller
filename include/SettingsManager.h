@@ -29,6 +29,7 @@ struct user_settings
     int    wifi_max_retries;        // Maximum number of WiFi connection retries (default 5)
     int    wifi_retry_delay_seconds;  // Delay between WiFi retry attempts in seconds (default 30)
     int    wifi_ap_duration_minutes;  // How long to stay in AP mode before retrying (default 10)
+    int    watchdog_timeout_seconds; // Watchdog timeout in seconds (default 30, range 10-120)
 };
 
 class SettingsManager
@@ -77,6 +78,7 @@ class SettingsManager
     int    getWifiMaxRetries();
     int    getWifiRetryDelaySeconds();
     int    getWifiAPDurationMinutes();
+    int    getWatchdogTimeoutSeconds();
 
     void setSSID(const String &ssid);
     void setPassword(const String &password);
@@ -100,6 +102,7 @@ class SettingsManager
     void setWifiMaxRetries(int retries);
     void setWifiRetryDelaySeconds(int seconds);
     void setWifiAPDurationMinutes(int minutes);
+    void setWatchdogTimeoutSeconds(int seconds);
 
     String toJson(bool includePassword = true) const;
 };

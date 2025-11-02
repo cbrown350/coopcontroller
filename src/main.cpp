@@ -90,6 +90,14 @@ void failWifi()
     }
 }
 
+// Watchdog reset handler - called when watchdog triggers
+void IRAM_ATTR watchdogResetHandler() {
+    // Log the watchdog reset event before system resets
+    // Note: This runs in interrupt context, so keep it minimal
+    // The actual logging will be done by the watchdog reset itself
+    // This is just for any last-minute cleanup if needed
+}
+
 void wifiSetup()
 {
     if (settingsManager.isAPMode())
@@ -185,11 +193,11 @@ void checkWifiConnection()
     if (isInAPMode) {
         unsigned long apDuration = settingsManager.getWifiAPDurationMinutes() * 60000; // Convert to milliseconds
         if (millis() - wifiAPModeStart >= apDuration && !settingsManager.getSSID().isEmpty()){
-            logger.log("AP mode duration expired, attempting WiFi connection");
-            settingsManager.setAPMode(false);
-            settingsManager.save();
-            delay(1000);
-            ESP.restart();
+          logger.log("AP mode duration expired, attempting WiFi connection");
+          settingsManager.setAPMode(false);
+          settingsManager.save();
+          delay(1000);
+          ESP.restart();
         }
         return;
     }
@@ -312,6 +320,16 @@ void setup()
     
     logger.log("Coop controller components initialized");
 
+    // Initialize Task Watchdog Timer
+    int watchdogTimeout = settingsManager.getWatchdogTimeoutSeconds();
+    esp_err_t wdtResult = esp_task_wdt_init(watchdogTimeout, true); // timeout in seconds, panic on timeout
+    if (wdtResult == ESP_OK) {
+        esp_task_wdt_add(NULL); // Add current task (loop) to WDT watch
+        logger.logInfo(String("Task Watchdog Timer initialized with ") + String(watchdogTimeout) + " second timeout");
+    } else {
+        logger.logError(String("Failed to initialize Task Watchdog Timer: ") + String(esp_err_to_name(wdtResult)));
+    }
+
     wifiSetup();
     logger.log("NTP time synchronization started");
     configTime(0, 0, ntpServer);
@@ -335,6 +353,10 @@ unsigned long getTime()
 
 void loop()
 {
+    // put your main code here, to run repeatedly:
+    // Feed the watchdog timer at the start of each loop iteration
+    esp_task_wdt_reset();
+
     // Check WiFi connection periodically
     unsigned long currentTime = millis();
 
@@ -433,4 +455,11 @@ void loop()
 
     // log the uptime and heap size every 10 seconds
     logger.logVerbose(String("Uptime: ") + String(millis() / 1000) + " seconds, Free heap: " + String(ESP.getFreeHeap()) + " bytes");
+
+    // Log watchdog status every 1000 loops for verbose logging
+    static unsigned long loopCount = 0;
+    loopCount++;
+    if (loopCount % 1000 == 0) {
+        logger.logVerbose(String("Watchdog fed at loop iteration ") + String(loopCount));
+    }
 }
