@@ -31,9 +31,7 @@ SensorManager::~SensorManager() {}
 void SensorManager::begin() {
     logger.log("Initializing temperature sensors...");
     
-    if (settingsManager.getDebugEnabled()) {
-        logger.logf("DEBUG: Pin configuration - TEMP_METER_PIN: %d, TEMP_METER_2_PIN: %d", TEMP_METER_PIN, TEMP_METER_2_PIN);
-    }
+    logger.logDebug(String("Pin configuration - TEMP_METER_PIN: ") + String(TEMP_METER_PIN) + ", TEMP_METER_2_PIN: " + String(TEMP_METER_2_PIN));
     
     // Initialize OneWire instances
     oneWire1 = new OneWire(TEMP_METER_PIN);
@@ -56,9 +54,7 @@ void SensorManager::begin() {
         // Only attach interrupt if we're sure it's a water meter
         attachInterrupt(digitalPinToInterrupt(TEMP_METER_PIN), std::bind(&SensorManager::sensor1PulseISR, this), FALLING);
         logger.logf("Sensor 1 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_PIN);
-        if (settingsManager.getDebugEnabled()) {
-            logger.logf("DEBUG: Sensor 1 interrupt attached to pin %d", TEMP_METER_PIN);
-        }
+        logger.logDebug(String("Sensor 1 interrupt attached to pin ") + String(TEMP_METER_PIN));
     }
     
     if (sensor2.type == SensorType::WATER_METER) {
@@ -69,9 +65,7 @@ void SensorManager::begin() {
         // Attach interrupt for water meter pulse detection
         attachInterrupt(digitalPinToInterrupt(TEMP_METER_2_PIN), std::bind(&SensorManager::sensor2PulseISR, this), FALLING);
         logger.logf("Sensor 2 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_2_PIN);
-        if (settingsManager.getDebugEnabled()) {
-            logger.logf("DEBUG: Sensor 2 interrupt attached to pin %d", TEMP_METER_2_PIN);
-        }
+        logger.logDebug(String("Sensor 2 interrupt attached to pin ") + String(TEMP_METER_2_PIN));
     }
 }
 
@@ -137,9 +131,7 @@ void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData&
         sensor.is_connected = true;
         sensor.last_reading_time = millis();
         
-        if (settingsManager.getDebugEnabled()) {
-            logger.logf("DEBUG: Dallas temp reading: %.2f°C (%.2f°F)", tempC, sensor.temperature_f);
-        }
+        logger.logDebug(String("Dallas temp reading: ") + String(tempC) + "°C (" + String(sensor.temperature_f) + "°F");
     } else {
         sensor.is_connected = false;
         sensor.temperature_f = 0.0f;
@@ -170,10 +162,7 @@ void SensorManager::calculateFlowRate(SensorData& sensor) const {
         sensor.pulse_count.store(0);
         lastCalculationTime = currentTime;
         
-        if (settingsManager.getDebugEnabled()) {
-            logger.logf("DEBUG: Flow rate calculation - Pulses: %lu, Time: %lu ms, Rate: %.2f GPM", 
-                       pulses, timeDiff, sensor.flow_rate);
-        }
+        logger.logDebug(String("Flow rate calculation - Pulses: ") + String(pulses) + ", Time: " + String(timeDiff) + " ms, Rate: " + String(sensor.flow_rate) + " GPM");
     }
 }
 
@@ -258,15 +247,11 @@ unsigned long SensorManager::getMostRecentPulseTime() const {
     unsigned long max_time = 0;
     if (sensor1.type == SensorType::WATER_METER) {
         max_time = max(max_time, sensor1.last_pulse_time.load());
-        if (settingsManager.getDebugEnabled()) {
-            Serial.printf("DEBUG: Sensor 1 last pulse time: %lu\n", sensor1.last_pulse_time.load());
-        }
+        logger.logDebug(String("Sensor 1 last pulse time: ") + String(sensor1.last_pulse_time.load()));
     }
     if (sensor2.type == SensorType::WATER_METER) {
         max_time = max(max_time, sensor2.last_pulse_time.load());
-        if (settingsManager.getDebugEnabled()) {
-            Serial.printf("DEBUG: Sensor 2 last pulse time: %lu\n", sensor2.last_pulse_time.load());
-        }
+        logger.logDebug(String("Sensor 2 last pulse time: ") + String(sensor2.last_pulse_time.load()));
     }
     return max_time;
 }

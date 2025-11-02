@@ -21,8 +21,8 @@ struct user_settings
     bool   light_auto_mode;         // Enable automatic light control (future feature)
     int    light_on_hour;           // Hour to turn on light (24-hour format)
     int    light_off_hour;          // Hour to turn off light (24-hour format)
-    bool   debug_enabled;           // Enable debug logging for troubleshooting
     int    water_flow_error_timeout_seconds; // Timeout for water flow error detection in seconds (default 120 = 2 minutes)
+    String log_level;               // Log level: "VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR" (default "INFO")
     // int    pump_error_retry_seconds; // Time to wait before retrying pump after flow error (default 120 = 2 minutes)
     
     // WiFi connection settings
@@ -58,7 +58,7 @@ class SettingsManager
     String getSSID();
     String getPassword();
     bool   isAPMode();
-    bool   getPumpAutoMode();
+    bool   getPumpAutoMode() const;
     bool   getHasConnected();
     
     // Coop Controller getters
@@ -68,10 +68,10 @@ class SettingsManager
     int    getPumpErrorRetrySeconds();
     int    getPumpOnTimeSeconds();
     int    getPumpOffTimeSeconds();
-    bool   getLightAutoMode();
+    bool   getLightAutoMode() const;
     int    getLightOnHour();
     int    getLightOffHour();
-    bool   getDebugEnabled();
+    String getLogLevel() const;
     
     // WiFi connection settings getters
     int    getWifiMaxRetries();
@@ -81,22 +81,22 @@ class SettingsManager
     void setSSID(const String &ssid);
     void setPassword(const String &password);
     void setAPMode(bool apMode);
-    void setPumpAutoMode(bool pumpAutoMode);
+    void setPumpAutoMode(bool mode);
     void setHasConnected(bool hasConnected);
     
-    // Coop Controller setters
+    // Coop Controller setters - don't request restart for these
     void setTempThresholdOnF(float threshold);
     void setTempThresholdOffF(float threshold);
     void setWaterFlowErrorTimeoutSeconds(int timeout);
     void setPumpErrorRetrySeconds(int seconds);
     void setPumpOnTimeSeconds(int seconds);
     void setPumpOffTimeSeconds(int seconds);
-    void setLightAutoMode(bool enabled);
+    void setLightAutoMode(bool mode);
     void setLightOnHour(int hour);
     void setLightOffHour(int hour);
-    void setDebugEnabled(bool enabled);
+    void setLogLevel(const String& level);
     
-    // WiFi connection settings setters
+    // WiFi connection settings setters - request restart for these
     void setWifiMaxRetries(int retries);
     void setWifiRetryDelaySeconds(int seconds);
     void setWifiAPDurationMinutes(int minutes);

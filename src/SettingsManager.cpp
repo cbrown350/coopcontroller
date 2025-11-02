@@ -30,8 +30,7 @@ SettingsManager::SettingsManager()
     settings.light_auto_mode     = false;     // Disable automatic light control initially
     settings.light_on_hour       = 6;         // Default turn on at 6 AM
     settings.light_off_hour      = 20;        // Default turn off at 8 PM
-    settings.debug_enabled       = false;     // Debug disabled by default
-    settings.water_flow_error_timeout_seconds = 10; // Default 10 seconds
+    settings.log_level           = "INFO";    // Default log level
 }
 
 bool SettingsManager::load()
@@ -67,15 +66,10 @@ bool SettingsManager::load()
     settings.pump_off_time_seconds = doc["pump_off_time_seconds"] | 300;
     settings.pump_auto_mode     = doc["pump_auto_mode"] | true;
     settings.light_auto_mode     = doc["light_auto_mode"] | false;
-    settings.light_on_hour       = doc["light_on_hour"] | 6;
-    settings.light_off_hour      = doc["light_off_hour"] | 20;
-    settings.debug_enabled       = doc["debug_enabled"] | false;
-    
-    // Load WiFi connection settings with defaults
+    settings.log_level = doc["log_level"] | "INFO";
     settings.wifi_max_retries = doc["wifi_max_retries"] | 5;
     settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 30;
     settings.wifi_ap_duration_minutes = doc["wifi_ap_duration_minutes"] | 10;
-    settings.water_flow_error_timeout_seconds = doc["water_flow_error_timeout_seconds"] | 120;
 
     isLoaded = true;
     return true;
@@ -169,29 +163,16 @@ int SettingsManager::getPumpOffTimeSeconds()
     return getSettings().pump_off_time_seconds;
 }
 
-bool SettingsManager::getPumpAutoMode()
-{
-    return getSettings().pump_auto_mode;
+bool SettingsManager::getPumpAutoMode() const {
+    return settings.pump_auto_mode;
 }
 
-bool SettingsManager::getLightAutoMode()
-{
-    return getSettings().light_auto_mode;
+bool SettingsManager::getLightAutoMode() const {
+    return settings.light_auto_mode;
 }
 
-int SettingsManager::getLightOnHour()
-{
-    return getSettings().light_on_hour;
-}
-
-int SettingsManager::getLightOffHour()
-{
-    return getSettings().light_off_hour;
-}
-
-bool SettingsManager::getDebugEnabled()
-{
-    return getSettings().debug_enabled;
+String SettingsManager::getLogLevel() const {
+    return settings.log_level;
 }
 
 // Coop Controller setters - don't request restart for these
@@ -258,11 +239,11 @@ void SettingsManager::setLightOffHour(int hour)
     settings.light_off_hour = hour;
 }
 
-void SettingsManager::setDebugEnabled(bool enabled)
+void SettingsManager::setLogLevel(const String &level)
 {
     if (!isLoaded)
         load();
-    settings.debug_enabled = enabled;
+    settings.log_level = level;
 }
 
 // WiFi connection settings getters
@@ -365,8 +346,7 @@ String SettingsManager::toJson(bool includePassword) const
     doc["light_auto_mode"] = settings.light_auto_mode;
     doc["light_on_hour"] = settings.light_on_hour;
     doc["light_off_hour"] = settings.light_off_hour;
-    doc["debug_enabled"] = settings.debug_enabled;
-    doc["water_flow_error_timeout_seconds"] = settings.water_flow_error_timeout_seconds;
+    doc["log_level"] = settings.log_level;
 
     if (includePassword)
     {

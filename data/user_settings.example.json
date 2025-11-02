@@ -8,12 +8,16 @@
   "pump_on_time_seconds": 60,
   "pump_off_time_seconds": 3000,
   "pump_auto_mode": true,
-  "debug_enabled": false,
+  "light_auto_mode": false,
+  "light_on_hour": 6,
+  "light_off_hour": 21,
+  "log_level": "INFO",
   "wifi_max_retries": 5,
   "wifi_retry_delay_seconds": 15,
   "wifi_ap_duration_minutes": 10,
   "water_flow_error_timeout_seconds": 5,
   "light_auto_mode": false,
   "light_on_hour": 6,
-  "light_off_hour": 2
+  "light_off_hour": 2,
+  "log_level": "INFO"
 }

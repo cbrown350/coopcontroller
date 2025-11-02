@@ -23,7 +23,8 @@ const mockSettings = {
   light_auto_mode: false,           // Light auto mode disabled
   light_on_hour: 6,               // Light on at 6 AM
   light_off_hour: 20,              // Light off at 8 PM
-  debug_enabled: true,             // Debug enabled
+  debug_enabled: true,
+  log_level: 'INFO',             // Debug enabled
   water_flow_error_timeout_seconds: 20, // 20 seconds
 };
 
@@ -306,7 +307,7 @@ let mockPumpState = {
 // Mock sensor data
 const mockSensorData = {
   sensor1: {
-    type: 1, // Dallas Temperature
+    type: 'DALLAS_TEMP', // Dallas Temperature
     connected: true,
     temperature_f: 32.5,
     flow_rate: 0,
@@ -314,7 +315,7 @@ const mockSensorData = {
     status: 'Connected'
   },
   sensor2: {
-    type: 2, // Water Meter
+    type: 'WATER_METER', // Water Meter
     connected: true,
     temperature_f: 0,
     flow_rate: 1.2,

@@ -142,9 +142,7 @@ void wifiSetup()
             wifiRetryCount++;
             
             // Add some debugging
-            if (settingsManager.getDebugEnabled()) {
-                Serial.printf("DEBUG: WiFi status: %d, attempt %d/%d\n", WiFi.status(), wifiRetryCount, maxRetries);
-            }
+            logger.logDebug(String("WiFi status: ") + String(WiFi.status()) + ", attempt " + String(wifiRetryCount) + "/" + String(maxRetries));
         }
 
         Serial.println();
@@ -217,9 +215,7 @@ void checkWifiConnection()
                 isReconnecting = true;
                 wifiRetryCount = 0;
                 
-                if (settingsManager.getDebugEnabled()) {
-                    Serial.printf("DEBUG: Starting WiFi reconnection to %s\n", ssid.c_str());
-                }
+                logger.logDebug(String("Starting WiFi reconnection to ") + String(ssid.c_str()));
             } else {
                 logger.log("No SSID configured for reconnection");
                 failWifi();
@@ -303,6 +299,17 @@ void setup()
     // Initialize coop controller components
     tempSensor.begin();
     pumpController.begin();
+    
+    // Initialize logger level from settings
+    String logLevelStr = settingsManager.getLogLevel();
+    LogLevel level = LogLevel::INFO; // default
+    if (logLevelStr == "VERBOSE") level = LogLevel::VERBOSE;
+    else if (logLevelStr == "DEBUG") level = LogLevel::DEBUG;
+    else if (logLevelStr == "INFO") level = LogLevel::INFO;
+    else if (logLevelStr == "WARNING") level = LogLevel::WARNING;
+    else if (logLevelStr == "ERROR") level = LogLevel::ERROR;
+    logger.setLogLevel(level);
+    
     logger.log("Coop controller components initialized");
 
     wifiSetup();
@@ -383,10 +390,7 @@ void loop()
         if (hasWaterMeter && pumpController.isPumpOn() && pumpRunTime >= timeoutMs && (currentTimeMs - lastPulse) >= timeoutMs) {
             flowError = true;
             logger.log("Flow error detected: pump running without flow for timeout period");
-            if (settingsManager.getDebugEnabled()) {
-                logger.logf("DEBUG: Pump run time: %lu ms, Current time: %lu ms, Last pulse time: %lu ms, Timeout: %lu ms\n", 
-                              pumpRunTime, currentTimeMs, lastPulse, timeoutMs);
-            }
+            logger.logDebug(String("Pump run time: ") + String(pumpRunTime) + " ms, Current time: " + String(currentTime) + " ms, Last pulse time: " + String(lastPulse) + " ms, Timeout: " + String(timeoutMs) + " ms");
         }
         
         // Update pump controller with current status
@@ -428,16 +432,5 @@ void loop()
     delay(10);
 
     // log the uptime and heap size every 10 seconds
-    if (settingsManager.getDebugEnabled()) {
-        static unsigned long lastStatusLog = 0;
-        if (currentTime - lastStatusLog >= 10000) {
-            lastStatusLog = currentTime;
-            unsigned long uptime = millis();
-            unsigned long hours = uptime / 3600000;
-            unsigned long minutes = (uptime % 3600000) / 60000;
-            unsigned long seconds = (uptime % 60000) / 1000;
-            logger.logf("Uptime: %lu hours, %lu minutes, %lu seconds, Free heap: %d bytes", 
-                        hours, minutes, seconds, ESP.getFreeHeap());
-        }
-    }
+    logger.logVerbose(String("Uptime: ") + String(millis() / 1000) + " seconds, Free heap: " + String(ESP.getFreeHeap()) + " bytes");
 }

@@ -32,11 +32,9 @@ void PumpController::begin() {
     pinMode(pumpPin, OUTPUT);
     digitalWrite(pumpPin, LOW);
     
-    if (settingsManager.getDebugEnabled()) {
-        logger.logf("DEBUG: OUT_PUMP_PIN: %d", OUT_PUMP_PIN);
-        logger.logf("DEBUG: PumpController initialized with pin %d\n", pumpPin);
-        logger.logf("DEBUG: PumpController begin - pin %d set as OUTPUT, initial state LOW\n", pumpPin);
-    }
+    logger.logDebug(String("OUT_PUMP_PIN: ") + String(OUT_PUMP_PIN));
+    logger.logDebug(String("PumpController initialized with pin ") + String(pumpPin));
+    logger.logDebug(String("PumpController begin - pin ") + String(pumpPin) + String(" set as OUTPUT, initial state LOW"));
     
     logger.log("Pump controller initialized");
     logger.logf("Pump pin: %d", pumpPin);
@@ -49,11 +47,8 @@ void PumpController::begin() {
         status.state = PUMP_OFF;
     }
 
-    if (settingsManager.getDebugEnabled()) {
-        Serial.printf("DEBUG: PumpController begin - mode set to %s\n", 
-                      settingsManager.getPumpAutoMode() ? "AUTO" : "OFF");
-        Serial.println("DEBUG: Pump controller initialization complete");
-    }
+    logger.logDebug(String("PumpController begin - mode set to ") + (settingsManager.getPumpAutoMode() ? "AUTO" : "MANUAL"));
+    logger.logDebug("Pump controller initialization complete");
 }
 
 void PumpController::update(float temperature_f, bool has_flow_error) {
@@ -134,9 +129,9 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                     offPhaseStartTime = currentTime;
                     setPumpState(false);
                     logger.logf("Pump cycle: switching to OFF phase for %d seconds", settingsManager.getPumpOffTimeSeconds());
-                } else if (settingsManager.getDebugEnabled() && (cycleElapsed % 10000 < 1000)) {
+                } else if ((cycleElapsed % 10000 < 1000)) {
                     // Log countdown every 10 seconds in debug mode
-                    logger.logf("Pump ON phase: %d seconds remaining until OFF", (timeUntilOff + 500) / 1000);
+                    logger.logDebug(String("Pump ON phase: ") + String((timeUntilOff + 500) / 1000) + " seconds remaining until OFF");
                 }
             } else {
                 // In OFF phase - check if it's time to switch to ON
@@ -148,10 +143,10 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                     clearFlowError();
                     status.total_cycles++;
                     logger.logf("Starting new pump cycle, temperature: %.1f°F - ON phase", status.temperature_f);
-                } else if (settingsManager.getDebugEnabled() && (cycleElapsed % 10000 < 1000)) {
+                } else if ((cycleElapsed % 10000 < 1000)) {
                     // Log countdown every 10 seconds in debug mode
                     unsigned long timeUntilOn = (onTime + offTime) - cycleElapsed;
-                    logger.logf("Pump OFF phase: %d seconds remaining until ON", (timeUntilOn + 500) / 1000);
+                    logger.logDebug(String("Pump OFF phase: ") + String((timeUntilOn + 500) / 1000) + " seconds remaining until ON");
                 }
             }
         }
@@ -180,9 +175,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
 }
 
 void PumpController::setPumpState(bool isOn) {
-    if (settingsManager.getDebugEnabled()) {
-        Serial.printf("DEBUG: Setting pump pin %d to %s\n", pumpPin, isOn ? "HIGH (ON)" : "LOW (OFF)");
-    }
+    logger.logDebug(String("Setting pump pin ") + String(pumpPin) + " to " + (isOn ? "HIGH (ON)" : "LOW (OFF)"));
     
     digitalWrite(pumpPin, isOn ? HIGH : LOW);
     
@@ -193,17 +186,13 @@ void PumpController::setPumpState(bool isOn) {
         if (isOn) {
             status.current_cycle_start = millis();
             logger.log("Pump turned ON");
-            if (settingsManager.getDebugEnabled()) {
-                Serial.println("DEBUG: Pump turned ON - cycle started");
-            }
+            logger.logDebug("Pump turned ON - cycle started");
         } else {
             if (status.current_cycle_start > 0) {
                 status.current_cycle_duration = millis() - status.current_cycle_start;
             }
             logger.log("Pump turned OFF");
-            if (settingsManager.getDebugEnabled()) {
-                Serial.printf("DEBUG: Pump turned OFF - cycle duration: %lu ms\n", (unsigned long)status.current_cycle_duration);
-            }
+            logger.logDebug(String("Pump turned OFF - cycle duration: ") + String((unsigned long)status.current_cycle_duration) + " ms");
         }
     }
 }

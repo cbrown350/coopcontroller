@@ -75,14 +75,23 @@ void WebServer::begin()
             if (jsonObj["light_auto_mode"].is<bool>()) {
                 settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
             }
-            if (jsonObj["light_on_hour"].is<int>()) {
-                settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
-            }
-            if (jsonObj["light_off_hour"].is<int>()) {
-                settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
-            }
-            if (jsonObj["debug_enabled"].is<bool>()) {
-                settingsManager.setDebugEnabled(jsonObj["debug_enabled"].as<bool>());
+            if (jsonObj["log_level"].is<String>()) {
+                settingsManager.setLogLevel(jsonObj["log_level"].as<String>());
+                // Update logger's current log level
+                String levelStr = jsonObj["log_level"].as<String>();
+                if (levelStr == "VERBOSE") {
+                    logger.setLogLevel(LogLevel::VERBOSE);
+                } else if (levelStr == "DEBUG") {
+                    logger.setLogLevel(LogLevel::DEBUG);
+                } else if (levelStr == "INFO") {
+                    logger.setLogLevel(LogLevel::INFO);
+                } else if (levelStr == "WARNING") {
+                    logger.setLogLevel(LogLevel::WARNING);
+                } else if (levelStr == "ERROR") {
+                    logger.setLogLevel(LogLevel::ERROR);
+                } else {
+                    logger.setLogLevel(LogLevel::INFO); // Default fallback
+                }
             }
             
             // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
@@ -176,10 +185,7 @@ void WebServer::begin()
                   system["pump_off_time_seconds"] = settingsManager.getPumpOffTimeSeconds();
                   system["pump_auto_mode"] = settingsManager.getPumpAutoMode();
                   system["light_auto_mode"] = settingsManager.getLightAutoMode();
-                  system["light_on_hour"] = settingsManager.getLightOnHour();
-                  system["light_off_hour"] = settingsManager.getLightOffHour();
-                  system["debug_enabled"] = settingsManager.getDebugEnabled();
-                  system["water_flow_error_timeout_seconds"] = settingsManager.getWaterFlowErrorTimeoutSeconds();
+                  system["log_level"] = settingsManager.getLogLevel();
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);

@@ -5,7 +5,7 @@ function Status() {
   const [loading, setLoading] = createSignal(true)
   const [sensorStatus, setSensorStatus] = createSignal({
     sensor1: {
-      type: 0,
+      type: "UNKNOWN",
       connected: false,
       temperature_f: 0,
       flow_rate: 0,
@@ -13,7 +13,7 @@ function Status() {
       status: 'Not Connected'
     },
     sensor2: {
-      type: 0,
+      type: "UNKNOWN",
       connected: false,
       temperature_f: 0,
       flow_rate: 0,
@@ -44,6 +44,16 @@ function Status() {
     }
   })
   const [error, setError] = createSignal('')
+
+  // Helpers accept both new string enums and legacy numeric values for backward compatibility.
+  const isDallasType = (t: any) => t === 1 || t === 'DALLAS_TEMP'
+  const isWaterType = (t: any) => t === 2 || t === 'WATER_METER'
+  const sensorTypeLabel = (t: any) => {
+    if (isDallasType(t)) return 'Dallas Temperature'
+    if (isWaterType(t)) return 'Water Meter'
+    if (t === 'UNKNOWN' || t === 0) return 'None'
+    return String(t)
+  }
 
   const refreshSensorStatus = async () => {
     try {
@@ -123,18 +133,17 @@ function Status() {
                 <div class="stat">
                   <div class="stat-title">Sensor 1</div>
                   <div class="stat-value text-sm">
-                    {sensorStatus().sensor1.type === 1 ? 'Dallas Temperature' : 
-                     sensorStatus().sensor1.type === 2 ? 'Water Meter' : 'None'}
+                    {sensorTypeLabel(sensorStatus().sensor1.type)}
                   </div>
                   <div class="stat-desc text-xs">
                     Status: {sensorStatus().sensor1.status && sensorStatus().sensor1.status !=="Not Connected" ? "Connected" : "Not Connected"}
                   </div>
-                  <Show when={sensorStatus().sensor1.type === 1}>
+                  <Show when={isDallasType(sensorStatus().sensor1.type)}>
                     <div class="stat-desc text-xs">
                       Temperature: {sensorStatus().sensor1.temperature_f.toFixed(1)}°F
                     </div>
                   </Show>
-                  <Show when={sensorStatus().sensor1.type === 2}>
+                  <Show when={isWaterType(sensorStatus().sensor1.type)}>
                     <div class="stat-desc text-xs">
                       Flow: {sensorStatus().sensor1.flow_rate.toFixed(2)} GPM
                     </div>
@@ -154,18 +163,17 @@ function Status() {
                 <div class="stat">
                   <div class="stat-title">Sensor 2</div>
                   <div class="stat-value text-sm">
-                    {sensorStatus().sensor2.type === 1 ? 'Dallas Temperature' : 
-                     sensorStatus().sensor2.type === 2 ? 'Water Meter' : 'None'}
+                    {sensorTypeLabel(sensorStatus().sensor2.type)}
                   </div>
                   <div class="stat-desc text-xs">
                     Status: {sensorStatus().sensor2.status && sensorStatus().sensor2.status !=="Not Connected" ? "Connected" : "Not Connected"}
                   </div>
-                  <Show when={sensorStatus().sensor2.type === 1}>
+                  <Show when={isDallasType(sensorStatus().sensor2.type)}>
                     <div class="stat-desc text-xs">
                       Temperature: {sensorStatus().sensor2.temperature_f.toFixed(1)}°F
                     </div>
                   </Show>
-                  <Show when={sensorStatus().sensor2.type === 2}>
+                  <Show when={isWaterType(sensorStatus().sensor2.type)}>
                     <div class="stat-desc text-xs">
                       Flow: {sensorStatus().sensor2.flow_rate.toFixed(2)} GPM
                     </div>
