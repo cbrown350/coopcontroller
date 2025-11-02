@@ -1308,6 +1308,7 @@ TEST_F(PumpControllerTest, TurnsOnWhenTemperatureBelowThreshold) {
 - Follow coding standards and guidelines
 - Write comprehensive tests
 - Update documentation as needed
+- Make sure the code compiles without errors (pio run for C++ and npm run build for web UI in web/)
 
 **2. Testing:**
 - Run full test suite locally
