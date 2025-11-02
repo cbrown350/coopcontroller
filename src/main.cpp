@@ -12,7 +12,7 @@
 #include <esp_task_wdt.h>
 
 #include "Buzzer.h"
-#include "TempSensor.h"
+#include "SensorManager.h"
 #include "PumpController.h"
 
 
@@ -49,7 +49,7 @@ const char* ntpServer = "pool.ntp.org";
 WebServer webServer(80);
 
 // Coop Controller components
-TempSensor tempSensor;
+SensorManager tempSensor;
 PumpController pumpController;
 
 // Variables to track WiFi connection monitoring
@@ -403,10 +403,10 @@ void loop()
         float threshold = settingsManager.getTempThresholdOnF();
         if (tempSensor.isSensor1Connected()) {
             logger.logf("Sensor 1 (Pin %d): %.1f°F %s", TEMP_METER_PIN, tempSensor.getTemperature1F(),
-                       tempSensor.getSensor1Type() == SENSOR_TYPE_DALLAS_TEMP ? "(Temperature)" : "(Water Meter)");
+                       tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "(Temperature)" : "(Water Meter)");
         }
         if (tempSensor.isSensor2Connected()) {
-            if (tempSensor.getSensor2Type() == SENSOR_TYPE_DALLAS_TEMP) {
+            if (tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP) {
                 logger.logf("Sensor 2 (Pin %d): %.1f°F (Temperature)", TEMP_METER_2_PIN, tempSensor.getTemperature2F());
             } else {
                 logger.logf("Sensor 2 (Pin %d): %.2f GPM, %lu pulses (Water Meter)", 

@@ -2,6 +2,7 @@
 #define __PUMP_CONTROLLER_H__
 
 #include <Arduino.h>
+#include "SensorManager.h"
 
 // Pump states
 enum PumpState {

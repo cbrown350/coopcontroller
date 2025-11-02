@@ -3,7 +3,7 @@
 #include <AsyncJson.h>
 
 #include "Logger.h"
-#include "TempSensor.h"
+#include "SensorManager.h"
 #include "PumpController.h"
 
 #include <ElegantOTA.h>
@@ -19,7 +19,7 @@ extern const char* hostName;
 extern const char* otaPasswd;
 
 // External references to coop controller components
-extern TempSensor tempSensor;
+extern SensorManager tempSensor;
 extern PumpController pumpController;
 
 WebServer::WebServer(int port) : server(port) {}
@@ -139,7 +139,7 @@ void WebServer::begin()
                   
                   // Temperature sensor data
                   JsonObject sensor1 = jsonDoc["sensor1"].to<JsonObject>();
-                  sensor1["type"] = tempSensor.getSensor1Type();
+                  sensor1["type"] = tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
                   sensor1["connected"] = tempSensor.isSensor1Connected();
                   sensor1["temperature_f"] = tempSensor.getTemperature1F();
                   sensor1["flow_rate"] = tempSensor.getFlowRate1();
@@ -147,7 +147,7 @@ void WebServer::begin()
                   sensor1["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor1Data());
                   
                   JsonObject sensor2 = jsonDoc["sensor2"].to<JsonObject>();
-                  sensor2["type"] = tempSensor.getSensor2Type();
+                  sensor2["type"] = tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
                   sensor2["connected"] = tempSensor.isSensor2Connected();
                   sensor2["temperature_f"] = tempSensor.getTemperature2F();
                   sensor2["flow_rate"] = tempSensor.getFlowRate2();

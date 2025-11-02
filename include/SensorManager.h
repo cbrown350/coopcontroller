@@ -1,5 +1,5 @@
-#ifndef __TEMP_SENSOR_H__
-#define __TEMP_SENSOR_H__
+#ifndef __SENSOR_MANAGER_H__
+#define __SENSOR_MANAGER_H__
 
 #include <Arduino.h>
 #include <OneWire.h>
@@ -7,10 +7,10 @@
 #include <atomic>
 
 // Sensor types for each pin
-enum SensorType {
-    SENSOR_TYPE_NONE = 0,
-    SENSOR_TYPE_DALLAS_TEMP,
-    SENSOR_TYPE_WATER_METER
+enum class SensorType {
+    NONE = 0,
+    DALLAS_TEMP,
+    WATER_METER
 };
 
 // Sensor data structure
@@ -24,7 +24,7 @@ struct SensorData {
     std::atomic<unsigned long> last_pulse_time;
     
     // Constructor
-    explicit SensorData(SensorType t = SENSOR_TYPE_NONE,
+    explicit SensorData(SensorType t = SensorType::NONE,
                float temp = 0.0f,
                bool connected = false,
                unsigned long lastRead = 0,
@@ -79,7 +79,7 @@ struct SensorData {
     }
 };
 
-class TempSensor {
+class SensorManager {
 private:
     // OneWire and DallasTemperature instances
     OneWire* oneWire1;
@@ -104,8 +104,8 @@ private:
     void calculateFlowRate(SensorData& sensor) const;
     
 public:
-    TempSensor();
-    ~TempSensor();
+    SensorManager();
+    ~SensorManager();
     
     // Initialization
     void begin();
@@ -145,4 +145,4 @@ public:
     unsigned long getMostRecentPulseTime() const;
 };
 
-#endif // __TEMP_SENSOR_H__
+#endif // __SENSOR_MANAGER_H__
