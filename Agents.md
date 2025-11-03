@@ -323,7 +323,7 @@ See [`esp32_devkitC_v4_pinlayout.png`](esp32_devkitC_v4_pinlayout.png) for detai
 
 ## Pin Configuration
 
-All pins are defined in [`platformio.ini`](platformio.ini:45) as build flags and can be referenced in code using the defined constants.
+All pins are defined in [`platformio.ini`](platformio.ini:45) as build flags and can be referenced in code using the defined constants. Inputs/outputs are active high unless marked outherwise, such as "_B" for active low.
 
 ### Currently Configured Pins
 
@@ -338,13 +338,13 @@ All pins are defined in [`platformio.ini`](platformio.ini:45) as build flags and
 
 | Pin | Constant | Function | Type | Status |
 |-----|----------|----------|------|--------|
-| TBD | WIFI_LED_B_PIN | WiFi Status LED | Output | Heartbeat when connected, fast blink when disconnected |
+| TBD | WIFI_LED_B_PIN | WiFi Status LED | Output | Heartbeat when connected, active low, fast blink when disconnected |
 | TBD | BUZZER_PIN | Alert Buzzer | Output | Sounds on fault conditions |
 | TBD | OUT_DOOR_A_OPEN_POS_PIN | Door Open Positive | Output | Drive motor to open door |
 | TBD | OUT_DOOR_A_OPEN_NEG_PIN | Door Open Negative | Output | Drive motor negative (polarity reversed to close) |
-| TBD | OUT_DOOR_A_FAULT_B_PIN | Door Fault Output | Output | Active LOW on fault (timeout) |
-| TBD | DOOR_A_HALL_SENSOR_OPEN_PIN | Door Fully Open Sensor | Input | Hall effect sensor - door fully open |
-| TBD | DOOR_A_HALL_SENSOR_CLOSED_PIN | Door Fully Closed Sensor | Input | Hall effect sensor - door fully closed |
+| TBD | DOOR_A_FAULT_B_PIN | Door Fault Output | Output | Active LOW on fault (timeout) |
+| TBD | DOOR_A_HALL_SENSOR_OPEN_B_PIN | Door Fully Open Sensor | Input | Hall effect sensor, active low - door fully open |
+| TBD | DOOR_A_HALL_SENSOR_CLOSED_B_PIN | Door Fully Closed Sensor | Input | Hall effect sensor, active low - door fully closed |
 
 ### Pin Assignment Notes
 - Ensure no conflicts between defined pins and ESP32 reserved pins
@@ -604,8 +604,8 @@ Features organized by priority and implementation status.
 
 #### Door Control
 - Bidirectional motor control using DRV8833 (OUT_DOOR_A_OPEN_POS_PIN / OUT_DOOR_A_OPEN_NEG_PIN)
-- Hall effect position sensors (DOOR_A_HALL_SENSOR_OPEN_PIN / DOOR_A_HALL_SENSOR_CLOSED_PIN)
-- Fault detection with timeout (OUT_DOOR_A_FAULT_B_PIN active LOW)
+- Hall effect position sensors (DOOR_A_HALL_SENSOR_OPEN_B_PIN / DOOR_A_HALL_SENSOR_CLOSED_B_PIN)
+- Fault detection with timeout (DOOR_A_FAULT_B_PIN active LOW)
 - Configurable timeout values
 - Manual control from web UI
 - Automatic control based on:
