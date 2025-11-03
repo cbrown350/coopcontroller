@@ -244,6 +244,43 @@ async function createServer() {
     } else {
       res.status(400).json({ error: 'Invalid sensor' });
     }
+
+  app.use("/factory_reset", express.urlencoded({ extended: true }), async (req, res) => {
+    try {
+      // Check for confirmation parameter
+      if (!req.body || req.body.confirm !== 'RESET') {
+        return res.status(400).json({ error: 'Missing or invalid confirmation parameter' });
+      }
+      
+      // Reset mock settings to defaults
+      mockSettings.ssid = "";
+      mockSettings.passwd = "";
+      mockSettings.ap_mode = true;
+      mockSettings.enabled = true;
+      mockSettings.has_connected = false;
+      mockSettings.temp_threshold_on_f = 34.0;
+      mockSettings.temp_threshold_off_f = 36.0;
+      mockSettings.pump_on_time_seconds = 300;
+      mockSettings.pump_off_time_seconds = 600;
+      mockSettings.pump_auto_mode = true;
+      mockSettings.light_auto_mode = false;
+      mockSettings.light_on_hour = 6;
+      mockSettings.light_off_hour = 21;
+      mockSettings.log_level = "INFO";
+      mockSettings.water_flow_error_timeout_seconds = 120;
+      mockSettings.wifi_max_retries = 5;
+      mockSettings.wifi_retry_delay_seconds = 30;
+      mockSettings.wifi_ap_duration_minutes = 10;
+      mockSettings.watchdog_timeout_seconds = 30;
+      mockSettings.pulses_per_gallon = 450.0;
+      mockSettings.water_meter_timeout_seconds = 300;
+      
+      res.setHeader("Content-Type", "text/plain");
+      res.end("Factory reset complete. Device will restart in 3 seconds.");
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
   });
 
   app.use(vite.middlewares);

@@ -404,3 +404,42 @@ String SettingsManager::toJson(bool includePassword) const
     serializeJson(doc, output);
     return output;
 }
+
+void SettingsManager::factoryReset()
+{
+    logger.logWarning("Factory reset initiated - clearing all settings");
+    
+    // Set all values to defaults
+    settings.ssid = "";
+    settings.passwd = "";
+    settings.ap_mode = true;
+    settings.enabled = true;
+    settings.has_connected = false;
+    settings.temp_threshold_on_f = 34.0;
+    settings.temp_threshold_off_f = 36.0;
+    settings.pump_on_time_seconds = 300;
+    settings.pump_off_time_seconds = 600;
+    settings.pump_auto_mode = true;
+    settings.light_auto_mode = false;
+    settings.light_on_hour = 6;
+    settings.light_off_hour = 21;
+    settings.log_level = "INFO";
+    settings.water_flow_error_timeout_seconds = 120;
+    settings.wifi_max_retries = 5;
+    settings.wifi_retry_delay_seconds = 30;
+    settings.wifi_ap_duration_minutes = 10;
+    settings.watchdog_timeout_seconds = 30;
+    settings.pulses_per_gallon = 450.0;
+    settings.water_meter_timeout_seconds = 300;
+    
+    // Delete settings file
+    if (LittleFS.exists("/user_settings.json")) {
+        LittleFS.remove("/user_settings.json");
+        logger.logInfo("Settings file deleted");
+    }
+    
+    // Save default settings
+    save();
+    
+    logger.logWarning("Factory reset complete - device will restart");
+}

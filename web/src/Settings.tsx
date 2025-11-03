@@ -26,6 +26,7 @@ function Settings() {
   const [waterMeterTimeoutSeconds, setWaterMeterTimeoutSeconds] = createSignal<number | null>(null)
 
   // Log level (string enum from backend)
+  const [showResetDialog, setShowResetDialog] = createSignal(false)
   const [logLevel, setLogLevel] = createSignal<string | null>(null)
 
   // Load settings from server
@@ -125,6 +126,29 @@ function Settings() {
     }
   }
 
+  const handleFactoryReset = async () => {
+    try {
+      const formData = new FormData();
+      formData.append('confirm', 'RESET');
+      
+      const response = await fetch('/factory_reset', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (response.ok) {
+        alert('Factory reset complete! Device is restarting...');
+        // Reload page after a delay
+        setTimeout(() => window.location.reload(), 5000);
+      } else {
+        const error = await response.text();
+        alert(`Factory reset failed: ${error}`);
+      }
+    } catch (error) {
+      alert(`Factory reset error: ${error}`);
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
@@ -211,6 +235,12 @@ function Settings() {
             <Show when={loaded()}>
               <input type="number" id="pulses_per_gallon" value={pulsesPerGallon()!} onInput={(e) => setPulsesPerGallon(parseFloat(e.target.value))} placeholder="450" step="1" min="100" max="2000" class="input" />
             </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">Typical range: 200-1000 pulses per gallon. Consult your water meter specifications.</div>
+          </fieldset>
+
           <fieldset class="fieldset mt-4">
             <legend class="fieldset-legend">Water Meter Connection Timeout (seconds)</legend>
             <Show when={loaded()}>
@@ -220,11 +250,6 @@ function Settings() {
               <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
             </Show>
             <div class="fieldset-label">Time since last pulse before water meter considered disconnected (default: 300 seconds)</div>
-          </fieldset>
-            <Show when={!loaded()}>
-              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
-            </Show>
-            <div class="fieldset-label">Typical range: 200-1000 pulses per gallon. Consult your water meter specifications.</div>
           </fieldset>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
@@ -294,8 +319,49 @@ function Settings() {
                 <option value="ERROR">Error</option>
               </select>
             </Show>
-            <div class="fieldset-label">Select the logging verbosity for diagnostics. Higher verbosity may produce more logs.</div>
+            <div class="fieldset-label">Select logging verbosity for diagnostics. Higher verbosity may produce more logs.</div>
           </fieldset>
+
+          <h2 class="text-lg font-bold mb-4 mt-10">Danger Zone</h2>
+          <div class="card bg-error text-error-content">
+            <div class="card-body">
+              <h2 class="card-title">Factory Reset</h2>
+              <p>Factory reset will erase all settings and return to defaults. This action cannot be undone.</p>
+              <div class="card-actions justify-end">
+                <button 
+                  class="btn btn-warning"
+                  onClick={() => setShowResetDialog(true)}
+                >
+                  Factory Reset
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Confirmation Dialog */}
+          <Show when={showResetDialog()}>
+            <div class="modal modal-open">
+              <div class="modal-box">
+                <h3 class="font-bold text-lg">Confirm Factory Reset</h3>
+                <p class="py-4">
+                  This will permanently delete all settings, WiFi credentials, and configurations.
+                  The device will restart in AP mode with default settings.
+                </p>
+                <div class="modal-action">
+                  <button class="btn" onClick={() => setShowResetDialog(false)}>Cancel</button>
+                  <button 
+                    class="btn btn-error" 
+                    onClick={() => {
+                      setShowResetDialog(false);
+                      handleFactoryReset();
+                    }}
+                  >
+                    Yes, Reset Everything
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Show>
 
           <button class="btn btn-accent btn-soft mt-10" onClick={handleSave} disabled={!loaded()}>Save Settings</button>
         </div>

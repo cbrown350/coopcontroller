@@ -120,6 +120,7 @@ class SettingsManager
     void setWifiAPDurationMinutes(int minutes);
     void setWatchdogTimeoutSeconds(int seconds);
 
+    void factoryReset();
     String toJson(bool includePassword = true) const;
 };
 

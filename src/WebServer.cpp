@@ -38,7 +38,7 @@ void WebServer::begin()
 
     server.addHandler(new AsyncCallbackJsonWebHandler(
         "/update_settings",
-        [this](AsyncWebServerRequest *request, JsonVariant &json)
+        [](AsyncWebServerRequest *request, JsonVariant &json)
         {
             JsonObject jsonObj = json.as<JsonObject>();
             
@@ -160,7 +160,7 @@ void WebServer::begin()
 
     // Sensor status endpoint
     server.on("/sensor_status", HTTP_GET,
-              [this](AsyncWebServerRequest *request)
+              [](AsyncWebServerRequest *request)
               {
                   JsonDocument jsonDoc;
                   
@@ -310,6 +310,34 @@ void WebServer::begin()
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
                   request->send(200, "application/json", jsonResponse);
+              });
+
+    // Factory reset endpoint
+    server.on("/factory_reset", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  // Check for confirmation parameter
+                  if (!request->hasParam("confirm", true)) {
+                      request->send(400, "text/plain", "Missing confirmation parameter");
+                      return;
+                  }
+                  
+                  String confirm = request->getParam("confirm", true)->value();
+                  if (confirm != "RESET") {
+                      request->send(400, "text/plain", "Invalid confirmation value");
+                      return;
+                  }
+                  
+                  logger.logWarning("Factory reset requested via web interface");
+                  
+                  // Perform factory reset
+                  settingsManager.factoryReset();
+                  
+                  request->send(200, "text/plain", "Factory reset complete. Device will restart in 3 seconds.");
+                  
+                  // Schedule restart
+                  delay(3000);
+                  ESP.restart();
               });
 
     // Serve static files from SPIFFS
