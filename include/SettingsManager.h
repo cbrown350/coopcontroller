@@ -25,6 +25,9 @@ struct user_settings
     String log_level;               // Log level: "VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR" (default "INFO")
     // int    pump_error_retry_seconds; // Time to wait before retrying pump after flow error (default 120 = 2 minutes)
     
+    // Water meter calibration
+    float  pulses_per_gallon;       // Pulses per gallon for water meter calibration (default 450.0)
+    
     // WiFi connection settings
     int    wifi_max_retries;        // Maximum number of WiFi connection retries (default 5)
     int    wifi_retry_delay_seconds;  // Delay between WiFi retry attempts in seconds (default 30)
@@ -74,6 +77,9 @@ class SettingsManager
     int    getLightOffHour();
     String getLogLevel() const;
     
+    // Water meter calibration getter
+    float  getPulsesPerGallon() const;
+    
     // WiFi connection settings getters
     int    getWifiMaxRetries();
     int    getWifiRetryDelaySeconds();
@@ -97,6 +103,9 @@ class SettingsManager
     void setLightOnHour(int hour);
     void setLightOffHour(int hour);
     void setLogLevel(const String& level);
+    
+    // Water meter calibration setters
+    void setPulsesPerGallon(float value);
     
     // WiFi connection settings setters - request restart for these
     void setWifiMaxRetries(int retries);

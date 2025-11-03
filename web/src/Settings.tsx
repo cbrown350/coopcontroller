@@ -20,6 +20,9 @@ function Settings() {
   const [debugEnabled, setDebugEnabled] = createSignal<boolean | null>(null)
   const [waterFlowErrorTimeoutSeconds, setWaterFlowErrorTimeoutSeconds] = createSignal<number | null>(null)
 
+  // Water meter calibration
+  const [pulsesPerGallon, setPulsesPerGallon] = createSignal<number | null>(null)
+
   // Log level (string enum from backend)
   const [logLevel, setLogLevel] = createSignal<string | null>(null)
 
@@ -47,6 +50,7 @@ function Settings() {
       setDebugEnabled(settings.debug_enabled ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
       setLogLevel(settings.log_level ?? 'INFO')
+      setPulsesPerGallon(settings.pulses_per_gallon ?? null)
 
       setLoaded(true)
       setError('')
@@ -85,20 +89,21 @@ function Settings() {
       setError('')
 
       const settingsPayload = {
-        ap_mode: false,
-        ...(apMode() && { ssid: ssid(), passwd: password() }),
-        temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
-        temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
-        water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
-        pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
-        pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
-        // include log level string
-        log_level: logLevel() ?? 'INFO',
-        light_auto_mode: lightAutoMode() ?? false,
-        light_on_hour: lightOnHour() ?? 6,
-        light_off_hour: lightOffHour() ?? 20,
-        debug_enabled: debugEnabled() ?? false
-      }
+           ap_mode: false,
+           ...(apMode() && { ssid: ssid(), passwd: password() }),
+           temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
+           temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
+           water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
+           pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
+           pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
+           // include log level string
+           log_level: logLevel() ?? 'INFO',
+           light_auto_mode: lightAutoMode() ?? false,
+           light_on_hour: lightOnHour() ?? 6,
+           light_off_hour: lightOffHour() ?? 20,
+           debug_enabled: debugEnabled() ?? false,
+           pulses_per_gallon: pulsesPerGallon() ?? 450.0
+       }
 
       const response = await fetch('/update_settings', {
         method: 'POST',
@@ -197,6 +202,17 @@ function Settings() {
               <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
             </Show>
             <div class="fieldset-label">Time without water flow before declaring error (default: 120 seconds)</div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Water Meter Calibration (Pulses per Gallon)</legend>
+            <Show when={loaded()}>
+              <input type="number" id="pulses_per_gallon" value={pulsesPerGallon()!} onInput={(e) => setPulsesPerGallon(parseFloat(e.target.value))} placeholder="450" step="1" min="100" max="2000" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">Typical range: 200-1000 pulses per gallon. Consult your water meter specifications.</div>
           </fieldset>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

@@ -17,13 +17,13 @@ void IRAM_ATTR SensorManager::sensor2PulseISR() {
 
 SensorManager::SensorManager()
     : oneWire1(nullptr),
-       oneWire2(nullptr),
-       dallasTemp1(nullptr),
-       dallasTemp2(nullptr),
-       // Initialize sensor data in the initializer list to avoid assignment issues
-       sensor1{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0},
-       sensor2{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0},
-       pulseToGallons(0.1f)
+        oneWire2(nullptr),
+        dallasTemp1(nullptr),
+        dallasTemp2(nullptr),
+        // Initialize sensor data in the initializer list to avoid assignment issues
+        sensor1{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0},
+        sensor2{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0},
+        pulsesPerGallon(450.0f)
   {}
 
 SensorManager::~SensorManager() {}
@@ -161,9 +161,9 @@ void SensorManager::calculateFlowRate(SensorData& sensor) const {
         unsigned long timeDiff = currentTime - lastCalculationTime;
         
         // Calculate flow rate in gallons per minute
-        // pulses * pulseToGallons gives gallons in the interval
+        // pulses * pulsesPerGallon gives gallons in the interval
         // Divide by (timeDiff / 60000.0) to get gallons per minute
-        float gallonsInInterval = pulses * pulseToGallons;
+        float gallonsInInterval = pulses * pulsesPerGallon;
         sensor.flow_rate = gallonsInInterval * (60000.0f / timeDiff);
         
         // Reset pulse count for next interval
@@ -184,6 +184,12 @@ void SensorManager::resetPulseCount(int sensor) {
         sensor2.last_pulse_time.store(0);
         logger.log("Sensor 2 pulse count reset");
     }
+}
+
+// Water meter calibration
+void SensorManager::setPulsesPerGallon(float pulsesPerGallon) {
+    this->pulsesPerGallon = pulsesPerGallon;
+    logger.logf("Water meter calibration updated: %.1f pulses per gallon", pulsesPerGallon);
 }
 
 bool SensorManager::hasWaterFlowError(int sensor) const {

@@ -32,6 +32,7 @@ SettingsManager::SettingsManager()
     settings.light_off_hour      = 20;        // Default turn off at 8 PM
     settings.log_level           = "INFO";    // Default log level
     settings.watchdog_timeout_seconds = 30;   // Default watchdog timeout 30 seconds
+    settings.pulses_per_gallon   = 450.0;     // Default pulses per gallon for water meter
 }
 
 bool SettingsManager::load()
@@ -71,6 +72,8 @@ bool SettingsManager::load()
     settings.wifi_max_retries = doc["wifi_max_retries"] | 5;
     settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 30;
     settings.wifi_ap_duration_minutes = doc["wifi_ap_duration_minutes"] | 10;
+
+    settings.pulses_per_gallon = doc["pulses_per_gallon"] | 450.0;
 
     isLoaded = true;
     return true;
@@ -176,6 +179,11 @@ String SettingsManager::getLogLevel() const {
     return settings.log_level;
 }
 
+// Water meter calibration getter
+float SettingsManager::getPulsesPerGallon() const {
+    return settings.pulses_per_gallon;
+}
+
 // Coop Controller setters - don't request restart for these
 void SettingsManager::setTempThresholdOnF(float threshold)
 {
@@ -245,6 +253,14 @@ void SettingsManager::setLogLevel(const String &level)
     if (!isLoaded)
         load();
     settings.log_level = level;
+}
+
+// Water meter calibration setter
+void SettingsManager::setPulsesPerGallon(float value)
+{
+    if (!isLoaded)
+        load();
+    settings.pulses_per_gallon = value;
 }
 
 // WiFi connection settings getters
@@ -362,6 +378,7 @@ String SettingsManager::toJson(bool includePassword) const
     doc["light_off_hour"] = settings.light_off_hour;
     doc["log_level"] = settings.log_level;
     doc["watchdog_timeout_seconds"] = settings.watchdog_timeout_seconds;
+    doc["pulses_per_gallon"] = settings.pulses_per_gallon;
 
     if (includePassword)
     {

@@ -100,7 +100,7 @@ private:
     
     // Water meter calculation variables
     static const unsigned long FLOW_CALCULATION_INTERVAL = 60000; // 1 minute
-    float pulseToGallons;  // Conversion factor for pulses to gallons
+    float pulsesPerGallon;  // Conversion factor for pulses to gallons
     
     // Private methods
     void sensor1PulseISR();
@@ -146,6 +146,9 @@ public:
     float celsiusToFahrenheit(float celsius) const;
     bool isTemperatureBelowThreshold() const;
     void resetPulseCount(int sensor);
+    
+    // Water meter calibration
+    void setPulsesPerGallon(float pulsesPerGallon);
     
     // Status methods
     String getSensorStatusString(const SensorData& sensor) const;

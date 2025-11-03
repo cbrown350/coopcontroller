@@ -54,4 +54,5 @@ export interface Settings {
   debug_enabled?: boolean;
   water_flow_error_timeout_seconds?: number;
   log_level?: LogLevel | string;
+  pulses_per_gallon?: number;
 }

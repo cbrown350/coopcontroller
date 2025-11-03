@@ -98,6 +98,13 @@ void WebServer::begin()
                 settingsManager.setWatchdogTimeoutSeconds(jsonObj["watchdog_timeout_seconds"].as<int>());
                 logger.log("Watchdog timeout updated - restart required for changes to take effect");
             }
+
+            if (jsonObj["pulses_per_gallon"].is<float>()) {
+                float newCalibration = jsonObj["pulses_per_gallon"].as<float>();
+                settingsManager.setPulsesPerGallon(newCalibration);
+                tempSensor.setPulsesPerGallon(newCalibration);
+                logger.logf("Water meter calibration updated: %.1f pulses per gallon", newCalibration);
+            }
             
             // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
             

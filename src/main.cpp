@@ -308,6 +308,9 @@ void setup()
     tempSensor.begin();
     pumpController.begin();
     
+    // Set water meter calibration from settings
+    tempSensor.setPulsesPerGallon(settingsManager.getPulsesPerGallon());
+    
     // Initialize logger level from settings
     String logLevelStr = settingsManager.getLogLevel();
     LogLevel level = LogLevel::INFO; // default
