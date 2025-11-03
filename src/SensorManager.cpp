@@ -4,7 +4,6 @@
 #include <FunctionalInterrupt.h>
 
 
-// Interrupt service routines for water meter pulses 
 void IRAM_ATTR SensorManager::sensor1PulseISR() {
     sensor1.pulse_count++;
     sensor1.last_pulse_time = millis();
@@ -161,9 +160,9 @@ void SensorManager::calculateFlowRate(SensorData& sensor) const {
         unsigned long timeDiff = currentTime - lastCalculationTime;
         
         // Calculate flow rate in gallons per minute
-        // pulses * pulsesPerGallon gives gallons in the interval
-        // Divide by (timeDiff / 60000.0) to get gallons per minute
-        float gallonsInInterval = pulses * pulsesPerGallon;
+        // pulses / pulsesPerGallon gives gallons in the interval
+        // Multiply by (60000.0 / timeDiff) to get gallons per minute
+        float gallonsInInterval = pulses / pulsesPerGallon;
         sensor.flow_rate = gallonsInInterval * (60000.0f / timeDiff);
         
         // Reset pulse count for next interval

@@ -70,7 +70,7 @@ bool SettingsManager::load()
     settings.light_auto_mode     = doc["light_auto_mode"] | false;
     settings.log_level = doc["log_level"] | "INFO";
     settings.wifi_max_retries = doc["wifi_max_retries"] | 5;
-    settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 30;
+    settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 5;
     settings.wifi_ap_duration_minutes = doc["wifi_ap_duration_minutes"] | 10;
 
     settings.pulses_per_gallon = doc["pulses_per_gallon"] | 450.0;

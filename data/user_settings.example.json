@@ -13,7 +13,7 @@
   "light_off_hour": 21,
   "log_level": "INFO",
   "wifi_max_retries": 5,
-  "wifi_retry_delay_seconds": 15,
+  "wifi_retry_delay_seconds": 5,
   "wifi_ap_duration_minutes": 10,
   "water_flow_error_timeout_seconds": 5,
   "watchdog_timeout_seconds": 30,

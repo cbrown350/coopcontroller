@@ -144,11 +144,13 @@ void wifiSetup()
         
         wifiRetryCount = 0;
         while (!WiFi.isConnected() && wifiRetryCount < maxRetries)
-        {
+        {            
+            esp_task_wdt_reset();  
+
             Serial.print('.');
             delay(retryDelay * 1000);
-            wifiRetryCount++;
-            
+            wifiRetryCount++;  
+
             // Add some debugging
             logger.logDebug(String("WiFi status: ") + String(WiFi.status()) + ", attempt " + String(wifiRetryCount) + "/" + String(maxRetries));
         }
