@@ -355,7 +355,14 @@ void loop()
 {
     // put your main code here, to run repeatedly:
     // Feed the watchdog timer at the start of each loop iteration
-    esp_task_wdt_reset();
+    esp_task_wdt_reset();    
+
+    // Log watchdog status every 1000 loops for verbose logging
+    static unsigned long loopCount = 0;
+    loopCount++;
+    if (loopCount % 1000 == 0) {
+        logger.logVerbose(String("Watchdog fed at loop iteration ") + String(loopCount));
+    }
 
     // Check WiFi connection periodically
     unsigned long currentTime = millis();
@@ -454,12 +461,9 @@ void loop()
     delay(10);
 
     // log the uptime and heap size every 10 seconds
-    logger.logVerbose(String("Uptime: ") + String(millis() / 1000) + " seconds, Free heap: " + String(ESP.getFreeHeap()) + " bytes");
-
-    // Log watchdog status every 1000 loops for verbose logging
-    static unsigned long loopCount = 0;
-    loopCount++;
-    if (loopCount % 1000 == 0) {
-        logger.logVerbose(String("Watchdog fed at loop iteration ") + String(loopCount));
+    static unsigned long lastCPUStatusLog = 0;
+    if (currentTime - lastCPUStatusLog >= 10000) {
+        lastCPUStatusLog = currentTime;
+        logger.logVerbose(String("Uptime: ") + String(millis() / 1000) + " seconds, Free heap: " + String(ESP.getFreeHeap()) + " bytes");
     }
 }

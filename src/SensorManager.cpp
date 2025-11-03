@@ -21,8 +21,8 @@ SensorManager::SensorManager()
        dallasTemp1(nullptr),
        dallasTemp2(nullptr),
        // Initialize sensor data in the initializer list to avoid assignment issues
-       sensor1{SensorType::NONE, 0.0f, false, 0, 0, 0.0f, 0},
-       sensor2{SensorType::NONE, 0.0f, false, 0, 0, 0.0f, 0},
+       sensor1{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0},
+       sensor2{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0},
        pulseToGallons(0.1f)
   {}
 
@@ -107,6 +107,7 @@ void SensorManager::detectSensorType(int pin, SensorData& sensor) {
         if (deviceCount > 0) {
             sensor.type = SensorType::DALLAS_TEMP;
             sensor.is_connected = true;
+            sensor.was_detected = true;
             logger.logf("Sensor on pin %d: Detected Dallas temperature sensor (%d devices)", pin, deviceCount);
             return;
         }
@@ -123,6 +124,13 @@ void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData&
         return;
     }
     
+    // If sensor was never detected, don't attempt to read
+    if (!sensor.was_detected) {
+        sensor.is_connected = false;
+        sensor.temperature_f = NAN;
+        return;
+    }
+    
     dallas->requestTemperatures();
     float tempC = dallas->getTempCByIndex(0);
     
@@ -134,7 +142,7 @@ void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData&
         logger.logDebug(String("Dallas temp reading: ") + String(tempC) + "°C (" + String(sensor.temperature_f) + "°F");
     } else {
         sensor.is_connected = false;
-        sensor.temperature_f = 0.0f;
+        sensor.temperature_f = NAN;
         logger.logf("WARNING: Dallas temperature sensor disconnected on pin %d", 
                    (dallas == dallasTemp1) ? TEMP_METER_PIN : TEMP_METER_2_PIN);
     }
@@ -225,17 +233,38 @@ bool SensorManager::isTemperatureBelowThreshold() const {
 }
 
 String SensorManager::getSensorStatusString(const SensorData& sensor) const {
+    if (!sensor.was_detected) {
+        switch (sensor.type) {
+            case SensorType::DALLAS_TEMP:
+                return "Dallas Temperature Sensor - Not Detected";
+            case SensorType::WATER_METER:
+                return "Water Meter - Not Connected";
+            default:
+                return "Sensor - Not Detected";
+        }
+    }
+    
     if (!sensor.is_connected) {
-        return "Not Connected";
+        switch (sensor.type) {
+            case SensorType::DALLAS_TEMP:
+                return "Dallas Temperature Sensor - Disconnected";
+            case SensorType::WATER_METER:
+                return "Water Meter - No Flow";
+            default:
+                return "Sensor - Disconnected";
+        }
     }
     
     switch (sensor.type) {
         case SensorType::DALLAS_TEMP:
-            return String(sensor.temperature_f, 1) + "°F";
+            if (isnan(sensor.temperature_f)) {
+                return "Dallas Temperature Sensor - Reading Failed";
+            }
+            return String("Dallas Temperature Sensor - Connected (") + String(sensor.temperature_f, 1) + "°F)";
         case SensorType::WATER_METER:
-            return String(sensor.flow_rate, 2) + " GPM";
+            return String("Water Meter - Connected (") + String(sensor.flow_rate, 2) + " GPM)";
         default:
-            return "Unknown";
+            return "Unknown Sensor Type";
     }
 }
 

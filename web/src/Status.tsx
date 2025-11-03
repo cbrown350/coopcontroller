@@ -7,7 +7,7 @@ function Status() {
     sensor1: {
       type: "UNKNOWN",
       connected: false,
-      temperature_f: 0,
+      temperature_f: null as number | null,
       flow_rate: 0,
       pulse_count: 0,
       status: 'Not Connected'
@@ -15,7 +15,7 @@ function Status() {
     sensor2: {
       type: "UNKNOWN",
       connected: false,
-      temperature_f: 0,
+      temperature_f: null as number | null,
       flow_rate: 0,
       pulse_count: 0,
       status: 'Not Connected'
@@ -53,6 +53,13 @@ function Status() {
     if (isWaterType(t)) return 'Water Meter'
     if (t === 'UNKNOWN' || t === 0) return 'None'
     return String(t)
+  }
+
+  const displayTemp = (temp: number | null | undefined) => {
+    if (temp === null || temp === undefined || isNaN(temp)) {
+      return "---°F"
+    }
+    return `${temp.toFixed(1)}°F`
   }
 
   const refreshSensorStatus = async () => {
@@ -139,10 +146,10 @@ function Status() {
                     Status: {sensorStatus().sensor1.status && sensorStatus().sensor1.status !=="Not Connected" ? "Connected" : "Not Connected"}
                   </div>
                   <Show when={isDallasType(sensorStatus().sensor1.type)}>
-                    <div class="stat-desc text-xs">
-                      Temperature: {sensorStatus().sensor1.temperature_f.toFixed(1)}°F
-                    </div>
-                  </Show>
+                     <div class="stat-desc text-xs">
+                       Temperature: {displayTemp(sensorStatus().sensor1.temperature_f)}
+                     </div>
+                   </Show>
                   <Show when={isWaterType(sensorStatus().sensor1.type)}>
                     <div class="stat-desc text-xs">
                       Flow: {sensorStatus().sensor1.flow_rate.toFixed(2)} GPM
@@ -169,10 +176,10 @@ function Status() {
                     Status: {sensorStatus().sensor2.status && sensorStatus().sensor2.status !=="Not Connected" ? "Connected" : "Not Connected"}
                   </div>
                   <Show when={isDallasType(sensorStatus().sensor2.type)}>
-                    <div class="stat-desc text-xs">
-                      Temperature: {sensorStatus().sensor2.temperature_f.toFixed(1)}°F
-                    </div>
-                  </Show>
+                     <div class="stat-desc text-xs">
+                       Temperature: {displayTemp(sensorStatus().sensor2.temperature_f)}
+                     </div>
+                   </Show>
                   <Show when={isWaterType(sensorStatus().sensor2.type)}>
                     <div class="stat-desc text-xs">
                       Flow: {sensorStatus().sensor2.flow_rate.toFixed(2)} GPM
@@ -221,7 +228,7 @@ function Status() {
                 <div class="stat">
                   <div class="stat-title">Current Temperature</div>
                   <div class="stat-value text-lg">
-                    {sensorStatus().pump.temperature_f.toFixed(1)}°F
+                    {displayTemp(sensorStatus().pump.temperature_f)}
                   </div>
                   <div class="stat-desc">
                     ON Threshold: {sensorStatus().system.temp_threshold_on_f.toFixed(1)}°F

@@ -154,16 +154,24 @@ void WebServer::begin()
                   // Temperature sensor data
                   JsonObject sensor1 = jsonDoc["sensor1"].to<JsonObject>();
                   sensor1["type"] = tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
-                  sensor1["connected"] = tempSensor.isSensor1Connected();
-                  sensor1["temperature_f"] = tempSensor.getTemperature1F();
+                  sensor1["connected"] = tempSensor.isSensor1Detected() && tempSensor.isSensor1Connected();
+                  if (isnan(tempSensor.getTemperature1F())) {
+                      sensor1["temperature_f"] = nullptr;
+                  } else {
+                      sensor1["temperature_f"] = tempSensor.getTemperature1F();
+                  }
                   sensor1["flow_rate"] = tempSensor.getFlowRate1();
                   sensor1["pulse_count"] = tempSensor.getPulseCount1();
                   sensor1["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor1Data());
                   
                   JsonObject sensor2 = jsonDoc["sensor2"].to<JsonObject>();
                   sensor2["type"] = tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
-                  sensor2["connected"] = tempSensor.isSensor2Connected();
-                  sensor2["temperature_f"] = tempSensor.getTemperature2F();
+                  sensor2["connected"] = tempSensor.isSensor2Detected() && tempSensor.isSensor2Connected();
+                  if (isnan(tempSensor.getTemperature2F())) {
+                      sensor2["temperature_f"] = nullptr;
+                  } else {
+                      sensor2["temperature_f"] = tempSensor.getTemperature2F();
+                  }
                   sensor2["flow_rate"] = tempSensor.getFlowRate2();
                   sensor2["pulse_count"] = tempSensor.getPulseCount2();
                   sensor2["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor2Data());

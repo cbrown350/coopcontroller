@@ -5,6 +5,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <atomic>
+#include <string>
 
 // Sensor types for each pin
 enum class SensorType {
@@ -18,6 +19,7 @@ struct SensorData {
     SensorType type;
     float temperature_f;
     bool is_connected;
+    bool was_detected;
     unsigned long last_reading_time;
     std::atomic<unsigned long> pulse_count;
     float flow_rate;  // Calculated flow rate for water meter
@@ -27,6 +29,7 @@ struct SensorData {
     explicit SensorData(SensorType t = SensorType::NONE,
                float temp = 0.0f,
                bool connected = false,
+               bool detected = false,
                unsigned long lastRead = 0,
                unsigned long pulses = 0,
                float flow = 0.0f,
@@ -34,6 +37,7 @@ struct SensorData {
       : type(t)
       , temperature_f(temp)
       , is_connected(connected)
+      , was_detected(detected)
       , last_reading_time(lastRead)
       , pulse_count(pulses)
       , flow_rate(flow)
@@ -45,6 +49,7 @@ struct SensorData {
         : type(other.type),
           temperature_f(other.temperature_f),
           is_connected(other.is_connected),
+          was_detected(other.was_detected),
           last_reading_time(other.last_reading_time),
           pulse_count(other.pulse_count.load()),
           flow_rate(other.flow_rate),
@@ -58,6 +63,7 @@ struct SensorData {
         : type(other.type),
           temperature_f(other.temperature_f),
           is_connected(other.is_connected),
+          was_detected(other.was_detected),
           last_reading_time(other.last_reading_time),
           pulse_count(other.pulse_count.load()),
           flow_rate(other.flow_rate),
@@ -71,6 +77,7 @@ struct SensorData {
         type = other.type;
         temperature_f = other.temperature_f;
         is_connected = other.is_connected;
+        was_detected = other.was_detected;
         pulse_count.store(other.pulse_count.load());
         last_pulse_time.store(other.last_pulse_time.load());
         flow_rate = other.flow_rate;
@@ -124,6 +131,10 @@ public:
     bool isSensor2Connected() const { return sensor2.is_connected; }
     SensorType getSensor1Type() const { return sensor1.type; }
     SensorType getSensor2Type() const { return sensor2.type; }
+    
+    // Detection state methods
+    bool isSensor1Detected() const { return sensor1.was_detected; }
+    bool isSensor2Detected() const { return sensor2.was_detected; }
     
     // Water meter specific
     float getFlowRate1() const { return sensor1.flow_rate; }
