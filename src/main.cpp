@@ -469,6 +469,30 @@ void loop()
     static unsigned long lastCPUStatusLog = 0;
     if (currentTime - lastCPUStatusLog >= 10000) {
         lastCPUStatusLog = currentTime;
-        logger.logVerbose(String("Uptime: ") + String(millis() / 1000) + " seconds, Free heap: " + String(ESP.getFreeHeap()) + " bytes");
+        // Calculate memory usage percentage
+        float heapSize = ESP.getHeapSize();
+        float heapFree = ESP.getFreeHeap();
+        float heapUsedPercent = 100.0 - (100.0 * heapFree / heapSize);
+        
+        // Format uptime
+        unsigned long uptimeSeconds = millis() / 1000;
+        unsigned long days = uptimeSeconds / 86400;
+        uptimeSeconds %= 86400;
+        unsigned long hours = uptimeSeconds / 3600;
+        uptimeSeconds %= 3600;
+        unsigned long minutes = uptimeSeconds / 60;
+        uptimeSeconds %= 60;
+        
+        String uptimeFormatted = "";
+        if (days > 0) uptimeFormatted += String(days) + "d ";
+        if (hours > 0 || days > 0) uptimeFormatted += String(hours) + "h ";
+        if (minutes > 0 || hours > 0 || days > 0) uptimeFormatted += String(minutes) + "m ";
+        uptimeFormatted += String(uptimeSeconds) + "s";
+        
+        logger.logVerbose(String("System Status - Uptime: ") + uptimeFormatted + 
+                      ", Free heap: " + String(heapFree) + " bytes (" + 
+                      String(heapUsedPercent, 1) + "% used), " +
+                      "Chip: " + ESP.getChipModel() + 
+                      ", CPU: " + String(ESP.getCpuFreqMHz()) + " MHz");
     }
 }

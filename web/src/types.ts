@@ -44,6 +44,19 @@ export interface FullSensorStatus {
   system: SystemSettings;
 }
 
+export interface SystemStatus {
+  heap_free: number;
+  heap_size: number;
+  heap_used_percent: number;
+  uptime_seconds: number;
+  uptime_formatted: string;
+  chip_model: string;
+  cpu_freq_mhz: number;
+  flash_size: number;
+  wifi_rssi?: number;
+  wifi_ssid?: string;
+}
+
 export interface Settings {
   ssid?: string;
   ap_mode?: boolean;

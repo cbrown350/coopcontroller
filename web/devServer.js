@@ -129,6 +129,36 @@ async function createServer() {
     res.end(JSON.stringify(mockLogs));
   });
 
+  app.use("/system_status", async (req, res) => {
+    const uptimeSeconds = Math.floor(Date.now() / 1000) % 86400; // Mock uptime within a day
+    const days = Math.floor(uptimeSeconds / 86400);
+    const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+    const seconds = uptimeSeconds % 60;
+    
+    let formatted = "";
+    if (days > 0) formatted += days + "d ";
+    if (hours > 0 || days > 0) formatted += hours + "h ";
+    if (minutes > 0 || hours > 0 || days > 0) formatted += minutes + "m ";
+    formatted += seconds + "s";
+    
+    const systemStatus = {
+      heap_free: 150000,
+      heap_size: 300000,
+      heap_used_percent: 50.0,
+      uptime_seconds: uptimeSeconds,
+      uptime_formatted: formatted,
+      chip_model: "ESP32-WROOM-32",
+      cpu_freq_mhz: 240,
+      flash_size: 4194304,
+      wifi_rssi: -45,
+      wifi_ssid: "MyHomeWiFi"
+    };
+    
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(systemStatus));
+  });
+
   app.use("/version", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify(mockVersionInfo));

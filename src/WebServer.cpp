@@ -297,6 +297,56 @@ void WebServer::begin()
                   request->send(200, "application/json", jsonResponse);
               });
 
+    // System status endpoint
+    server.on("/system_status", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  JsonDocument jsonDoc;
+                  
+                  // Memory information
+                  jsonDoc["heap_free"] = ESP.getFreeHeap();
+                  jsonDoc["heap_size"] = ESP.getHeapSize();
+                  jsonDoc["heap_used_percent"] = 100.0 - (100.0 * ESP.getFreeHeap() / ESP.getHeapSize());
+                  
+                  // Uptime
+                  unsigned long uptimeSeconds = millis() / 1000;
+                  jsonDoc["uptime_seconds"] = uptimeSeconds;
+                  
+                  // Format uptime as human-readable string
+                  unsigned long days = uptimeSeconds / 86400;
+                  uptimeSeconds %= 86400;
+                  unsigned long hours = uptimeSeconds / 3600;
+                  uptimeSeconds %= 3600;
+                  unsigned long minutes = uptimeSeconds / 60;
+                  uptimeSeconds %= 60;
+                  
+                  String formatted = "";
+                  if (days > 0) formatted += String(days) + "d ";
+                  if (hours > 0 || days > 0) formatted += String(hours) + "h ";
+                  if (minutes > 0 || hours > 0 || days > 0) formatted += String(minutes) + "m ";
+                  formatted += String(uptimeSeconds) + "s";
+                  
+                  jsonDoc["uptime_formatted"] = formatted;
+                  
+                  // Chip information
+                  jsonDoc["chip_model"] = ESP.getChipModel();
+                  jsonDoc["cpu_freq_mhz"] = ESP.getCpuFreqMHz();
+                  jsonDoc["flash_size"] = ESP.getFlashChipSize();
+                  
+                  // WiFi information (if connected)
+                  if (WiFi.status() == WL_CONNECTED) {
+                      jsonDoc["wifi_rssi"] = WiFi.RSSI();
+                      jsonDoc["wifi_ssid"] = WiFi.SSID();
+                  } else {
+                      jsonDoc["wifi_rssi"] = 0;
+                      jsonDoc["wifi_ssid"] = "Not Connected";
+                  }
+                  
+                  String jsonResponse;
+                  serializeJson(jsonDoc, jsonResponse);
+                  request->send(200, "application/json", jsonResponse);
+              });
+
     // Version endpoint
     server.on("/version", HTTP_GET,
               [](AsyncWebServerRequest *request)

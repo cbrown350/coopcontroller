@@ -1,8 +1,10 @@
 import { createSignal, onMount, onCleanup, Show } from 'solid-js'
+import { SystemStatus } from './types'
 
 function Status() {
 
   const [loading, setLoading] = createSignal(true)
+  const [systemStatus, setSystemStatus] = createSignal<SystemStatus | null>(null)
   const [sensorStatus, setSensorStatus] = createSignal({
     sensor1: {
       type: "UNKNOWN",
@@ -66,26 +68,39 @@ function Status() {
     return `${temp.toFixed(1)}°F`
   }
 
+  
+
   const refreshSensorStatus = async () => {
     try {
-      const response = await fetch('/sensor_status')
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`)
+      const [sensorResponse, systemResponse] = await Promise.all([
+        fetch('/sensor_status'),
+        fetch('/system_status')
+      ])
+      
+      if (!sensorResponse.ok) {
+        throw new Error(`HTTP error! status: ${sensorResponse.status} ${sensorResponse.statusText}`)
       }
-      const data = await response.json()
+      
+      const sensorData = await sensorResponse.json()
       
       // Add debug logging to see what's happening
-      console.log('Pump status data received:', data)
-      console.log('Pump flow_error:', data.pump.flow_error)
-      console.log('Pump state:', data.pump.state)
+      console.log('Pump status data received:', sensorData)
+      console.log('Pump flow_error:', sensorData.pump.flow_error)
+      console.log('Pump state:', sensorData.pump.state)
       
-      setSensorStatus(data)
+      setSensorStatus(sensorData)
+      
+      if (systemResponse.ok) {
+        const systemData = await systemResponse.json()
+        setSystemStatus(systemData)
+      }
+      
       setLoading(false)
       // Clear any existing error when data is successfully fetched
       setError('')
     } catch (err: any) {
-      console.error('Failed to fetch sensor status:', err)
-      setError(`Error loading sensor status: ${err.message || 'Unknown error'}`)
+      console.error('Failed to fetch status:', err)
+      setError(`Error loading status: ${err.message || 'Unknown error'}`)
       setLoading(false)
     }
   }
@@ -356,6 +371,56 @@ function Status() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* System Status Section */}
+          <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">System Status</h2>
+              <Show when={systemStatus()} fallback={<p>Loading system status...</p>}>
+                <div class="stats stats-vertical shadow">
+                  <div class="stat">
+                    <div class="stat-title">Uptime</div>
+                    <div class="stat-value text-2xl">{systemStatus()?.uptime_formatted}</div>
+                  </div>
+                  
+                  <div class="stat">
+                    <div class="stat-title">Memory Usage</div>
+                    <div class="stat-value text-2xl">
+                      {systemStatus()?.heap_used_percent.toFixed(1)}%
+                    </div>
+                    <div class="stat-desc">
+                      {((systemStatus()?.heap_free || 0) / 1024).toFixed(1)} KB free of {((systemStatus()?.heap_size || 0) / 1024).toFixed(1)} KB
+                    </div>
+                    <progress 
+                      class="progress progress-primary w-full mt-2" 
+                      value={systemStatus()?.heap_used_percent || 0} 
+                      max="100"
+                      classList={{
+                        "progress-error": (systemStatus()?.heap_used_percent || 0) > 80,
+                        "progress-warning": (systemStatus()?.heap_used_percent || 0) > 60
+                      }}
+                    />
+                  </div>
+                  
+                  <div class="stat">
+                    <div class="stat-title">Chip Info</div>
+                    <div class="stat-value text-xl">{systemStatus()?.chip_model}</div>
+                    <div class="stat-desc">
+                      {systemStatus()?.cpu_freq_mhz || 0} MHz | Flash: {((systemStatus()?.flash_size || 0) / 1024 / 1024).toFixed(1)} MB
+                    </div>
+                  </div>
+                  
+                  <Show when={(systemStatus()?.wifi_rssi || 0) !== 0}>
+                    <div class="stat">
+                      <div class="stat-title">WiFi Signal</div>
+                      <div class="stat-value text-2xl">{systemStatus()?.wifi_rssi || 0} dBm</div>
+                      <div class="stat-desc">{systemStatus()?.wifi_ssid || "Unknown"}</div>
+                    </div>
+                  </Show>
+                </div>
+              </Show>
             </div>
           </div>
 

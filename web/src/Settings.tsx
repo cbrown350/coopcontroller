@@ -307,11 +307,11 @@ function Settings() {
           <fieldset class="fieldset mt-4">
             <legend class="fieldset-legend">Log Level</legend>
             <Show when={loaded()} fallback={
-              <select class="select input-disabled" disabled>
+              <select id="log_level-fallback" title="Log Level" class="select input-disabled" disabled>
                 <option>--</option>
               </select>
             }>
-              <select id="log_level" class="select" value={logLevel() ?? 'INFO'} onInput={(e) => setLogLevel((e.target as HTMLSelectElement).value)}>
+              <select id="log_level" title="Log Level" class="select" value={logLevel() ?? 'INFO'} onInput={(e) => setLogLevel((e.target as HTMLSelectElement).value)}>
                 <option value="VERBOSE">Verbose</option>
                 <option value="DEBUG">Debug</option>
                 <option value="INFO">Info</option>
