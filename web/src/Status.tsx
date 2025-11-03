@@ -10,6 +10,8 @@ function Status() {
       temperature_f: null as number | null,
       flow_rate: 0,
       pulse_count: 0,
+      last_pulse_time: 0,
+      actively_connected: false,
       status: 'Not Connected'
     },
     sensor2: {
@@ -18,6 +20,8 @@ function Status() {
       temperature_f: null as number | null,
       flow_rate: 0,
       pulse_count: 0,
+      last_pulse_time: 0,
+      actively_connected: false,
       status: 'Not Connected'
     },
     pump: {
@@ -143,8 +147,16 @@ function Status() {
                     {sensorTypeLabel(sensorStatus().sensor1.type)}
                   </div>
                   <div class="stat-desc text-xs">
-                    Status: {sensorStatus().sensor1.status && sensorStatus().sensor1.status !=="Not Connected" ? "Connected" : "Not Connected"}
+                    Status: {sensorStatus().sensor1.status}
                   </div>
+                  <Show when={isWaterType(sensorStatus().sensor1.type)}>
+                    <div class="stat-desc text-xs">
+                      Time since last pulse: {sensorStatus().sensor1.last_pulse_time}s
+                    </div>
+                  </Show>
+                  <div class="stat-desc text-xs">
+                      Actively Connected: {sensorStatus().sensor1.actively_connected ? "Yes" : "No"}
+                    </div>
                   <Show when={isDallasType(sensorStatus().sensor1.type)}>
                      <div class="stat-desc text-xs">
                        Temperature: {displayTemp(sensorStatus().sensor1.temperature_f)}
@@ -173,8 +185,16 @@ function Status() {
                     {sensorTypeLabel(sensorStatus().sensor2.type)}
                   </div>
                   <div class="stat-desc text-xs">
-                    Status: {sensorStatus().sensor2.status && sensorStatus().sensor2.status !=="Not Connected" ? "Connected" : "Not Connected"}
+                    Status: {sensorStatus().sensor2.status}
                   </div>
+                  <Show when={isWaterType(sensorStatus().sensor2.type)}>
+                    <div class="stat-desc text-xs">
+                      Time since last pulse: {sensorStatus().sensor2.last_pulse_time}s
+                    </div>
+                  </Show>
+                  <div class="stat-desc text-xs">
+                      Actively Connected: {sensorStatus().sensor2.actively_connected ? "Yes" : "No"}
+                    </div>
                   <Show when={isDallasType(sensorStatus().sensor2.type)}>
                      <div class="stat-desc text-xs">
                        Temperature: {displayTemp(sensorStatus().sensor2.temperature_f)}

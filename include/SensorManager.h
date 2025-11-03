@@ -157,6 +157,10 @@ public:
     // Water meter specific
     bool hasActiveWaterMeter() const;
     unsigned long getMostRecentPulseTime() const;
+    
+    // Connection status methods
+    bool isActivelyConnected(const SensorData& sensor) const;
+    unsigned long getTimeSinceLastPulse(const SensorData& sensor) const;
 };
 
 #endif // __SENSOR_MANAGER_H__

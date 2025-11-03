@@ -25,6 +25,7 @@ const mockSettings = {
   light_off_hour: 20,              // Light off at 8 PM
   log_level: 'INFO',
   water_flow_error_timeout_seconds: 20, // 20 seconds
+  water_meter_timeout_seconds: 300, // 5 minutes timeout
   pulses_per_gallon: 450.0        // Water meter calibration
 };
 
@@ -57,6 +58,8 @@ const mockSensorData = {
     temperature_f: 32.5,
     flow_rate: 0,
     pulse_count: 0,
+    last_pulse_time: 0,
+    actively_connected: false,
     status: 'Dallas Temperature Sensor - Connected (32.5°F)'
   },
   sensor2: {
@@ -65,7 +68,9 @@ const mockSensorData = {
     temperature_f: null, // Not detected
     flow_rate: 1.2,
     pulse_count: 150,
-    status: 'Water Meter - Connected (1.2 GPM)'
+    last_pulse_time: 45,
+    actively_connected: true,
+    status: 'Water Meter - Connected (Active: 1.2 GPM)'
   }
 };
 
@@ -168,6 +173,9 @@ async function createServer() {
       }
       if (settings.pulses_per_gallon !== undefined) {
         mockSettings.pulses_per_gallon = settings.pulses_per_gallon;
+      }
+      if (settings.water_meter_timeout_seconds !== undefined) {
+        mockSettings.water_meter_timeout_seconds = settings.water_meter_timeout_seconds;
       }
       
       res.setHeader("Content-Type", "application/json");

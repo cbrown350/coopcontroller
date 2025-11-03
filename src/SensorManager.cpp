@@ -249,12 +249,22 @@ String SensorManager::getSensorStatusString(const SensorData& sensor) const {
         }
     }
     
+    if (sensor.type == SensorType::WATER_METER) {
+        if (sensor.pulse_count.load() == 0) {
+            return "Water Meter - Configured (No Pulses Detected)";
+        }
+        if (isActivelyConnected(sensor)) {
+            return String("Water Meter - Connected (Active: ") + String(sensor.flow_rate, 2) + " GPM)";
+        } else {
+            return String("Water Meter - Connected (Idle - Last pulse ") + String(getTimeSinceLastPulse(sensor)) + "s ago)";
+        }
+    }
+    
+    // For Dallas sensors and other types
     if (!sensor.is_connected) {
         switch (sensor.type) {
             case SensorType::DALLAS_TEMP:
                 return "Dallas Temperature Sensor - Disconnected";
-            case SensorType::WATER_METER:
-                return "Water Meter - No Flow";
             default:
                 return "Sensor - Disconnected";
         }
@@ -266,8 +276,6 @@ String SensorManager::getSensorStatusString(const SensorData& sensor) const {
                 return "Dallas Temperature Sensor - Reading Failed";
             }
             return String("Dallas Temperature Sensor - Connected (") + String(sensor.temperature_f, 1) + "°F)";
-        case SensorType::WATER_METER:
-            return String("Water Meter - Connected (") + String(sensor.flow_rate, 2) + " GPM)";
         default:
             return "Unknown Sensor Type";
     }
@@ -288,4 +296,18 @@ unsigned long SensorManager::getMostRecentPulseTime() const {
         logger.logDebug(String("Sensor 2 last pulse time: ") + String(sensor2.last_pulse_time.load()));
     }
     return max_time;
+}
+
+bool SensorManager::isActivelyConnected(const SensorData& sensor) const {
+    if (sensor.type == SensorType::WATER_METER) {
+        if (sensor.pulse_count.load() == 0) return false;  // Never detected any pulses
+        unsigned long timeSinceLastPulse = (millis() - sensor.last_pulse_time.load()) / 1000;
+        return timeSinceLastPulse < settingsManager.getWaterMeterTimeoutSeconds();
+    }
+    return sensor.is_connected;  // For Dallas sensors, use existing logic
+}
+
+unsigned long SensorManager::getTimeSinceLastPulse(const SensorData& sensor) const {
+    if (sensor.type != SensorType::WATER_METER || sensor.pulse_count.load() == 0) return 0;
+    return (millis() - sensor.last_pulse_time.load()) / 1000;
 }

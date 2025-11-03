@@ -27,6 +27,7 @@ struct user_settings
     
     // Water meter calibration
     float  pulses_per_gallon;       // Pulses per gallon for water meter calibration (default 450.0)
+    int    water_meter_timeout_seconds; // Timeout in seconds before water meter considered disconnected (default 300)
     
     // WiFi connection settings
     int    wifi_max_retries;        // Maximum number of WiFi connection retries (default 5)
@@ -80,6 +81,9 @@ class SettingsManager
     // Water meter calibration getter
     float  getPulsesPerGallon() const;
     
+    // Water meter timeout getter
+    int    getWaterMeterTimeoutSeconds() const;
+    
     // WiFi connection settings getters
     int    getWifiMaxRetries();
     int    getWifiRetryDelaySeconds();
@@ -106,6 +110,9 @@ class SettingsManager
     
     // Water meter calibration setters
     void setPulsesPerGallon(float value);
+    
+    // Water meter timeout setter
+    void setWaterMeterTimeoutSeconds(int seconds);
     
     // WiFi connection settings setters - request restart for these
     void setWifiMaxRetries(int retries);

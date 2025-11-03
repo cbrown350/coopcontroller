@@ -106,6 +106,12 @@ void WebServer::begin()
                 logger.logf("Water meter calibration updated: %.1f pulses per gallon", newCalibration);
             }
             
+            if (jsonObj["water_meter_timeout_seconds"].is<int>()) {
+                int timeout = jsonObj["water_meter_timeout_seconds"].as<int>();
+                settingsManager.setWaterMeterTimeoutSeconds(timeout);
+                logger.logf("Water meter timeout updated: %d seconds", timeout);
+            }
+            
             // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
             
             settingsManager.save();
@@ -169,6 +175,8 @@ void WebServer::begin()
                   }
                   sensor1["flow_rate"] = tempSensor.getFlowRate1();
                   sensor1["pulse_count"] = tempSensor.getPulseCount1();
+                  sensor1["last_pulse_time"] = tempSensor.getTimeSinceLastPulse(tempSensor.getSensor1Data());
+                  sensor1["actively_connected"] = tempSensor.isActivelyConnected(tempSensor.getSensor1Data());
                   sensor1["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor1Data());
                   
                   JsonObject sensor2 = jsonDoc["sensor2"].to<JsonObject>();
@@ -181,6 +189,8 @@ void WebServer::begin()
                   }
                   sensor2["flow_rate"] = tempSensor.getFlowRate2();
                   sensor2["pulse_count"] = tempSensor.getPulseCount2();
+                  sensor2["last_pulse_time"] = tempSensor.getTimeSinceLastPulse(tempSensor.getSensor2Data());
+                  sensor2["actively_connected"] = tempSensor.isActivelyConnected(tempSensor.getSensor2Data());
                   sensor2["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor2Data());
                   
                   // Pump controller data
@@ -207,6 +217,7 @@ void WebServer::begin()
                   system["light_auto_mode"] = settingsManager.getLightAutoMode();
                   system["log_level"] = settingsManager.getLogLevel();
                   system["watchdog_timeout_seconds"] = settingsManager.getWatchdogTimeoutSeconds();
+                  system["water_meter_timeout_seconds"] = settingsManager.getWaterMeterTimeoutSeconds();
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
