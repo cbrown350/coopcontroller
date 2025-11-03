@@ -16,6 +16,7 @@
   "wifi_retry_delay_seconds": 5,
   "wifi_ap_duration_minutes": 10,
   "water_flow_error_timeout_seconds": 5,
+  "water_meter_timeout_seconds": 300,
   "watchdog_timeout_seconds": 30,
   "light_auto_mode": false,
   "light_on_hour": 6,

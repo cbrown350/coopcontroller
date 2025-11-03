@@ -167,7 +167,10 @@ void WebServer::begin()
                   // Temperature sensor data
                   JsonObject sensor1 = jsonDoc["sensor1"].to<JsonObject>();
                   sensor1["type"] = tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
-                  sensor1["connected"] = tempSensor.isSensor1Detected() && tempSensor.isSensor1Connected();
+                  sensor1["connected"] = tempSensor.isSensor1Detected() && 
+                                      (tempSensor.getSensor1Type() == SensorType::WATER_METER ? 
+                                       tempSensor.isActivelyConnected(tempSensor.getSensor1Data()) : 
+                                       tempSensor.isSensor1Connected());
                   if (isnan(tempSensor.getTemperature1F())) {
                       sensor1["temperature_f"] = nullptr;
                   } else {
@@ -181,7 +184,10 @@ void WebServer::begin()
                   
                   JsonObject sensor2 = jsonDoc["sensor2"].to<JsonObject>();
                   sensor2["type"] = tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
-                  sensor2["connected"] = tempSensor.isSensor2Detected() && tempSensor.isSensor2Connected();
+                  sensor2["connected"] = tempSensor.isSensor2Detected() && 
+                                      (tempSensor.getSensor2Type() == SensorType::WATER_METER ? 
+                                       tempSensor.isActivelyConnected(tempSensor.getSensor2Data()) : 
+                                       tempSensor.isSensor2Connected());
                   if (isnan(tempSensor.getTemperature2F())) {
                       sensor2["temperature_f"] = nullptr;
                   } else {
@@ -217,6 +223,7 @@ void WebServer::begin()
                   system["light_auto_mode"] = settingsManager.getLightAutoMode();
                   system["log_level"] = settingsManager.getLogLevel();
                   system["watchdog_timeout_seconds"] = settingsManager.getWatchdogTimeoutSeconds();
+                  system["water_meter_timeout_seconds"] = settingsManager.getWaterMeterTimeoutSeconds();
                   system["water_meter_timeout_seconds"] = settingsManager.getWaterMeterTimeoutSeconds();
                   
                   String jsonResponse;

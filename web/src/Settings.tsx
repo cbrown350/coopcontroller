@@ -21,6 +21,9 @@ function Settings() {
 
   // Water meter calibration
   const [pulsesPerGallon, setPulsesPerGallon] = createSignal<number | null>(null)
+  
+  // Water meter timeout
+  const [waterMeterTimeoutSeconds, setWaterMeterTimeoutSeconds] = createSignal<number | null>(null)
 
   // Log level (string enum from backend)
   const [logLevel, setLogLevel] = createSignal<string | null>(null)
@@ -47,6 +50,7 @@ function Settings() {
       setLightOnHour(settings.light_on_hour ?? null)
       setLightOffHour(settings.light_off_hour ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
+      setWaterMeterTimeoutSeconds(settings.water_meter_timeout_seconds ?? null)
       setLogLevel(settings.log_level ?? 'INFO')
       setPulsesPerGallon(settings.pulses_per_gallon ?? null)
 
@@ -88,6 +92,7 @@ function Settings() {
 
       const settingsPayload = {
            ap_mode: false,
+            water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
            ...(apMode() && { ssid: ssid(), passwd: password() }),
            temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
            temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
@@ -206,6 +211,16 @@ function Settings() {
             <Show when={loaded()}>
               <input type="number" id="pulses_per_gallon" value={pulsesPerGallon()!} onInput={(e) => setPulsesPerGallon(parseFloat(e.target.value))} placeholder="450" step="1" min="100" max="2000" class="input" />
             </Show>
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Water Meter Connection Timeout (seconds)</legend>
+            <Show when={loaded()}>
+              <input type="number" id="water_meter_timeout_seconds" value={waterMeterTimeoutSeconds()!} onInput={(e) => setWaterMeterTimeoutSeconds(parseInt(e.target.value))} placeholder="300" step="1" min="60" max="3600" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">Time since last pulse before water meter considered disconnected (default: 300 seconds)</div>
+          </fieldset>
             <Show when={!loaded()}>
               <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
             </Show>

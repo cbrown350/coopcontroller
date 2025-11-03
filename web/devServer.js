@@ -106,7 +106,8 @@ const getSensorStatus = () => ({
     // pump_auto_mode: mockSettings.pump_auto_mode, // Auto mode enabled
     light_auto_mode: mockSettings.light_auto_mode,          // Light auto mode disabled
     light_on_hour: mockSettings.light_on_hour,              // Light on at 6 AM
-    light_off_hour: mockSettings.light_off_hour             // Light off at 8 PM
+    light_off_hour: mockSettings.light_off_hour,            // Light off at 8 PM
+    water_meter_timeout_seconds: mockSettings.water_meter_timeout_seconds
   }
 });
 

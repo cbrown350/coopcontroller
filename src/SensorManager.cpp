@@ -114,7 +114,9 @@ void SensorManager::detectSensorType(int pin, SensorData& sensor) {
     
     // If no Dallas sensor found, configure as water meter
     sensor.type = SensorType::WATER_METER;
-    sensor.is_connected = true;  // Water meters are considered "connected" once configured
+    sensor.was_detected = true;   // But they are "detected" once configured
+    sensor.last_pulse_time.store(0); // Initialize pulse time
+    sensor.is_connected = false;  // Water meters are "connected" only when pulses are detected
     logger.logf("Sensor on pin %d: No Dallas sensor found, configured as water meter", pin);
 }
 
@@ -301,7 +303,17 @@ unsigned long SensorManager::getMostRecentPulseTime() const {
 bool SensorManager::isActivelyConnected(const SensorData& sensor) const {
     if (sensor.type == SensorType::WATER_METER) {
         if (sensor.pulse_count.load() == 0) return false;  // Never detected any pulses
-        unsigned long timeSinceLastPulse = (millis() - sensor.last_pulse_time.load()) / 1000;
+        unsigned long currentTime = millis();
+        unsigned long lastPulseTime = sensor.last_pulse_time.load();
+        
+        // Handle millis() rollover
+        unsigned long timeSinceLastPulse;
+        if (currentTime >= lastPulseTime) {
+            timeSinceLastPulse = (currentTime - lastPulseTime) / 1000;
+        } else {
+            // Rollover occurred
+            timeSinceLastPulse = ((ULONG_MAX - lastPulseTime) + currentTime) / 1000;
+        }
         return timeSinceLastPulse < settingsManager.getWaterMeterTimeoutSeconds();
     }
     return sensor.is_connected;  // For Dallas sensors, use existing logic
@@ -309,5 +321,14 @@ bool SensorManager::isActivelyConnected(const SensorData& sensor) const {
 
 unsigned long SensorManager::getTimeSinceLastPulse(const SensorData& sensor) const {
     if (sensor.type != SensorType::WATER_METER || sensor.pulse_count.load() == 0) return 0;
-    return (millis() - sensor.last_pulse_time.load()) / 1000;
+    unsigned long currentTime = millis();
+    unsigned long lastPulseTime = sensor.last_pulse_time.load();
+    
+    // Handle millis() rollover
+    if (currentTime >= lastPulseTime) {
+        return (currentTime - lastPulseTime) / 1000;
+    } else {
+        // Rollover occurred
+        return ((ULONG_MAX - lastPulseTime) + currentTime) / 1000;
+    }
 }

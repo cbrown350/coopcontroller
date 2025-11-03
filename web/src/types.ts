@@ -7,6 +7,8 @@ export interface SensorData {
   temperature_f: number;
   flow_rate: number;
   pulse_count: number;
+  last_pulse_time: number;
+  actively_connected: boolean;
   status: string;
 }
 
@@ -32,6 +34,7 @@ export interface SystemSettings {
   light_auto_mode: boolean;
   light_on_hour: number;
   light_off_hour: number;
+  water_meter_timeout_seconds: number;
 }
 
 export interface FullSensorStatus {
@@ -54,4 +57,5 @@ export interface Settings {
   water_flow_error_timeout_seconds?: number;
   log_level?: LogLevel | string;
   pulses_per_gallon?: number;
+  water_meter_timeout_seconds?: number;
 }
