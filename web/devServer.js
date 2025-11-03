@@ -23,8 +23,7 @@ const mockSettings = {
   light_auto_mode: false,           // Light auto mode disabled
   light_on_hour: 6,               // Light on at 6 AM
   light_off_hour: 20,              // Light off at 8 PM
-  debug_enabled: true,
-  log_level: 'INFO',             // Debug enabled
+  log_level: 'INFO',
   water_flow_error_timeout_seconds: 20, // 20 seconds
   pulses_per_gallon: 450.0        // Water meter calibration
 };
@@ -99,10 +98,10 @@ const getSensorStatus = () => ({
     temp_threshold_off_f: mockSettings.temp_threshold_off_f,
     pump_on_time_seconds: mockSettings.pump_on_time_seconds,
     pump_off_time_seconds: mockSettings.pump_off_time_seconds,
-    // pump_auto_mode: mockSettings.pump_auto_mode,
-    light_auto_mode: mockSettings.light_auto_mode,
-    light_on_hour: mockSettings.light_on_hour,
-    light_off_hour: mockSettings.light_off_hour
+    // pump_auto_mode: mockSettings.pump_auto_mode, // Auto mode enabled
+    light_auto_mode: mockSettings.light_auto_mode,          // Light auto mode disabled
+    light_on_hour: mockSettings.light_on_hour,              // Light on at 6 AM
+    light_off_hour: mockSettings.light_off_hour             // Light off at 8 PM
   }
 });
 
@@ -163,11 +162,9 @@ async function createServer() {
       if (settings.light_on_hour !== undefined) {
         mockSettings.light_on_hour = settings.light_on_hour;
       }
+      // debug_enabled removed - incoming debug_enabled values are ignored
       if (settings.light_off_hour !== undefined) {
         mockSettings.light_off_hour = settings.light_off_hour;
-      }
-      if (settings.debug_enabled !== undefined) {
-        mockSettings.debug_enabled = settings.debug_enabled;
       }
       if (settings.pulses_per_gallon !== undefined) {
         mockSettings.pulses_per_gallon = settings.pulses_per_gallon;
@@ -277,12 +274,14 @@ var O=function(l){return l!=null&&(M(l)||P(l)||!!l._isBuffer)};function M(l){ret
       <!-- Logo -->
       <svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 197" width="220" height="60" class="dark:text-[#e4e6eb]">
         <path fill-rule="evenodd" fill="currentColor" d="m10.3 51.9l-10.3-5.9v76c0 1.7 0.9 3.4 2.4 4.2l7.9 4.6zm19.5 11l-12.2-6.9v79l12.2 7zm19.5 11.1l-12.2-6.9v79.1l12.2 7.1zm19.5 11.1l-12.2-6.9v79.4l12.2 7zm6.1-84.4c-1.5-0.9-3.3-0.9-4.8 0l-67 38.7 12.2 6.9 69.9-39.7zm-52.2 49.9l10.9 6.2 69.8-39.6-10.9-6.3zm18.4 10.4l10.9 6.2 69.6-39.5-10.8-6.3zm18.4 10.5l13 7.4 69.5-39.4-13-7.5zm16.8 13.8v79.4l66.4-38.3c1.5-0.9 2.4-2.5 2.4-4.2v-76z"/>
-        <path fill="currentColor" d="m257.1 130v-17.1h-33.3v-15.5h30.1v-15.9h-30.1v-15.3h33.2v-17h-51.2v80.8zm31.3 0v-82.5h-17.3v82.5zm28.4-35.1c0.3-4.2 4-9.6 11.3-9.6 8.2 0 11.1 5.3 11.4 9.6zm23.9 14.7c-1.6 4.4-5.1 7.4-11.4 7.4-6.7 0-12.5-4.6-12.9-10.9h39.5c0.1-0.4 0.3-3 0.3-5.4 0-18.2-10.8-29.1-28.4-29.1-14.7 0-28.2 11.7-28.2 29.9 0 19 13.9 30.2 29.5 30.2 14.3 0 23.4-8.2 26.1-18zm22.7 23.6c1.6 10.1 11.9 20.2 28.2 20.2 7.5 0 13,3.2 15.9-8 0 3.9 0.5 5.9 0.6 6.4h15.6c-0.1-0.6-0.7-4.4-0.7-8.8v-27.7h-16.6v6.1c-1.6-3-6.5-7.1-15.7-7.1-15.5 0-26.3 12.8-26.3 27.7 0 15.8 11.3 27.6 26.3 27.6 8.2 0 13.1-3.3 15.2-6.4v2.6c0 10.3-5.4 14.5-14.1 14.5-6.4 0-11,4-12.1-9.4zm29.5-20.7c-7 0-12.2-4.8-12.2-12.5 0-7.8 5.7-12.5 12.2-12.5 6.5 0 12.1 4.7 12.1 12.5 0 7.7-5.1 12.5-12.1 12.5zm39.6 1.9c0 9 7.2 17.2 19.7 17.2 7.5 0 13,3.2 15.9-8 0 3.9 0.5 5.9 0.6 6.4h15.6c-0.1-0.6-0.7-4.4-0.7-8.8v-27.7c0-11.6-6.4-22.6-25.1-22.6-16.6 0-24.1 10.7-24.8 18.8l15 3.1c0.4-4.2 3.7-8.3 9.7-8.3 5.5 0 8.3 2.8 8.3 6.1 0 2-1 3.4-4.1 3.9l-13.3 2.1c-9.3 1.3-16.8 7-16.8 17.1zm23.9 4.6c-4.8 0-6.7-2.8-6.7-6.3 0-4 2.7-5.7 6.3-6.3l10.7-1.7v2.5c0 8.8-5.2 11.3-10.3 11.3zm59.1-21.5c0-5.7 3.7-9.9 9.4-9.9 6.3 0 9.2 4.2 9.2 9.8v32.6h17.4v-35.6c0-12.4-6.4-22.6-25.1-22.6-16.6 0-24.1 10.7-24.8 18.8l15 3.1c0.4-4.2 3.7-8.3 9.7-8.3 5.5 0 8.3 2.8 8.3 6.1 0 2-1 3.4-4.1 3.9l-13.3 2.1c-9.3 1.3-16.8 7-16.8 17.1zm59.1-21.5c0-5.7 3.7-9.9 9.4-9.9 6.3 0 9.2 4.2 9.2 9.8v32.6h17.4v-35.6c0-12.4-6.4-22.6-25.1-22.6-16.6 0-24.1 10.7-24.8 18.8l15 3.1c0.4-4.2 3.7-8.3 9.7-8.3 5.5 0 8.3 2.8 8.3 6.1 0 2-1 3.4-4.1 3.9l-13.3 2.1c-9.3 1.3-16.8 7-16.8 17.1zm71.3-40.7h-15.5v7.3c0 5.2-2.9 9.2-8.8 9.2h-2.8v15.2h10v24.2c0 11.3 7.2 18.3 18.9 18.3 5.5 0 8.3-1.3 9-1.6v-14.4c-1 0.3-2.7 0.6-4.5 0.6-3.8 0-6.3-1.3-6.3-5.9v-21.2h11v-15.2h-11zm38 32.7c0-16.8 12-24.5 23.3-24.5 11.2 0 23.3 7.7 23.3 24.5 0 16.9-12.1 24.4-23.3 24.4-11.3 0-23.3-7.5-23.3-24.4zm-18.7 0.1c0 25.6 19.2 42.1 42 42.1 22.7 0 42-16.5 42-42.1 0-25.6-19.3-42.1-42-42.1-22.8 0-42 16.5-42 42.1zm156.3-23.2v-17.2h-67.9v17.2h24.9v63.6h18v-63.6zm57.7 63.6h19.6l-30.1-80.8h-20.9l-30.4 80.8h18.9l5.8-16.4h31.3zm-21.2-60.8l9.6 27.9h-19.6zm-27.6 126.8v-8.3h-16.9v-30.7h-8.7v39zm13.5 0v-27.3h-8.4v27.3zm-9.1-35.7c0 2.7 2.2 4.9 4.9 4.9 2.7 0 4.9-2.2 4.9-4.9 0-2.7-2.2-4.9-4.9-4.9-2.7 0-4.9 2.2-4.9 4.9zm26.4 0.4h-7.5v3.5c0 2.5-1.3 4.5-4.2 4.5h-1.4v7.3h4.9v11.7c0 5.4 3.4 8.8 9.1 8.8 2.6 0 4-0.6 4.4-0.8v-6.9c-0.5 0.1-1.4 0.3-2.2 0.3-1.9 0-3.1-0.6-3.1-2.9v-10.2h5.4v-7.3h-5.4zm17.3 18.3c0.2-2 1.9-4.6 5.4-4.6 4 0 5.4 2.6 5.5 4.6zm11.6 7.1c-0.8 2.2-2.5 3.6-5.5 3.6-3.3 0-6.1-2.2-6.2-5.3h19c0.1-0.1 0.2-1.4 0.2-2.6 0-8.8-5.3-14,13.7-14-7.1 0-13.7 5.6-13.7 14.4 0 9.2 6.7 14.6 14.3 14.6 6.9 0 11.3-4 12.6-8.7z"/>
-        <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="M9 12v4M12 17h.01M16 17v4M19 12H5"/></svg>
+        <path fill="currentColor" d="m257.1 130v-17.1h-33.3v-15.5h30.1v-15.9h-30.1v-15.3h33.2v-17h-51.2v80.8zm31.3 0v-82.5h-17.3v82.5zm28.4-35.1c0.3-4.2 4-9.6 11.3-9.6 8.2 0 11.1 5.3 11.4 9.6zm23.9 14.7c-1.6 4.4-5.1 7.4-11.4 7.4-6.7 0-12.5-4.6-12.9-10.9h39.5c0.1-0.6 0.3-3 0.3-5.4 0-18.2-10.8-29.1-28.4-29.1-14.7 0-28.2 11.7-28.2 29.9 0 19 13.9 30.2 29.5 30.2 14.3 0 23.4-8.2 26.1-18zm22.7 23.6c1.6 10.1 11.9 20.2 28.2 20.2 7.5 0 13,3.2 15.9-8 0 3.9 0.5 5.9 0.6 6.4h15.6c-0.1-0.6-0.7-4.4-0.7-8.8v-27.7h-16.6v6.1c-1.6-3-6.5-7.1-15.7-7.1-15.5 0-26.3 12.8-26.3 27.7 0 15.8 11.3 27.6 26.3 27.6 8.2 0 13.1-3.3 15.2-6.4v2.6c0 10.3-5.4 14.5-14.1 14.5-6.4 0-11,4-12.1-9.4zm29.5-20.7c-7 0-12.2-4.8-12.2-12.5 0-7.8 5.7-12.5 12.2-12.5 6.5 0 12.1 4.7 12.1 12.5 0 7.7-5.1 12.5-12.1 12.5zm39.6 1.9c0 9 7.2 17.2 19.7 17.2 7.5 0 13,3.2 15.9-8 0 3.9 0.5 5.9 0.6 6.4h15.6c-0.1-0.6-0.7-4.4-0.7-8.8v-27.7c0-11.6-6.4-22.6-25.1-22.6-16.6 0-24.1 10.7-24.8 18.8l15 3.1c0.4-4.2 3.7-8.3 9.7-8.3 5.5 0 8.3 2.8 8.3 6.1 0 2-1 3.4-4.1 3.9l-13.3 2.1c-9.3 1.3-16.8 7-16.8 17.1zm23.9 4.6c-4.8 0-6.7-2.8-6.7-6.3 0-4 2.7-5.7 6.3-6.3l10.7-1.7v2.5c0 8.8-5.2 11.3-10.3 11.3zm59.1-21.5c0-5.7 3.7-9.9 9.4-9.9 6.3 0 9.2 4.2 9.2 9.8v32.6h17.4v-35.6c0-12.4-6.4-22.6-25.1-22.6-16.6 0-24.1 10.7-24.8 18.8l15 3.1c0.4-4.2 3.7-8.3 9.7-8.3 5.5 0 8.3 2.8 8.3 6.1 0 2-1 3.4-4.1 3.9l-13.3 2.1c-9.3 1.3-16.8 7-16.8 17.1zm59.1-21.5c0-5.7 3.7-9.9 9.4-9.9 6.3 0 9.2 4.2 9.2 9.8v32.6h17.4v-35.6c0-12.4-6.4-22.6-25.1-22.6-16.6 0-24.1 10.7-24.8 18.8l15 3.1c0.4-4.2 3.7-8.3 9.7-8.3 5.5 0 8.3 2.8 8.3 6.1 0 2-1 3.4-4.1 3.9l-13.3 2.1c-9.3 1.3-16.8 7-16.8 17.1zm71.3-40.7h-15.5v7.3c0 5.2-2.9 9.2-8.8 9.2h-2.8v15.2h10v24.2c0 11.3 7.2 18.3 18.9 18.3 5.5 0 8.3-1.3 9-1.6v-14.4c-1 0.3-2.7 0.6-4.5 0.6-3.8 0-6.3-1.3-6.3-5.9v-21.2h11v-15.2h-11zm38 32.7c0-16.8 12-24.5 23.3-24.5 11.2 0 23.3 7.7 23.3 24.5 0 16.9-12.1 24.4-23.3 24.4-11.3 0-23.3-7.5-23.3-24.4zm-18.7 0.1c0 25.6 19.2 42.1 42 42.1 22.7 0 42-16.5 42-42.1 0-25.6-19.3-42.1-42-42.1-22.8 0-42 16.5-42 42.1zm156.3-23.2v-17.2h-67.9v17.2h24.9v63.6h18v-63.6zm57.7 63.6h19.6l-30.1-80.8h-20.9l-30.4 80.8h18.9l5.8-16.4h31.3zm-21.2-60.8l9.6 27.9h-19.6zm-27.6 126.8v-8.3h-16.9v-30.7h-8.7v39zm13.5 0v-27.3h-8.4v27.3zm-9.1-35.7c0 2.7 2.2 4.9 4.9 4.9 2.7 0 4.9-2.2 4.9-4.9 0-2.7-2.2-4.9-4.9-4.9-2.7 0-4.9 2.2-4.9 4.9zm26.4 0.4h-7.5v3.5c0 2.5-1.3 4.5-4.2 4.5h-1.4v7.3h4.9v11.7c0 5.4 3.4 8.8 9.1 8.8 2.6 0 4-0.6 4.4-0.8v-6.9c-0.5 0.1-1.4 0.3-2.2 0.3-1.9 0-3.1-0.6-3.1-2.9v-10.2h5.4v-7.3h-5.4zm17.3 18.3c0.2-2 1.9-4.6 5.4-4.6 4 0 5.4 2.6 5.6 4.6zm11.6 7.1c-0.8 2.2-2.5 3.6-5.5 3.6-3.3 0-6.1-2.2-6.2-5.3h19c0.1-0.1 0.2-1.4 0.2-2.6 0-8.8-5.3-14,13.7-14-7.1 0-13.7 5.6-13.7 14.4 0 9.2 6.7 14.6 14.3 14.6 6.9 0 11.3-4 12.6-8.7z"/>
+        <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/>
+        <path d="M9 12v4M12 17h.01M16 17v4M19 12H5"></path><path d="M19 12H5"></path></svg>
       <!-- Upload Column -->
       <form>
         <button id="uploadButton" class="dark:text-white bg-gray-50 border border-[#b0b3b8] border-opacity-40 hover:bg-gray-200 text-gray-700 focus:outline-none focus:ring-4 focus:ring-gray-200 rounded-full px-5 py-3 mr-2 flex flex-row gap-3 items-center dark:bg-[#242526] dark:hover:bg-[#3a3b3c] dark:focus:ring-[#3a3b3c] dark:border-[#3a3b3c]">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-up"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 1.73-3Z"/><path d="M9 12v4"/><path d="M12 17h.01M16 17v4"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-up"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 1.73-3Z"/>
+          <path d="M9 12v4"/></path><path d="M12 17h.01M16 17v4"/></svg>
           <span>
             Select File
           </span>
@@ -303,8 +302,7 @@ var O=function(l){return l!=null&&(M(l)||P(l)||!!l._isBuffer)};function M(l){ret
       </div>
       <!-- Success Column -->
       <div id="successColumn" class="flex flex-col items-center gap-4 mt-12 hidden">
-        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-500"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="M9 12v4"/>
-S<path d="M12 17h.01M16 17v4"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-500"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="M9 12v4"/><path d="M12 17h.01M16 17v4"/></svg>
         <p>
           Update Successful
         </p>
@@ -316,8 +314,9 @@ S<path d="M12 17h.01M16 17v4"/></svg>
 
       <!-- Error Column -->
       <div id="errorColumn" class="flex flex-col items-center gap-2 mt-12 hidden">
-        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/>
-<path d="M12 17h.01"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+        <path d="M12 9v4"/>
+        <path d="M12 17h.01"/></svg>
         <p id="errorTitle" class="mt-2">
           Unexpected Error
         </p>
@@ -347,17 +346,10 @@ S<path d="M12 17h.01M16 17v4"/></svg>
               <option value="fs">LittleFS / SPIFFS</option>
             </select>
           </div>
-          <div class="flex flex-row justify-between items-center gap-4">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-400"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M17 19v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
-            <p class="text-sm ml-2 pr-5">
-              Upgrade to ElegantOTA Pro - Get access to branding and more!
-            </p>
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute right-2 top-2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-          </div>
         </div>
       </div>
-      <!--
-    </div>
-  </body>
+</div>
+</body>
 </html>
 `;
+

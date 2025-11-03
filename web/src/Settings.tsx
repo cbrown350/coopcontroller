@@ -17,7 +17,6 @@ function Settings() {
   const [lightAutoMode, setLightAutoMode] = createSignal<boolean | null>(null)
   const [lightOnHour, setLightOnHour] = createSignal<number | null>(null)
   const [lightOffHour, setLightOffHour] = createSignal<number | null>(null)
-  const [debugEnabled, setDebugEnabled] = createSignal<boolean | null>(null)
   const [waterFlowErrorTimeoutSeconds, setWaterFlowErrorTimeoutSeconds] = createSignal<number | null>(null)
 
   // Water meter calibration
@@ -47,7 +46,6 @@ function Settings() {
       setLightAutoMode(settings.light_auto_mode ?? null)
       setLightOnHour(settings.light_on_hour ?? null)
       setLightOffHour(settings.light_off_hour ?? null)
-      setDebugEnabled(settings.debug_enabled ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
       setLogLevel(settings.log_level ?? 'INFO')
       setPulsesPerGallon(settings.pulses_per_gallon ?? null)
@@ -101,7 +99,6 @@ function Settings() {
            light_auto_mode: lightAutoMode() ?? false,
            light_on_hour: lightOnHour() ?? 6,
            light_off_hour: lightOffHour() ?? 20,
-           debug_enabled: debugEnabled() ?? false,
            pulses_per_gallon: pulsesPerGallon() ?? 450.0
        }
 
@@ -265,17 +262,7 @@ function Settings() {
             </div>
           </Show>
 
-          <h2 class="text-lg font-bold mb-4 mt-10">Debug Settings</h2>
-
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">Debug Mode</legend>
-            <label class="label cursor-pointer">
-              <Show when={loaded()} fallback={<input type="checkbox" disabled class="checkbox" />}>
-                <input type="checkbox" id="debug_enabled" checked={debugEnabled()!} onChange={(e) => setDebugEnabled(e.target.checked)} class="checkbox checkbox-accent" />
-              </Show>
-              <span class="label-text">Enable debug logging for troubleshooting (shows pin states and sensor activity)</span>
-            </label>
-          </fieldset>
+          {/* Debug settings removed; logging is controlled via Log Level selector below */}
 
           <fieldset class="fieldset mt-4">
             <legend class="fieldset-legend">Log Level</legend>

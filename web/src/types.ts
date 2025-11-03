@@ -51,7 +51,6 @@ export interface Settings {
   light_auto_mode?: boolean;
   light_on_hour?: number;
   light_off_hour?: number;
-  debug_enabled?: boolean;
   water_flow_error_timeout_seconds?: number;
   log_level?: LogLevel | string;
   pulses_per_gallon?: number;
