@@ -313,9 +313,9 @@ void setup()
 
     // Initialize WiFi status LED
     if (settingsManager.getWifiLedEnabled()) {
-        pinMode(WIFI_LED_PIN, OUTPUT);
-        digitalWrite(WIFI_LED_PIN, LOW);
-        logger.logInfo("WiFi status LED initialized on pin " + String(WIFI_LED_PIN));
+        pinMode(WIFI_LED_B_PIN, OUTPUT);
+        digitalWrite(WIFI_LED_B_PIN, HIGH); // Turn off LED initially (assuming active LOW)
+        logger.logInfo("WiFi status LED initialized on pin " + String(WIFI_LED_B_PIN));
     }
     // Initialize coop controller components
     tempSensor.begin();
@@ -373,7 +373,7 @@ void updateWifiLed() {
     
     if (WiFi.status() == WL_CONNECTED) {
         // Heartbeat pattern: 50ms ON, 1950ms OFF
-        if (ledState) {
+        if (!ledState) {
             interval = 50;
         } else {
             interval = 1950;
@@ -382,14 +382,15 @@ void updateWifiLed() {
         // AP mode: 250ms ON, 250ms OFF
         interval = 250;
     } else {
-        // Disconnected: 500ms ON, 500ms OFF
-        interval = 500;
+        // Disconnected: OFF
+        // digitalWrite(WIFI_LED_B_PIN, HIGH);
+        interval = 50;//ULONG_MAX; // Effectively disable toggling
     }
     
     if (currentMillis - lastLedToggle >= interval) {
         lastLedToggle = currentMillis;
         ledState = !ledState;
-        digitalWrite(WIFI_LED_PIN, ledState ? HIGH : LOW);
+        digitalWrite(WIFI_LED_B_PIN, ledState ? HIGH : LOW);
     }
 }
 
