@@ -28,6 +28,9 @@ function Settings() {
   // Log level (string enum from backend)
   const [showResetDialog, setShowResetDialog] = createSignal(false)
   const [logLevel, setLogLevel] = createSignal<string | null>(null)
+  
+  // WiFi LED control
+  const [wifiLedEnabled, setWifiLedEnabled] = createSignal<boolean | null>(null)
 
   // Load settings from server
   onMount(async () => {
@@ -54,6 +57,7 @@ function Settings() {
       setWaterMeterTimeoutSeconds(settings.water_meter_timeout_seconds ?? null)
       setLogLevel(settings.log_level ?? 'INFO')
       setPulsesPerGallon(settings.pulses_per_gallon ?? null)
+      setWifiLedEnabled(settings.wifi_led_enabled ?? true)
 
       setLoaded(true)
       setError('')
@@ -105,7 +109,8 @@ function Settings() {
            light_auto_mode: lightAutoMode() ?? false,
            light_on_hour: lightOnHour() ?? 6,
            light_off_hour: lightOffHour() ?? 20,
-           pulses_per_gallon: pulsesPerGallon() ?? 450.0
+           pulses_per_gallon: pulsesPerGallon() ?? 450.0,
+            wifi_led_enabled: wifiLedEnabled() ?? true
        }
 
       const response = await fetch('/update_settings', {
@@ -322,19 +327,39 @@ function Settings() {
             <div class="fieldset-label">Select logging verbosity for diagnostics. Higher verbosity may produce more logs.</div>
           </fieldset>
 
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">WiFi Status LED</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable WiFi Status LED</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={wifiLedEnabled() ?? true}
+                  onChange={(e) => setWifiLedEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Enable visual WiFi status indicator (heartbeat when connected, fast blink when disconnected)
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
           <h2 class="text-lg font-bold mb-4 mt-10">Danger Zone</h2>
           <div class="card bg-error text-error-content">
-            <div class="card-body">
+            <div class="card-body py-4 px-6">
               <h2 class="card-title">Factory Reset</h2>
-              <p>Factory reset will erase all settings and return to defaults. This action cannot be undone.</p>
-              <div class="card-actions justify-end">
+              <span class="card-actions mt-2">Factory reset will erase all settings and return to defaults. This action cannot be undone.</span>
+              <span class="card-actions mt-4">
                 <button 
-                  class="btn btn-warning"
+                  class="btn btn-warning btn-sm"
                   onClick={() => setShowResetDialog(true)}
                 >
                   Factory Reset
                 </button>
-              </div>
+              </span>
             </div>
           </div>
 

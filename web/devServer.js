@@ -26,7 +26,8 @@ const mockSettings = {
   log_level: 'INFO',
   water_flow_error_timeout_seconds: 20, // 20 seconds
   water_meter_timeout_seconds: 300, // 5 minutes timeout
-  pulses_per_gallon: 450.0        // Water meter calibration
+  pulses_per_gallon: 450.0,        // Water meter calibration
+  wifi_led_enabled: true              // WiFi status LED enabled
 };
 
 const mockVersionInfo = {
@@ -209,6 +210,10 @@ async function createServer() {
         mockSettings.water_meter_timeout_seconds = settings.water_meter_timeout_seconds;
       }
       
+      if (settings.wifi_led_enabled !== undefined) {
+        mockSettings.wifi_led_enabled = settings.wifi_led_enabled;
+      }
+      
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ success: true }));
     } catch (error) {
@@ -304,6 +309,7 @@ async function createServer() {
       mockSettings.watchdog_timeout_seconds = 30;
       mockSettings.pulses_per_gallon = 450.0;
       mockSettings.water_meter_timeout_seconds = 300;
+      mockSettings.wifi_led_enabled = true;
       
       res.setHeader("Content-Type", "text/plain");
       res.end("Factory reset complete. Device will restart in 3 seconds.");

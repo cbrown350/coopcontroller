@@ -11,7 +11,7 @@
 
 #include <esp_task_wdt.h>
 
-#include "Buzzer.h"
+#include "BuzzerController.h"
 #include "SensorManager.h"
 #include "PumpController.h"
 
@@ -51,6 +51,7 @@ WebServer webServer(80);
 // Coop Controller components
 SensorManager tempSensor;
 PumpController pumpController;
+BuzzerController buzzerController;
 
 // Variables to track WiFi connection monitoring
 unsigned long lastWifiCheck      = 0;
@@ -63,6 +64,9 @@ int           wifiRetryCount       = 0;
 // Timing variables for coop controller
 unsigned long lastSensorUpdate = 0;
 unsigned long lastPumpUpdate = 0;
+// WiFi LED control variables
+unsigned long lastLedToggle = 0;
+bool ledState = false;
 
 // If wifi fails, revert to AP mode and restart;
 void failWifi()
@@ -141,7 +145,7 @@ void wifiSetup()
         
         int maxRetries = settingsManager.getWifiMaxRetries();
         int retryDelay = settingsManager.getWifiRetryDelaySeconds();
-        
+
         wifiRetryCount = 0;
         while (!WiFi.isConnected() && wifiRetryCount < maxRetries)
         {            
@@ -306,6 +310,12 @@ void setup()
     // Load settings early
     settingsManager.load();
 
+    // Initialize WiFi status LED
+    if (settingsManager.getWifiLedEnabled()) {
+        pinMode(WIFI_LED_PIN, OUTPUT);
+        digitalWrite(WIFI_LED_PIN, LOW);
+        logger.logInfo("WiFi status LED initialized on pin " + String(WIFI_LED_PIN));
+    }
     // Initialize coop controller components
     tempSensor.begin();
     pumpController.begin();
@@ -354,6 +364,32 @@ unsigned long getTime()
     }
     time(&now);
     return now;
+}
+// Update WiFi status LED based on connection state
+void updateWifiLed() {
+    unsigned long currentMillis = millis();
+    unsigned long interval;
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        // Heartbeat pattern: 50ms ON, 1950ms OFF
+        if (ledState) {
+            interval = 50;
+        } else {
+            interval = 1950;
+        }
+    } else if (settingsManager.isAPMode()) {
+        // AP mode: 250ms ON, 250ms OFF
+        interval = 250;
+    } else {
+        // Disconnected: 500ms ON, 500ms OFF
+        interval = 500;
+    }
+    
+    if (currentMillis - lastLedToggle >= interval) {
+        lastLedToggle = currentMillis;
+        ledState = !ledState;
+        digitalWrite(WIFI_LED_PIN, ledState ? HIGH : LOW);
+    }
 }
 
 void loop()
@@ -461,6 +497,10 @@ void loop()
         }
     }
 
+    // Update WiFi LED status
+    if (settingsManager.getWifiLedEnabled()) {
+        updateWifiLed();
+    }
     webServer.loop();
 
     delay(10);

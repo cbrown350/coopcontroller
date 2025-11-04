@@ -34,6 +34,7 @@ struct user_settings
     int    wifi_retry_delay_seconds;  // Delay between WiFi retry attempts in seconds (default 30)
     int    wifi_ap_duration_minutes;  // How long to stay in AP mode before retrying (default 10)
     int    watchdog_timeout_seconds; // Watchdog timeout in seconds (default 30, range 10-120)
+    bool   wifi_led_enabled;        // Enable WiFi status LED (default: true)
 };
 
 class SettingsManager
@@ -89,6 +90,7 @@ class SettingsManager
     int    getWifiRetryDelaySeconds();
     int    getWifiAPDurationMinutes();
     int    getWatchdogTimeoutSeconds();
+    bool   getWifiLedEnabled() const;
 
     void setSSID(const String &ssid);
     void setPassword(const String &password);
@@ -119,6 +121,7 @@ class SettingsManager
     void setWifiRetryDelaySeconds(int seconds);
     void setWifiAPDurationMinutes(int minutes);
     void setWatchdogTimeoutSeconds(int seconds);
+    void setWifiLedEnabled(bool enabled);
 
     void factoryReset();
     String toJson(bool includePassword = true) const;

@@ -23,6 +23,7 @@
   "light_off_hour": 2,
   "log_level": "INFO",
   "pulses_per_gallon": 450.0,
-  "water_meter_timeout_seconds": 300
+  "water_meter_timeout_seconds": 300,
+  "wifi_led_enabled": true
 }
 

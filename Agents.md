@@ -339,7 +339,7 @@ All pins are defined in [`platformio.ini`](platformio.ini:45) as build flags and
 | Pin | Constant | Function | Type | Status |
 |-----|----------|----------|------|--------|
 | TBD | WIFI_LED_B_PIN | WiFi Status LED | Output | Heartbeat when connected, active low, fast blink when disconnected |
-| TBD | BUZZER_PIN | Alert Buzzer | Output | Sounds on fault conditions |
+| TBD | BUZZER_B_PIN | Alert Buzzer | Output | Sounds on fault conditions, active low |
 | TBD | OUT_DOOR_A_OPEN_POS_PIN | Door Open Positive | Output | Drive motor to open door |
 | TBD | OUT_DOOR_A_OPEN_NEG_PIN | Door Open Negative | Output | Drive motor negative (polarity reversed to close) |
 | TBD | DOOR_A_FAULT_B_PIN | Door Fault Output | Output | Active LOW on fault (timeout) |

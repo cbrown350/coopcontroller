@@ -112,6 +112,12 @@ void WebServer::begin()
                 logger.logf("Water meter timeout updated: %d seconds", timeout);
             }
             
+            if (jsonObj["wifi_led_enabled"].is<bool>()) {
+                bool enabled = jsonObj["wifi_led_enabled"].as<bool>();
+                settingsManager.setWifiLedEnabled(enabled);
+                logger.logf("WiFi LED enabled: %s", enabled ? "true" : "false");
+            }
+            
             // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
             
             settingsManager.save();

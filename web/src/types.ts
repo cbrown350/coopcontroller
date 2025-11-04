@@ -71,4 +71,5 @@ export interface Settings {
   log_level?: LogLevel | string;
   pulses_per_gallon?: number;
   water_meter_timeout_seconds?: number;
+  wifi_led_enabled?: boolean;
 }
