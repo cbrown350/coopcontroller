@@ -5,6 +5,7 @@
 #include "Logger.h"
 #include "SensorManager.h"
 #include "PumpController.h"
+#include "BuzzerController.h"
 
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
@@ -21,6 +22,7 @@ extern const char* otaPasswd;
 // External references to coop controller components
 extern SensorManager tempSensor;
 extern PumpController pumpController;
+extern BuzzerController buzzerController;
 
 WebServer::WebServer(int port) : server(port) {}
 
@@ -116,6 +118,22 @@ void WebServer::begin()
                 bool enabled = jsonObj["wifi_led_enabled"].as<bool>();
                 settingsManager.setWifiLedEnabled(enabled);
                 logger.logf("WiFi LED enabled: %s", enabled ? "true" : "false");
+            }
+            
+            // Handle buzzer settings
+            if (jsonObj["buzzer_enabled"].is<bool>()) {
+                bool enabled = jsonObj["buzzer_enabled"].as<bool>();
+                settingsManager.setBuzzerEnabled(enabled);
+                buzzerController.setEnabled(enabled);
+                logger.logf("Buzzer enabled: %s", enabled ? "true" : "false");
+            }
+            
+            if (jsonObj["buzzer_type"].is<String>()) {
+                String type = jsonObj["buzzer_type"].as<String>();
+                settingsManager.setBuzzerType(type);
+                BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
+                buzzerController.setBuzzerType(buzzerType);
+                logger.logf("Buzzer type set to: %s", type.c_str());
             }
             
             // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
@@ -236,6 +254,10 @@ void WebServer::begin()
                   system["watchdog_timeout_seconds"] = settingsManager.getWatchdogTimeoutSeconds();
                   system["water_meter_timeout_seconds"] = settingsManager.getWaterMeterTimeoutSeconds();
                   system["water_flow_error_timeout_seconds"] = settingsManager.getWaterFlowErrorTimeoutSeconds();
+
+                   // Buzzer status
+                   JsonObject buzzer = jsonDoc["buzzer"].to<JsonObject>();
+                   buzzerController.toJson(buzzer);
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
@@ -285,7 +307,7 @@ void WebServer::begin()
                   request->send(200, "text/plain", "Pump flow error cleared");
               });
 
-    // Water meter reset endpoints
+        // Water meter reset endpoints
     server.on("/water/reset/1", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
@@ -298,6 +320,21 @@ void WebServer::begin()
               {
                   tempSensor.resetPulseCount(2);
                   request->send(200, "text/plain", "Water meter 2 reset");
+              });
+
+    // Buzzer control endpoints
+    server.on("/buzzer/silence", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  buzzerController.silenceAlerts();
+                  request->send(200, "text/plain", "Buzzer alerts silenced");
+              });
+
+    server.on("/buzzer/test", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  buzzerController.testAlert();
+                  request->send(200, "text/plain", "Buzzer test alert triggered");
               });
 
     // Logs endpoint

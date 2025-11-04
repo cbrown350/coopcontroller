@@ -47,6 +47,13 @@ function Status() {
       light_auto_mode: false,
       light_on_hour: 6,
       light_off_hour: 20
+    },
+    buzzer: {
+      enabled: true,
+      buzzer_type: 'ACTIVE',
+      has_active_alert: false,
+      current_alert_type: undefined,
+      silence_remaining_ms: 0
     }
   })
   const [error, setError] = createSignal('')
@@ -324,6 +331,78 @@ function Status() {
                     Clear Error
                   </button>
                 </Show>
+              </div>
+            </div>
+          </div>
+
+          {/* Buzzer Control Section */}
+          <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">Buzzer Alerts</h2>
+              <div class="stats w-full shadow bg-base-300">
+                <div class="stat">
+                  <div class="stat-title">Buzzer Status</div>
+                  <div class={`stat-value text-lg ${sensorStatus().buzzer.has_active_alert ? 'text-error' : 'text-success'}`}>
+                    {sensorStatus().buzzer.has_active_alert ? 'Active Alert' : 'No Alerts'}
+                  </div>
+                  <div class="stat-desc">
+                    {sensorStatus().buzzer.has_active_alert ? 
+                      `Alert: ${sensorStatus().buzzer.current_alert_type || 'Unknown'}` : 
+                      'Buzzer is ready'}
+                  </div>
+                  <Show when={sensorStatus().buzzer.silence_remaining_ms && sensorStatus().buzzer.silence_remaining_ms! > 0}>
+                    <div class="stat-desc">
+                      Silenced for: {Math.floor((sensorStatus().buzzer.silence_remaining_ms || 0) / 1000 / 60)}m {(sensorStatus().buzzer.silence_remaining_ms || 0) % 60000 / 1000}s
+                    </div>
+                  </Show>
+                </div>
+                
+                <div class="stat">
+                  <div class="stat-title">Buzzer Type</div>
+                  <div class="stat-value text-lg">
+                    {sensorStatus().buzzer.buzzer_type}
+                  </div>
+                  <div class="stat-desc">
+                    {sensorStatus().buzzer.buzzer_type === 'ACTIVE' ? 'Active buzzer (simple on/off)' : 'Passive buzzer (tone generation)'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Buzzer Control Buttons */}
+              <div class="flex gap-2 mt-4">
+                <button 
+                  class="btn btn-warning btn-sm"
+                  onClick={() => {
+                    fetch('/buzzer/silence', { method: 'POST' })
+                      .then(response => {
+                        if (response.ok) {
+                          // Status will be updated on next refresh
+                        }
+                      })
+                      .catch(error => {
+                        console.error('Buzzer silence error:', error);
+                      });
+                  }}
+                  disabled={!sensorStatus().buzzer.has_active_alert}
+                >
+                  Silence Alerts
+                </button>
+                <button 
+                  class="btn btn-outline btn-sm"
+                  onClick={() => {
+                    fetch('/buzzer/test', { method: 'GET' })
+                      .then(response => {
+                        if (response.ok) {
+                          // Status will be updated on next refresh
+                        }
+                      })
+                      .catch(error => {
+                        console.error('Buzzer test error:', error);
+                      });
+                  }}
+                >
+                  Test Buzzer
+                </button>
               </div>
             </div>
           </div>

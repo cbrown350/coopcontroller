@@ -221,6 +221,7 @@ void checkWifiConnection()
         if (!isReconnecting)
         {
             logger.log("WiFi disconnected, attempting to reconnect...");
+            buzzerController.triggerAlert(AlertType::WIFI_DISCONNECTED);
             String ssid = settingsManager.getSSID();
             String password = settingsManager.getPassword();
             
@@ -320,6 +321,7 @@ void setup()
     // Initialize coop controller components
     tempSensor.begin();
     pumpController.begin();
+    buzzerController.begin();
     
     // Set water meter calibration from settings
     tempSensor.setPulsesPerGallon(settingsManager.getPulsesPerGallon());
@@ -442,6 +444,18 @@ void loop()
             if (!isnan(temp2)) {
                 logger.logf("Sensor 2: %.1f°F", temp2);
             }
+            
+            // Check for sensor errors and trigger buzzer alerts
+            static unsigned long lastSensorErrorAlert = 0;
+            bool sensor1Error = (tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP && isnan(temp1)) ||
+                               (tempSensor.getSensor1Type() == SensorType::WATER_METER && !tempSensor.isActivelyConnected(tempSensor.getSensor1Data()));
+            bool sensor2Error = (tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP && isnan(temp2)) ||
+                               (tempSensor.getSensor2Type() == SensorType::WATER_METER && !tempSensor.isActivelyConnected(tempSensor.getSensor2Data()));
+            
+            if ((sensor1Error || sensor2Error) && (currentTime - lastSensorErrorAlert > 60000)) {
+                buzzerController.triggerAlert(AlertType::SENSOR_ERROR);
+                lastSensorErrorAlert = currentTime;
+            }
         }
     }
 
@@ -454,6 +468,15 @@ void loop()
         
         // Update pump controller with current status
         pumpController.update();
+        
+        // Check for pump flow error and trigger buzzer alert
+        if (pumpController.hasFlowError()) {
+            static unsigned long lastPumpErrorAlert = 0;
+            if (currentTime - lastPumpErrorAlert > 60000) { // Only alert once per minute
+                buzzerController.triggerAlert(AlertType::PUMP_ERROR);
+                lastPumpErrorAlert = currentTime;
+            }
+        }
     }
     
     // Log sensor readings periodically
@@ -494,6 +517,10 @@ void loop()
     if (settingsManager.getWifiLedEnabled()) {
         updateWifiLed();
     }
+    
+    // Update buzzer controller
+    buzzerController.update();
+    
     webServer.loop();
 
     delay(10);
@@ -506,6 +533,15 @@ void loop()
         float heapSize = ESP.getHeapSize();
         float heapFree = ESP.getFreeHeap();
         float heapUsedPercent = 100.0 - (100.0 * heapFree / heapSize);
+        
+        // Trigger low memory alert if usage is high
+        if (heapUsedPercent > 80.0) {
+            static unsigned long lastLowMemoryAlert = 0;
+            if (currentTime - lastLowMemoryAlert > 60000) { // Only alert once per minute
+                buzzerController.triggerAlert(AlertType::LOW_MEMORY);
+                lastLowMemoryAlert = currentTime;
+            }
+        }
         
         // Format uptime
         unsigned long uptimeSeconds = millis() / 1000;

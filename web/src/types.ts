@@ -42,6 +42,15 @@ export interface FullSensorStatus {
   sensor2: SensorData;
   pump: PumpStatus;
   system: SystemSettings;
+  buzzer: BuzzerStatus;
+}
+
+export interface BuzzerStatus {
+  enabled: boolean;
+  buzzer_type: string;
+  has_active_alert: boolean;
+  current_alert_type?: string;
+  silence_remaining_ms?: number;
 }
 
 export interface SystemStatus {
@@ -72,4 +81,6 @@ export interface Settings {
   pulses_per_gallon?: number;
   water_meter_timeout_seconds?: number;
   wifi_led_enabled?: boolean;
+  buzzer_enabled?: boolean;
+  buzzer_type?: string;
 }

@@ -32,6 +32,10 @@ function Settings() {
   
   // WiFi LED control
   const [wifiLedEnabled, setWifiLedEnabled] = createSignal<boolean | null>(null)
+  
+  // Buzzer settings
+  const [buzzerEnabled, setBuzzerEnabled] = createSignal<boolean | null>(null)
+  const [buzzerType, setBuzzerType] = createSignal<string | null>(null)
 
   // Load settings from server
   onMount(async () => {
@@ -59,6 +63,8 @@ function Settings() {
       setLogLevel(settings.log_level ?? 'INFO')
       setPulsesPerGallon(settings.pulses_per_gallon ?? null)
       setWifiLedEnabled(settings.wifi_led_enabled ?? true)
+      setBuzzerEnabled(settings.buzzer_enabled ?? true)
+      setBuzzerType(settings.buzzer_type ?? 'ACTIVE')
 
       setLoaded(true)
       setError('')
@@ -111,7 +117,9 @@ function Settings() {
            light_on_hour: lightOnHour() ?? 6,
            light_off_hour: lightOffHour() ?? 20,
            pulses_per_gallon: pulsesPerGallon() ?? 450.0,
-            wifi_led_enabled: wifiLedEnabled() ?? true
+            wifi_led_enabled: wifiLedEnabled() ?? true,
+             buzzer_enabled: buzzerEnabled() ?? true,
+             buzzer_type: buzzerType() ?? 'ACTIVE'
        }
 
       const response = await fetch('/update_settings', {
@@ -366,6 +374,50 @@ function Settings() {
               <label class="label">
                 <span class="label-text-alt">
                   Enable visual WiFi status indicator (heartbeat when connected, fast blink when disconnected)
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Buzzer Alerts</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Buzzer Alerts</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={buzzerEnabled() ?? true}
+                  onChange={(e) => setBuzzerEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Enable audible alerts for system errors and warnings
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Buzzer Type</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Buzzer Type</span>
+                <select 
+                  id="buzzer_type" 
+                  title="Buzzer Type" 
+                  class="select" 
+                  value={buzzerType() ?? 'ACTIVE'} 
+                  onInput={(e) => setBuzzerType((e.target as HTMLSelectElement).value)}
+                >
+                  <option value="ACTIVE">Active Buzzer</option>
+                  <option value="PASSIVE">Passive Buzzer</option>
+                </select>
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Active buzzers are simple on/off. Passive buzzers support tone generation for different sounds.
                 </span>
               </label>
             </div>

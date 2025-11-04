@@ -35,6 +35,10 @@ struct user_settings
     int    wifi_ap_duration_minutes;  // How long to stay in AP mode before retrying (default 10)
     int    watchdog_timeout_seconds; // Watchdog timeout in seconds (default 30, range 10-120)
     bool   wifi_led_enabled;        // Enable WiFi status LED (default: true)
+    
+    // Buzzer settings
+    bool   buzzer_enabled;         // Enable buzzer alerts (default: true)
+    String buzzer_type;            // Buzzer type: "ACTIVE" or "PASSIVE" (default: "ACTIVE")
 };
 
 class SettingsManager
@@ -91,6 +95,10 @@ class SettingsManager
     int    getWifiAPDurationMinutes();
     int    getWatchdogTimeoutSeconds();
     bool   getWifiLedEnabled() const;
+    
+    // Buzzer settings getters
+    bool   getBuzzerEnabled() const;
+    String getBuzzerType() const;
 
     void setSSID(const String &ssid);
     void setPassword(const String &password);
@@ -122,6 +130,10 @@ class SettingsManager
     void setWifiAPDurationMinutes(int minutes);
     void setWatchdogTimeoutSeconds(int seconds);
     void setWifiLedEnabled(bool enabled);
+    
+    // Buzzer settings setters
+    void setBuzzerEnabled(bool enabled);
+    void setBuzzerType(const String& type);
 
     void factoryReset();
     String toJson(bool includePassword = true) const;

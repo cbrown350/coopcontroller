@@ -36,6 +36,10 @@ SettingsManager::SettingsManager()
     settings.water_meter_timeout_seconds = 300; // Default 5 minutes timeout for water meter connection
     settings.water_flow_error_timeout_seconds = 120; // Default 2 minutes timeout for water flow error
     settings.wifi_led_enabled = true;         // Enable WiFi status LED by default
+    
+    // Initialize buzzer settings with defaults
+    settings.buzzer_enabled = true;          // Enable buzzer alerts by default
+    settings.buzzer_type = "ACTIVE";         // Default to active buzzer type
 }
 
 bool SettingsManager::load()
@@ -80,6 +84,10 @@ bool SettingsManager::load()
     settings.water_meter_timeout_seconds = doc["water_meter_timeout_seconds"] | 300;
     settings.water_flow_error_timeout_seconds = doc["water_flow_error_timeout_seconds"] | 120;
     settings.wifi_led_enabled = doc["wifi_led_enabled"] | true;
+    
+    // Load buzzer settings
+    settings.buzzer_enabled = doc["buzzer_enabled"] | true;
+    settings.buzzer_type = doc["buzzer_type"] | "ACTIVE";
 
     isLoaded = true;
     return true;
@@ -341,11 +349,37 @@ bool SettingsManager::getWifiLedEnabled() const
     return settings.wifi_led_enabled;
 }
 
+// Buzzer settings getters
+bool SettingsManager::getBuzzerEnabled() const
+{
+    return settings.buzzer_enabled;
+}
+
+String SettingsManager::getBuzzerType() const
+{
+    return settings.buzzer_type;
+}
+
 void SettingsManager::setWifiLedEnabled(bool enabled)
 {
     if (!isLoaded)
         load();
     settings.wifi_led_enabled = enabled;
+}
+
+// Buzzer settings setters
+void SettingsManager::setBuzzerEnabled(bool enabled)
+{
+    if (!isLoaded)
+        load();
+    settings.buzzer_enabled = enabled;
+}
+
+void SettingsManager::setBuzzerType(const String& type)
+{
+    if (!isLoaded)
+        load();
+    settings.buzzer_type = type;
 }
 
 void SettingsManager::setSSID(const String &ssid)
@@ -413,6 +447,10 @@ String SettingsManager::toJson(bool includePassword) const
     doc["water_meter_timeout_seconds"] = settings.water_meter_timeout_seconds;
     doc["water_flow_error_timeout_seconds"] = settings.water_flow_error_timeout_seconds;
     doc["wifi_led_enabled"] = settings.wifi_led_enabled;
+    
+    // Buzzer settings
+    doc["buzzer_enabled"] = settings.buzzer_enabled;
+    doc["buzzer_type"] = settings.buzzer_type;
 
     if (includePassword)
     {
@@ -450,6 +488,10 @@ void SettingsManager::factoryReset()
     settings.pulses_per_gallon = 450.0;
     settings.water_meter_timeout_seconds = 300;
     settings.wifi_led_enabled = true;
+    
+    // Reset buzzer settings to defaults
+    settings.buzzer_enabled = true;
+    settings.buzzer_type = "ACTIVE";
     
     // Delete settings file
     if (LittleFS.exists("/user_settings.json")) {
