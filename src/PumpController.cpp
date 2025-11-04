@@ -2,7 +2,37 @@
 #include "SettingsManager.h"
 #include "Logger.h"
 
-PumpController::PumpController(int pin) : pumpPin(pin) {
+// Constructor with single sensor (backward compatibility)
+PumpController::PumpController(SensorManager* sensor, int pin) 
+    : pumpPin(pin), primarySensor_(sensor), flowSensor_(sensor) {
+    // Initialize status
+    status.state = PUMP_OFF;
+    status.is_active = false;
+    status.last_switch_time = 0;
+    status.current_cycle_start = 0;
+    status.current_cycle_duration = 0;
+    status.temperature_f = 0.0f;
+    status.temperature_below_threshold = false;
+    status.flow_error = false;
+    status.total_on_time = 0;
+    status.total_off_time = 0;
+    status.total_cycles = 0;
+    
+    // Initialize timing variables
+    lastUpdateTime = 0;
+    cycleStartTime = 0;
+    currentlyInOnPhase = false;
+    offPhaseStartTime = 0;
+    
+    // Initialize error detection
+    lastFlowCheckTime = 0;
+    errorStartTime = 0;
+    waitingForRetry = false;
+}
+
+// Constructor with separate sensors for temperature and flow
+PumpController::PumpController(SensorManager* primarySensor, SensorManager* flowSensor, int pin) 
+    : pumpPin(pin), primarySensor_(primarySensor), flowSensor_(flowSensor) {
     // Initialize status
     status.state = PUMP_OFF;
     status.is_active = false;
@@ -51,12 +81,22 @@ void PumpController::begin() {
     logger.logDebug("Pump controller initialization complete");
 }
 
-void PumpController::update(float temperature_f, bool has_flow_error) {
+void PumpController::update() {
     unsigned long currentTime = millis();
     
-    // Update status
-    status.temperature_f = temperature_f;
-    status.flow_error = has_flow_error || status.flow_error;
+    // Get temperature from primary sensor
+    if (primarySensor_) {
+        // Try to get temperature from sensor 1 first, then sensor 2
+        status.temperature_f = primarySensor_->getTemperature1F();
+        if (isnan(status.temperature_f)) {
+            status.temperature_f = primarySensor_->getTemperature2F();
+        }
+    } else {
+        status.temperature_f = NAN;
+    }
+    
+    // Check for flow errors
+    status.flow_error = checkFlowError() || status.flow_error;
     
     // Update statistics
     updateStatistics();
@@ -92,7 +132,70 @@ void PumpController::update(float temperature_f, bool has_flow_error) {
     lastUpdateTime = currentTime;
 }
 
+bool PumpController::checkFlowError() {
+    // Use flowSensor if provided, otherwise fall back to primarySensor
+    if (!flowSensor_) {
+        return false; // No flow sensor available
+    }
+    
+    // Check if we have a water meter connected to the flow sensor
+    bool hasWaterMeter = false;
+    unsigned long lastPulseTime = 0;
+    
+    // Check sensor 1
+    if (flowSensor_->getSensor1Type() == SensorType::WATER_METER) {
+        hasWaterMeter = true;
+        SensorData sensor1Data = flowSensor_->getSensor1Data();
+        lastPulseTime = max(lastPulseTime, sensor1Data.last_pulse_time.load());
+    }
+    
+    // Check sensor 2
+    if (flowSensor_->getSensor2Type() == SensorType::WATER_METER) {
+        hasWaterMeter = true;
+        SensorData sensor2Data = flowSensor_->getSensor2Data();
+        lastPulseTime = max(lastPulseTime, sensor2Data.last_pulse_time.load());
+    }
+    
+    if (!hasWaterMeter) {
+        return false; // No water meter available for flow detection
+    }
+    
+    // Only check for flow error when pump is on and running long enough
+    if (!status.is_active) {
+        return false;
+    }
+    
+    unsigned long pumpRunStart = getCurrentRunStartTime();
+    unsigned long currentTimeMs = millis();
+    unsigned long pumpRunTime = (pumpRunStart > 0) ? (currentTimeMs - pumpRunStart) : 0;
+    int timeoutSeconds = settingsManager.getWaterFlowErrorTimeoutSeconds();
+    unsigned long timeoutMs = (unsigned long)timeoutSeconds * 1000UL;
+    
+    // Check if pump has been running long enough and no flow detected
+    if (pumpRunTime >= timeoutMs && (currentTimeMs - lastPulseTime) >= timeoutMs) {
+        logger.log("Flow error detected: pump running without flow for timeout period");
+        logger.logDebug(String("Pump run time: ") + String(pumpRunTime) + " ms, Current time: " + String(currentTimeMs) + " ms, Last pulse time: " + String(lastPulseTime) + " ms, Timeout: " + String(timeoutMs) + " ms");
+        return true;
+    }
+    
+    return false;
+}
+
 void PumpController::handleAutoMode(unsigned long currentTime) {
+    // Check if we have a valid temperature reading
+    if (isnan(status.temperature_f)) {
+        // No temperature sensor available - cannot do temperature-based control
+        if (status.state == PUMP_AUTO) {
+            logger.logWarning("No temperature sensor available - automatic temperature control disabled");
+            // Turn off pump but stay in AUTO mode in case sensor becomes available later
+            if (status.is_active) {
+                setPumpState(false);
+            }
+            cycleStartTime = 0; // Reset cycle
+            currentlyInOnPhase = false;
+        }
+        return;
+    }
     float onThreshold = settingsManager.getTempThresholdOnF();
     float offThreshold = settingsManager.getTempThresholdOffF();
     
@@ -293,7 +396,11 @@ String PumpController::getStatusJson() const {
     String json = "{";
     json += "\"state\":\"" + getStateString() + "\",";
     json += "\"is_active\":" + String(status.is_active ? "true" : "false") + ",";
-    json += "\"temperature_f\":" + String(status.temperature_f, 1) + ",";
+    if (isnan(status.temperature_f)) {
+        json += "\"temperature_f\":null,";
+    } else {
+        json += "\"temperature_f\":" + String(status.temperature_f, 1) + ",";
+    }
     json += "\"temperature_below_threshold\":" + String(status.temperature_below_threshold ? "true" : "false") + ",";
     json += "\"flow_error\":" + String(status.flow_error ? "true" : "false") + ",";
     json += "\"current_cycle_time\":" + String(getCurrentCycleTime() / 1000) + ",";

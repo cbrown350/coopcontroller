@@ -27,6 +27,7 @@ function Settings() {
 
   // Log level (string enum from backend)
   const [showResetDialog, setShowResetDialog] = createSignal(false)
+  const [showRebootDialog, setShowRebootDialog] = createSignal(false)
   const [logLevel, setLogLevel] = createSignal<string | null>(null)
   
   // WiFi LED control
@@ -151,6 +152,29 @@ function Settings() {
       }
     } catch (error) {
       alert(`Factory reset error: ${error}`);
+    }
+  };
+
+  const handleReboot = async () => {
+    try {
+      const formData = new FormData();
+      formData.append('confirm', 'REBOOT');
+      
+      const response = await fetch('/reboot', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (response.ok) {
+        alert('Device is rebooting...');
+        // Reload page after a delay
+        setTimeout(() => window.location.reload(), 5000);
+      } else {
+        const error = await response.text();
+        alert(`Reboot failed: ${error}`);
+      }
+    } catch (error) {
+      alert(`Reboot error: ${error}`);
     }
   };
 
@@ -362,6 +386,21 @@ function Settings() {
               </span>
             </div>
           </div>
+          
+          <div class="card bg-warning text-warning-content mt-4">
+            <div class="card-body py-4 px-6">
+              <h2 class="card-title">System Reboot</h2>
+              <span class="card-actions mt-2">Reboot the ESP32 device. This will restart the system and reconnect to WiFi.</span>
+              <span class="card-actions mt-4">
+                <button 
+                  class="btn btn-error btn-sm"
+                  onClick={() => setShowRebootDialog(true)}
+                >
+                  Reboot Device
+                </button>
+              </span>
+            </div>
+          </div>
 
           {/* Confirmation Dialog */}
           <Show when={showResetDialog()}>
@@ -382,6 +421,31 @@ function Settings() {
                     }}
                   >
                     Yes, Reset Everything
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Show>
+
+          {/* Reboot Confirmation Dialog */}
+          <Show when={showRebootDialog()}>
+            <div class="modal modal-open">
+              <div class="modal-box">
+                <h3 class="font-bold text-lg">Confirm System Reboot</h3>
+                <p class="py-4">
+                  The ESP32 device will restart and reconnect to WiFi.
+                  Current settings will be preserved.
+                </p>
+                <div class="modal-action">
+                  <button class="btn" onClick={() => setShowRebootDialog(false)}>Cancel</button>
+                  <button 
+                    class="btn btn-error" 
+                    onClick={() => {
+                      setShowRebootDialog(false);
+                      handleReboot();
+                    }}
+                  >
+                    Yes, Reboot Device
                   </button>
                 </div>
               </div>

@@ -209,7 +209,12 @@ void WebServer::begin()
                   JsonObject pump = jsonDoc["pump"].to<JsonObject>();
                   pump["state"] = pumpController.getStateString();
                   pump["is_active"] = pumpController.isPumpOn();
-                  pump["temperature_f"] = pumpController.getCurrentTemperature();
+                  float pumpTemp = pumpController.getCurrentTemperature();
+                  if (isnan(pumpTemp)) {
+                      pump["temperature_f"] = nullptr;
+                  } else {
+                      pump["temperature_f"] = pumpTemp;
+                  }
                   pump["temperature_below_threshold"] = tempSensor.isTemperatureBelowThreshold();
                   pump["flow_error"] = pumpController.hasFlowError();
                   pump["current_cycle_time"] = pumpController.getCurrentCycleTime() / 1000;
@@ -230,7 +235,7 @@ void WebServer::begin()
                   system["log_level"] = settingsManager.getLogLevel();
                   system["watchdog_timeout_seconds"] = settingsManager.getWatchdogTimeoutSeconds();
                   system["water_meter_timeout_seconds"] = settingsManager.getWaterMeterTimeoutSeconds();
-                  system["water_meter_timeout_seconds"] = settingsManager.getWaterMeterTimeoutSeconds();
+                  system["water_flow_error_timeout_seconds"] = settingsManager.getWaterFlowErrorTimeoutSeconds();
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
@@ -392,6 +397,30 @@ void WebServer::begin()
                   request->send(200, "text/plain", "Factory reset complete. Device will restart in 3 seconds.");
                   
                   // Schedule restart
+                  delay(3000);
+                  ESP.restart();
+              });
+    // Reboot endpoint
+    server.on("/reboot", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  // Check for confirmation parameter
+                  if (!request->hasParam("confirm", true)) {
+                      request->send(400, "text/plain", "Missing confirmation parameter");
+                      return;
+                  }
+                  
+                  String confirm = request->getParam("confirm", true)->value();
+                  if (confirm != "REBOOT") {
+                      request->send(400, "text/plain", "Invalid confirmation value");
+                      return;
+                  }
+                  
+                  logger.logWarning("Reboot requested via web interface");
+                  
+                  request->send(200, "text/plain", "Device will reboot in 3 seconds.");
+                  
+                  // Schedule reboot
                   delay(3000);
                   ESP.restart();
               });

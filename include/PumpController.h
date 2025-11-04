@@ -33,6 +33,10 @@ private:
     int pumpPin;
     PumpStatus status;
     
+    // Sensor references
+    SensorManager* primarySensor_;    // Primary sensor for temperature
+    SensorManager* flowSensor_;       // Sensor for flow detection (can be same or different)
+    
     // Timing variables
     unsigned long lastUpdateTime;
     unsigned long cycleStartTime;
@@ -48,15 +52,20 @@ private:
     void setPumpState(bool isOn);
     void updateStatistics();
     void handleAutoMode(unsigned long currentTime);
+    bool checkFlowError();
     
 public:
-    PumpController(int pin = OUT_PUMP_PIN);
+    // Constructor with single sensor (backward compatibility)
+    PumpController(SensorManager* sensor, int pin = OUT_PUMP_PIN);
+    
+    // Constructor with separate sensors for temperature and flow
+    PumpController(SensorManager* primarySensor, SensorManager* flowSensor, int pin = OUT_PUMP_PIN);
     
     // Initialization
     void begin();
     
     // Main update function - call this in loop()
-    void update(float temperature_f, bool has_flow_error);
+    void update();
     
     // Control methods
     void turnOn();

@@ -24,6 +24,7 @@ struct SensorData {
     std::atomic<unsigned long> pulse_count;
     float flow_rate;  // Calculated flow rate for water meter
     std::atomic<unsigned long> last_pulse_time;
+    unsigned long last_flow_calculation_time;  // Track last calculation time per sensor
     
     // Constructor
     explicit SensorData(SensorType t = SensorType::NONE,
@@ -33,7 +34,8 @@ struct SensorData {
                unsigned long lastRead = 0,
                unsigned long pulses = 0,
                float flow = 0.0f,
-               unsigned long lastPulse = 0)
+               unsigned long lastPulse = 0,
+               unsigned long lastFlowCalc = 0)
       : type(t)
       , temperature_f(temp)
       , is_connected(connected)
@@ -42,6 +44,7 @@ struct SensorData {
       , pulse_count(pulses)
       , flow_rate(flow)
       , last_pulse_time(lastPulse)
+      , last_flow_calculation_time(lastFlowCalc)
     {}
 
     // Explicit copy constructor - copy atomics using load/store
@@ -53,7 +56,8 @@ struct SensorData {
           last_reading_time(other.last_reading_time),
           pulse_count(other.pulse_count.load()),
           flow_rate(other.flow_rate),
-          last_pulse_time(other.last_pulse_time.load())
+          last_pulse_time(other.last_pulse_time.load()),
+          last_flow_calculation_time(other.last_flow_calculation_time)
     {
         // all initialization done in initializer list
     }
@@ -67,7 +71,8 @@ struct SensorData {
           last_reading_time(other.last_reading_time),
           pulse_count(other.pulse_count.load()),
           flow_rate(other.flow_rate),
-          last_pulse_time(other.last_pulse_time.load())
+          last_pulse_time(other.last_pulse_time.load()),
+          last_flow_calculation_time(other.last_flow_calculation_time)
     {
         // move is same as copy for these trivials/atomics
     }
@@ -78,6 +83,7 @@ struct SensorData {
         temperature_f = other.temperature_f;
         is_connected = other.is_connected;
         was_detected = other.was_detected;
+        last_flow_calculation_time = other.last_flow_calculation_time;
         pulse_count.store(other.pulse_count.load());
         last_pulse_time.store(other.last_pulse_time.load());
         flow_rate = other.flow_rate;
@@ -125,8 +131,32 @@ public:
     SensorData getSensor2Data() const { return sensor2; }
     
     // Get specific values
-    float getTemperature1F() const { return sensor1.temperature_f; }
-    float getTemperature2F() const { return sensor2.temperature_f; }
+    float getTemperature1F() const { 
+        // Only return temperature if this is a Dallas sensor
+        if (sensor1.type != SensorType::DALLAS_TEMP) {
+            return NAN;  // Water meters don't have temperature
+        }
+        
+        // Check if sensor is actually detected and connected
+        if (!sensor1.was_detected || !sensor1.is_connected) {
+            return NAN;  // Sensor not available
+        }
+        
+        return sensor1.temperature_f; 
+    }
+    float getTemperature2F() const { 
+        // Only return temperature if this is a Dallas sensor
+        if (sensor2.type != SensorType::DALLAS_TEMP) {
+            return NAN;  // Water meters don't have temperature
+        }
+        
+        // Check if sensor is actually detected and connected
+        if (!sensor2.was_detected || !sensor2.is_connected) {
+            return NAN;  // Sensor not available
+        }
+        
+        return sensor2.temperature_f; 
+    }
     bool isSensor1Connected() const { return sensor1.is_connected; }
     bool isSensor2Connected() const { return sensor2.is_connected; }
     SensorType getSensor1Type() const { return sensor1.type; }

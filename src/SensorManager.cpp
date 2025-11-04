@@ -20,8 +20,8 @@ SensorManager::SensorManager()
         dallasTemp1(nullptr),
         dallasTemp2(nullptr),
         // Initialize sensor data in the initializer list to avoid assignment issues
-        sensor1{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0},
-        sensor2{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0},
+        sensor1{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0, 0},
+        sensor2{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0, 0},
         pulsesPerGallon(450.0f)
   {}
 
@@ -114,6 +114,7 @@ void SensorManager::detectSensorType(int pin, SensorData& sensor) {
     
     // If no Dallas sensor found, configure as water meter
     sensor.type = SensorType::WATER_METER;
+    sensor.last_flow_calculation_time = 0; // Initialize flow calculation time
     sensor.was_detected = true;   // But they are "detected" once configured
     sensor.last_pulse_time.store(0); // Initialize pulse time
     sensor.is_connected = false;  // Water meters are "connected" only when pulses are detected
@@ -154,12 +155,17 @@ void SensorManager::calculateFlowRate(SensorData& sensor) const {
         return;
     }
     
-    static unsigned long lastCalculationTime = 0;
     unsigned long currentTime = millis();
     
-    if (currentTime - lastCalculationTime >= FLOW_CALCULATION_INTERVAL) {
+    // Initialize last calculation time if this is first call
+    if (sensor.last_flow_calculation_time == 0) {
+        sensor.last_flow_calculation_time = currentTime;
+        return;
+    }
+    
+    if (currentTime - sensor.last_flow_calculation_time >= FLOW_CALCULATION_INTERVAL) {
         unsigned long pulses = sensor.pulse_count.load();
-        unsigned long timeDiff = currentTime - lastCalculationTime;
+        unsigned long timeDiff = currentTime - sensor.last_flow_calculation_time;
         
         // Calculate flow rate in gallons per minute
         // pulses / pulsesPerGallon gives gallons in the interval
@@ -169,7 +175,7 @@ void SensorManager::calculateFlowRate(SensorData& sensor) const {
         
         // Reset pulse count for next interval
         sensor.pulse_count.store(0);
-        lastCalculationTime = currentTime;
+        sensor.last_flow_calculation_time = currentTime;
         
         logger.logDebug(String("Flow rate calculation - Pulses: ") + String(pulses) + ", Time: " + String(timeDiff) + " ms, Rate: " + String(sensor.flow_rate) + " GPM");
     }
@@ -179,10 +185,12 @@ void SensorManager::resetPulseCount(int sensor) {
     if (sensor == 1) {
         sensor1.pulse_count.store(0);
         sensor1.last_pulse_time.store(0);
+        sensor1.last_flow_calculation_time = 0;
         logger.log("Sensor 1 pulse count reset");
     } else if (sensor == 2) {
         sensor2.pulse_count.store(0);
         sensor2.last_pulse_time.store(0);
+        sensor2.last_flow_calculation_time = 0;
         logger.log("Sensor 2 pulse count reset");
     }
 }

@@ -34,6 +34,7 @@ SettingsManager::SettingsManager()
     settings.watchdog_timeout_seconds = 30;   // Default watchdog timeout 30 seconds
     settings.pulses_per_gallon   = 450.0;     // Default pulses per gallon for water meter
     settings.water_meter_timeout_seconds = 300; // Default 5 minutes timeout for water meter connection
+    settings.water_flow_error_timeout_seconds = 120; // Default 2 minutes timeout for water flow error
     settings.wifi_led_enabled = true;         // Enable WiFi status LED by default
 }
 
@@ -77,6 +78,7 @@ bool SettingsManager::load()
 
     settings.pulses_per_gallon = doc["pulses_per_gallon"] | 450.0;
     settings.water_meter_timeout_seconds = doc["water_meter_timeout_seconds"] | 300;
+    settings.water_flow_error_timeout_seconds = doc["water_flow_error_timeout_seconds"] | 120;
     settings.wifi_led_enabled = doc["wifi_led_enabled"] | true;
 
     isLoaded = true;
@@ -409,6 +411,7 @@ String SettingsManager::toJson(bool includePassword) const
     doc["watchdog_timeout_seconds"] = settings.watchdog_timeout_seconds;
     doc["pulses_per_gallon"] = settings.pulses_per_gallon;
     doc["water_meter_timeout_seconds"] = settings.water_meter_timeout_seconds;
+    doc["water_flow_error_timeout_seconds"] = settings.water_flow_error_timeout_seconds;
     doc["wifi_led_enabled"] = settings.wifi_led_enabled;
 
     if (includePassword)

@@ -51,7 +51,7 @@ WebServer webServer(80);
 
 // Coop Controller components
 SensorManager tempSensor;
-PumpController pumpController;
+PumpController pumpController(&tempSensor, &tempSensor, OUT_PUMP_PIN);
 BuzzerController buzzerController;
 
 // Variables to track WiFi connection monitoring
@@ -97,9 +97,9 @@ void failWifi()
 
 // Watchdog reset handler - called when watchdog triggers
 void IRAM_ATTR watchdogResetHandler() {
-    // Log the watchdog reset event before system resets
+    // Log watchdog reset event before system resets
     // Note: This runs in interrupt context, so keep it minimal
-    // The actual logging will be done by the watchdog reset itself
+    // The actual logging will be done by watchdog reset itself
     // This is just for any last-minute cleanup if needed
 }
 
@@ -433,11 +433,14 @@ void loop()
         if (currentTime - lastTempLog >= 60000) // Log every minute
         {
             lastTempLog = currentTime;
-            if (tempSensor.isSensor1Connected()) {
-                logger.logf("Sensor 1: %.1f°F", tempSensor.getTemperature1F());
+            // Log temperature readings only if valid
+            float temp1 = tempSensor.getTemperature1F();
+            if (!isnan(temp1)) {
+                logger.logf("Sensor 1: %.1f°F", temp1);
             }
-            if (tempSensor.isSensor2Connected()) {
-                logger.logf("Sensor 2: %.1f°F", tempSensor.getTemperature2F());
+            float temp2 = tempSensor.getTemperature2F();
+            if (!isnan(temp2)) {
+                logger.logf("Sensor 2: %.1f°F", temp2);
             }
         }
     }
@@ -447,29 +450,10 @@ void loop()
     {
         lastPumpUpdate = currentTime;
         
-        // Get temperature status
-        float currentTemp = tempSensor.getTemperature1F();
-        
-        // Check for water flow errors - only when pump is on and running long enough without flow
-        bool hasWaterMeter = tempSensor.hasActiveWaterMeter();
-        unsigned long lastPulse = tempSensor.getMostRecentPulseTime();
-        unsigned long pumpRunStart = pumpController.getCurrentRunStartTime();
-        unsigned long currentTimeMs = millis();
-        unsigned long pumpRunTime = (pumpRunStart > 0) ? (currentTimeMs - pumpRunStart) : 0;
-        int timeoutSeconds = settingsManager.getWaterFlowErrorTimeoutSeconds();
-        unsigned long timeoutMs = (unsigned long)timeoutSeconds * 1000UL;
-        bool flowError = false;
-        if (hasWaterMeter && pumpController.isPumpOn() && pumpRunTime >= timeoutMs && (currentTimeMs - lastPulse) >= timeoutMs) {
-            flowError = true;
-            logger.log("Flow error detected: pump running without flow for timeout period");
-            logger.logDebug(String("Pump run time: ") + String(pumpRunTime) + " ms, Current time: " + String(currentTime) + " ms, Last pulse time: " + String(lastPulse) + " ms, Timeout: " + String(timeoutMs) + " ms");
-        }
+        // Flow error detection is now handled inside PumpController
         
         // Update pump controller with current status
-        pumpController.update(
-            currentTemp, // Use actual temperature reading
-            flowError
-        );
+        pumpController.update();
     }
     
     // Log sensor readings periodically
@@ -483,7 +467,10 @@ void loop()
         }
         if (tempSensor.isSensor2Connected()) {
             if (tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP) {
-                logger.logf("Sensor 2 (Pin %d): %.1f°F (Temperature)", TEMP_METER_2_PIN, tempSensor.getTemperature2F());
+                float temp2 = tempSensor.getTemperature2F();
+                if (!isnan(temp2)) {
+                    logger.logf("Sensor 2 (Pin %d): %.1f°F (Temperature)", TEMP_METER_2_PIN, temp2);
+                }
             } else {
                 logger.logf("Sensor 2 (Pin %d): %.2f GPM, %lu pulses (Water Meter)", 
                            TEMP_METER_2_PIN, tempSensor.getFlowRate2(), tempSensor.getPulseCount2());
@@ -492,10 +479,14 @@ void loop()
         
         float currentTemp = tempSensor.getTemperature1F();
         bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold();
-        if (tempBelowThreshold) {
-            logger.logf("Temperature below threshold (%.1f°F < %.1f°F)", currentTemp, threshold);
+        if (!isnan(currentTemp)) {
+            if (tempBelowThreshold) {
+                logger.logf("Temperature below threshold (%.1f°F < %.1f°F)", currentTemp, threshold);
+            } else {
+                logger.logf("Temperature above threshold (%.1f°F >= %.1f°F)", currentTemp, settingsManager.getTempThresholdOffF());
+            }
         } else {
-            logger.logf("Temperature above threshold (%.1f°F >= %.1f°F)", currentTemp, settingsManager.getTempThresholdOffF());
+            logger.log("No temperature sensor available for threshold comparison");
         }
     }
 
@@ -507,7 +498,7 @@ void loop()
 
     delay(10);
 
-    // log the uptime and heap size every 10 seconds
+    // log uptime and heap size every 10 seconds
     static unsigned long lastCPUStatusLog = 0;
     if (currentTime - lastCPUStatusLog >= 10000) {
         lastCPUStatusLog = currentTime;
