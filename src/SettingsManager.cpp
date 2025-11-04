@@ -7,6 +7,8 @@
 
 #include "Logger.h"
 
+extern const char* hostName;
+
 SettingsManager &SettingsManager::getInstance()
 {
     static SettingsManager instance;
@@ -24,17 +26,17 @@ SettingsManager::SettingsManager()
     // Initialize coop controller settings with defaults
     settings.temp_threshold_on_f  = 33.0;      // Default 34°F to turn ON
     settings.temp_threshold_off_f = 35.0;      // Default 36°F to turn OFF
-    settings.pump_on_time_seconds = 150;     // Default 2.5 minutes (150 seconds)
+    settings.pump_on_time_seconds = 30;     // Default 30 seconds
     settings.pump_off_time_seconds = 300;    // Default 5 minutes (300 seconds)
     settings.pump_auto_mode     = true;      // Enable automatic pump control by default
     settings.light_auto_mode     = false;     // Disable automatic light control initially
-    settings.light_on_hour       = 6;         // Default turn on at 6 AM
-    settings.light_off_hour      = 20;        // Default turn off at 8 PM
+    settings.light_on_hour       = 16;         // Default turn on at 4 PM
+    settings.light_off_hour      = 22;        // Default turn off at 10 PM
     settings.log_level           = "INFO";    // Default log level
     settings.watchdog_timeout_seconds = 30;   // Default watchdog timeout 30 seconds
     settings.pulses_per_gallon   = 450.0;     // Default pulses per gallon for water meter
     settings.water_meter_timeout_seconds = 300; // Default 5 minutes timeout for water meter connection
-    settings.water_flow_error_timeout_seconds = 120; // Default 2 minutes timeout for water flow error
+    settings.water_flow_error_timeout_seconds = 10; // Default 10 seconds timeout for water flow error
     settings.wifi_led_enabled = true;         // Enable WiFi status LED by default
     
     // Initialize buzzer settings with defaults
@@ -447,6 +449,7 @@ String SettingsManager::toJson(bool includePassword) const
     doc["water_meter_timeout_seconds"] = settings.water_meter_timeout_seconds;
     doc["water_flow_error_timeout_seconds"] = settings.water_flow_error_timeout_seconds;
     doc["wifi_led_enabled"] = settings.wifi_led_enabled;
+    doc["hostname"] = hostName;
     
     // Buzzer settings
     doc["buzzer_enabled"] = settings.buzzer_enabled;

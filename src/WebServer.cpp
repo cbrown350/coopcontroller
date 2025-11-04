@@ -336,6 +336,20 @@ void WebServer::begin()
                   buzzerController.testAlert();
                   request->send(200, "text/plain", "Buzzer test alert triggered");
               });
+    server.on("/buzzer/clear", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  // Clear the currently active alert (could be TEST_ALERT or PUMP_ERROR)
+                  if (buzzerController.hasActiveAlert()) {
+                      AlertType currentAlert = buzzerController.getCurrentAlertType();
+                      buzzerController.clearAlert(currentAlert);
+                      request->send(200, "text/plain", "Buzzer alert cleared");
+                  } else {
+                      request->send(200, "text/plain", "No active alert to clear");
+                  }
+              });
+
+    // Logs endpoint
 
     // Logs endpoint
     server.on("/logs", HTTP_GET,
@@ -461,6 +475,85 @@ void WebServer::begin()
                   delay(3000);
                   ESP.restart();
               });
+
+    // Backup settings endpoint
+    server.on("/settings/backup", HTTP_GET,
+      [](AsyncWebServerRequest *request)
+      {
+        String jsonResponse = settingsManager.toJson(false);
+        request->send(200, "application/json", jsonResponse);
+      });
+
+    // Restore settings endpoint
+    server.addHandler(new AsyncCallbackJsonWebHandler(
+      "/settings/restore",
+      [](AsyncWebServerRequest *request, JsonVariant &json)
+      {
+        JsonObject jsonObj = json.as<JsonObject>();
+        
+        // Basic validation - check for required fields
+        if (jsonObj.isNull()) {
+          request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON format\"}");
+          return;
+        }
+        
+        // Update settings with validation
+        if (jsonObj["temp_threshold_on_f"].is<float>()) {
+          settingsManager.setTempThresholdOnF(jsonObj["temp_threshold_on_f"].as<float>());
+        }
+        if (jsonObj["temp_threshold_off_f"].is<float>()) {
+          settingsManager.setTempThresholdOffF(jsonObj["temp_threshold_off_f"].as<float>());
+        }
+        if (jsonObj["pump_on_time_seconds"].is<int>()) {
+          settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
+        }
+        if (jsonObj["pump_off_time_seconds"].is<int>()) {
+          settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
+        }
+        if (jsonObj["light_auto_mode"].is<bool>()) {
+          settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
+        }
+        if (jsonObj["light_on_hour"].is<int>()) {
+          settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
+        }
+        if (jsonObj["light_off_hour"].is<int>()) {
+          settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
+        }
+        if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
+          settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
+        }
+        if (jsonObj["pulses_per_gallon"].is<float>()) {
+          float newCalibration = jsonObj["pulses_per_gallon"].as<float>();
+          settingsManager.setPulsesPerGallon(newCalibration);
+          tempSensor.setPulsesPerGallon(newCalibration);
+          logger.logf("Water meter calibration restored: %.1f pulses per gallon", newCalibration);
+        }
+        if (jsonObj["water_meter_timeout_seconds"].is<int>()) {
+          settingsManager.setWaterMeterTimeoutSeconds(jsonObj["water_meter_timeout_seconds"].as<int>());
+        }
+        if (jsonObj["wifi_led_enabled"].is<bool>()) {
+          settingsManager.setWifiLedEnabled(jsonObj["wifi_led_enabled"].as<bool>());
+        }
+        if (jsonObj["buzzer_enabled"].is<bool>()) {
+          bool enabled = jsonObj["buzzer_enabled"].as<bool>();
+          settingsManager.setBuzzerEnabled(enabled);
+          buzzerController.setEnabled(enabled);
+          logger.logf("Buzzer enabled restored: %s", enabled ? "true" : "false");
+        }
+        if (jsonObj["buzzer_type"].is<String>()) {
+          String type = jsonObj["buzzer_type"].as<String>();
+          settingsManager.setBuzzerType(type);
+          BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
+          buzzerController.setBuzzerType(buzzerType);
+          logger.logf("Buzzer type restored: %s", type.c_str());
+        }
+        
+        // Save settings to persistent storage
+        settingsManager.save();
+        
+        jsonObj.clear();
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Settings restored successfully\"}");
+      }));
 
     // Serve static files from SPIFFS
     server.serveStatic("/assets/", SPIFFS, "/assets/");

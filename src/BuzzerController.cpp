@@ -59,6 +59,7 @@ void BuzzerController::begin() {
 void BuzzerController::update() {
     if (!_enabled) {
         if (_isBeeping) {
+            logger.logDebug("Buzzer update - disabled, stopping beep");
             stopBeep();
         }
         return;
@@ -74,19 +75,30 @@ void BuzzerController::update() {
     if (_hasActiveAlert && !isSilenced()) {
         executePattern();
     } else if (_isBeeping) {
+        logger.logDebug(String("Buzzer update - no active alert or silenced, stopping beep (has_active: ") + 
+                       String(_hasActiveAlert ? "true" : "false") + ", silenced: " + 
+                       String(isSilenced() ? "true" : "false") + ")");
         stopBeep();
     }
 }
 
 void BuzzerController::triggerAlert(AlertType alertType) {
     if (!_enabled) {
+        String msg = "Buzzer alert: " + getAlertTypeString(alertType) + " - blocked (disabled)";
+        logger.logDebug(msg);
         return;
     }
     
     // Don't override higher priority alerts
     if (_hasActiveAlert && alertType > _currentAlertType) {
+        String msg = "Buzzer alert: " + getAlertTypeString(alertType) + 
+                    " - blocked (higher priority alert active: " + getAlertTypeString(_currentAlertType) + ")";
+        logger.logDebug(msg);
         return;
     }
+    
+    String msg = "Buzzer alert triggered: " + getAlertTypeString(alertType);
+    logger.logInfo(msg);
     
     _currentAlertType = alertType;
     _hasActiveAlert = true;
@@ -116,6 +128,28 @@ void BuzzerController::silenceAlerts(unsigned long silenceDurationMs) {
 void BuzzerController::testAlert() {
     triggerAlert(AlertType::TEST_ALERT);
     logger.logInfo("Buzzer test alert triggered");
+}
+void BuzzerController::clearAlert(AlertType alertType) {
+    if (_hasActiveAlert && _currentAlertType == alertType) {
+        String msg = "Buzzer alert cleared: " + getAlertTypeString(alertType);
+        logger.logInfo(msg);
+        _hasActiveAlert = false;
+        _currentCycle = 0;
+        _currentBeep = 0;
+        _lastStateChange = millis(); // Reset timing to prevent immediate restart
+        _isBeeping = false;
+        logAlert(alertType, "cleared");
+        
+        // Stop any ongoing beep immediately
+        stopBeep();
+        
+        logger.logDebug("Buzzer alert - pattern execution should now stop");
+    } else {
+        String msg = "Buzzer alert clear ignored for " + getAlertTypeString(alertType) + 
+                    " - not active (current: " + getAlertTypeString(_currentAlertType) + ", has_active: " + 
+                    String(_hasActiveAlert ? "true" : "false") + ")";
+        logger.logDebug(msg);
+    }
 }
 
 void BuzzerController::setEnabled(bool enabled) {
@@ -212,6 +246,8 @@ void BuzzerController::executePattern() {
     
     // Check if we've exceeded max cycles
     if (_currentPattern.max_cycles > 0 && _currentCycle >= _currentPattern.max_cycles) {
+        logger.logDebug(String("Buzzer pattern - exceeded max cycles (") + String(_currentCycle) + 
+                       " >= " + String(_currentPattern.max_cycles) + ")");
         _hasActiveAlert = false;
         logAlert(_currentAlertType, "completed max cycles");
         return;
@@ -220,13 +256,19 @@ void BuzzerController::executePattern() {
     // State machine for pattern execution
     if (!_isBeeping) {
         // Should we start a beep?
-        if (currentTime - _lastStateChange >= _currentPattern.pause_duration_ms) {
+        unsigned long timeSinceLastState = currentTime - _lastStateChange;
+        if (timeSinceLastState >= _currentPattern.pause_duration_ms) {
+            logger.logDebug(String("Buzzer pattern - starting beep ") + String(_currentBeep + 1) + 
+                           " of " + String(_currentPattern.repeat_count) + 
+                           " in cycle " + String(_currentCycle + 1));
             startBeep();
             _lastStateChange = currentTime;
         }
     } else {
         // Should we stop the beep?
-        if (currentTime - _lastStateChange >= _currentPattern.beep_duration_ms) {
+        unsigned long timeSinceLastState = currentTime - _lastStateChange;
+        if (timeSinceLastState >= _currentPattern.beep_duration_ms) {
+            logger.logDebug(String("Buzzer pattern - stopping beep ") + String(_currentBeep + 1));
             stopBeep();
             _lastStateChange = currentTime;
             _currentBeep++;
@@ -236,10 +278,17 @@ void BuzzerController::executePattern() {
                 _currentBeep = 0;
                 _currentCycle++;
                 
+                logger.logDebug(String("Buzzer pattern - completed cycle ") + String(_currentCycle) + 
+                               " (max: " + String(_currentPattern.max_cycles) + ")");
+                
                 // If this was the last beep and no pattern pause, we're done
                 if (_currentPattern.pattern_pause_ms == 0) {
                     _hasActiveAlert = false;
+                    logger.logDebug("Buzzer pattern - no pattern pause, clearing alert");
                     logAlert(_currentAlertType, "pattern completed");
+                } else {
+                    logger.logDebug(String("Buzzer pattern - waiting for pattern pause ") + 
+                                   String(_currentPattern.pattern_pause_ms) + "ms");
                 }
             }
         }
@@ -253,6 +302,7 @@ void BuzzerController::startBeep() {
         // Passive buzzer - use tone generation
         tone(_pin, 1000, _currentPattern.beep_duration_ms); // 1kHz tone
     }
+    logger.logDebug(String("Buzzer beep started - pin LOW, duration: ") + String(_currentPattern.beep_duration_ms) + "ms");
     _isBeeping = true;
 }
 
@@ -262,6 +312,7 @@ void BuzzerController::stopBeep() {
     } else {
         noTone(_pin);
     }
+    logger.logDebug("Buzzer beep stopped - pin HIGH");
     _isBeeping = false;
 }
 

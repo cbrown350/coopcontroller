@@ -12,7 +12,7 @@ enum class AlertType : uint8_t {
     LOW_MEMORY = 3,
     DOOR_FAULT = 4,      // Future-proof for door system
     SYSTEM_ERROR = 5,     // General system errors
-    TEST_ALERT = 255      // For testing purposes
+    TEST_ALERT = 6        // For testing purposes - corrected from 255 to 6
 };
 
 // Buzzer types
@@ -42,6 +42,7 @@ public:
     void triggerAlert(AlertType alertType);
     void silenceAlerts(unsigned long silenceDurationMs = 300000); // Default 5 minutes
     void testAlert();
+    void clearAlert(AlertType alertType);
     
     // Configuration methods
     void setEnabled(bool enabled);

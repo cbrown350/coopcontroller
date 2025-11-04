@@ -114,6 +114,7 @@ void wifiSetup()
         } else {
             WiFi.softAP("CoopController", NULL);
         }
+        WiFi.softAPsetHostname(hostName); 
         logger.log("AP mode started, IP address: " + WiFi.softAPIP().toString());
         isInAPMode = true;
         wifiAPModeStart = millis();
@@ -260,6 +261,9 @@ void checkWifiConnection()
         {
             logger.log("WiFi reconnected successfully");
             isReconnecting = false;
+            
+            // Clear WiFi disconnected alert when reconnected
+            buzzerController.clearAlert(AlertType::WIFI_DISCONNECTED);
             
             
             if (hostName && strlen(hostName) > 0) {
@@ -447,14 +451,85 @@ void loop()
             
             // Check for sensor errors and trigger buzzer alerts
             static unsigned long lastSensorErrorAlert = 0;
-            bool sensor1Error = (tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP && isnan(temp1)) ||
-                               (tempSensor.getSensor1Type() == SensorType::WATER_METER && !tempSensor.isActivelyConnected(tempSensor.getSensor1Data()));
-            bool sensor2Error = (tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP && isnan(temp2)) ||
-                               (tempSensor.getSensor2Type() == SensorType::WATER_METER && !tempSensor.isActivelyConnected(tempSensor.getSensor2Data()));
             
-            if ((sensor1Error || sensor2Error) && (currentTime - lastSensorErrorAlert > 60000)) {
+            // Detailed logging for sensor status debugging
+            bool hasWorkingTemperature = false;
+            bool hasWorkingWaterMeter = false;
+            bool sensor1Error = false;
+            bool sensor2Error = false;
+            
+            // Check Sensor 1 status
+            logger.logDebug(String("Sensor 1 status - Type: ") + 
+                          (tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : 
+                           tempSensor.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "NONE") +
+                          ", Was detected: " + String(tempSensor.isSensor1Detected() ? "Yes" : "No") +
+                          ", Connected: " + String(tempSensor.isSensor1Connected() ? "Yes" : "No"));
+            
+            if (tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP) {
+                float temp1 = tempSensor.getTemperature1F();
+                if (!isnan(temp1)) {
+                    hasWorkingTemperature = true;
+                    logger.logDebug(String("Sensor 1 - Temperature: ") + String(temp1, 1) + "°F (Working)");
+                } else {
+                    sensor1Error = true;
+                    logger.logDebug("Sensor 1 - Temperature: NaN (ERROR)");
+                }
+            } else if (tempSensor.getSensor1Type() == SensorType::WATER_METER) {
+                bool activelyConnected = tempSensor.isActivelyConnected(tempSensor.getSensor1Data());
+                if (activelyConnected) {
+                    hasWorkingWaterMeter = true;
+                    logger.logDebug(String("Sensor 1 - Water meter active (") + 
+                                  String(tempSensor.getFlowRate1(), 2) + " GPM) (Working)");
+                } else {
+                    sensor1Error = true;
+                    logger.logDebug("Sensor 1 - Water meter inactive (ERROR)");
+                }
+            }
+            
+            // Check Sensor 2 status
+            logger.logDebug(String("Sensor 2 status - Type: ") + 
+                          (tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : 
+                           tempSensor.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "NONE") +
+                          ", Was detected: " + String(tempSensor.isSensor2Detected() ? "Yes" : "No") +
+                          ", Connected: " + String(tempSensor.isSensor2Connected() ? "Yes" : "No"));
+            
+            if (tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP) {
+                float temp2 = tempSensor.getTemperature2F();
+                if (!isnan(temp2)) {
+                    hasWorkingTemperature = true;
+                    logger.logDebug(String("Sensor 2 - Temperature: ") + String(temp2, 1) + "°F (Working)");
+                } else {
+                    sensor2Error = true;
+                    logger.logDebug("Sensor 2 - Temperature: NaN (ERROR)");
+                }
+            } else if (tempSensor.getSensor2Type() == SensorType::WATER_METER) {
+                bool activelyConnected = tempSensor.isActivelyConnected(tempSensor.getSensor2Data());
+                if (activelyConnected) {
+                    hasWorkingWaterMeter = true;
+                    logger.logDebug(String("Sensor 2 - Water meter active (") + 
+                                  String(tempSensor.getFlowRate2(), 2) + " GPM) (Working)");
+                } else {
+                    sensor2Error = true;
+                    logger.logDebug("Sensor 2 - Water meter inactive (ERROR)");
+                }
+            }
+            
+            // Only trigger sensor error if we have no working temperature sensors AND no working water meters
+            bool sensorError = (!hasWorkingTemperature && !hasWorkingWaterMeter);
+            
+            logger.logDebug(String("Sensor error analysis - Sensor 1 Error: ") + String(sensor1Error ? "Yes" : "No") +
+                          ", Sensor 2 Error: " + String(sensor2Error ? "Yes" : "No") +
+                          ", Has Working Temperature: " + String(hasWorkingTemperature ? "Yes" : "No") +
+                          ", Has Working Water Meter: " + String(hasWorkingWaterMeter ? "Yes" : "No") +
+                          ", Overall Sensor Error: " + String(sensorError ? "Yes" : "No"));
+            
+            if (sensorError && (currentTime - lastSensorErrorAlert > 60000)) {
+                logger.logWarning("Triggering SENSOR_ERROR alert - No working sensors detected");
                 buzzerController.triggerAlert(AlertType::SENSOR_ERROR);
                 lastSensorErrorAlert = currentTime;
+            } else if (!sensorError) {
+                // Clear sensor error alert when we have at least one working sensor
+                buzzerController.clearAlert(AlertType::SENSOR_ERROR);
             }
         }
     }
@@ -470,12 +545,16 @@ void loop()
         pumpController.update();
         
         // Check for pump flow error and trigger buzzer alert
+        static unsigned long lastPumpErrorAlert = 0;
         if (pumpController.hasFlowError()) {
-            static unsigned long lastPumpErrorAlert = 0;
             if (currentTime - lastPumpErrorAlert > 60000) { // Only alert once per minute
+                logger.logWarning("Pump flow error detected - triggering buzzer alert");
                 buzzerController.triggerAlert(AlertType::PUMP_ERROR);
                 lastPumpErrorAlert = currentTime;
             }
+        } else {
+            // Clear pump error alert when flow error is resolved
+            buzzerController.clearAlert(AlertType::PUMP_ERROR);
         }
     }
     
@@ -501,6 +580,10 @@ void loop()
         }
         
         float currentTemp = tempSensor.getTemperature1F();
+        // Try to get temperature from sensor 1 first, then sensor 2
+        if (isnan(currentTemp)) {
+            currentTemp = tempSensor.getTemperature2F();
+        }
         bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold();
         if (!isnan(currentTemp)) {
             if (tempBelowThreshold) {

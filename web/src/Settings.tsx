@@ -3,11 +3,19 @@ import { createSignal, onMount, Show } from 'solid-js'
 function Settings() {
   const [ssid, setSsid] = createSignal('')
   const [password, setPassword] = createSignal('')
+  const [showPassword, setShowPassword] = createSignal(false)
   const [loading, setLoading] = createSignal(true)
   const [loaded, setLoaded] = createSignal(false)
   const [error, setError] = createSignal('')
   const [saveSuccess, setSaveSuccess] = createSignal(false)
   const [apMode, setApMode] = createSignal<boolean | null>(null)
+  const [hostname, setHostname] = createSignal('CoopController')
+
+  // Backup/Restore state
+  const [backupLoading, setBackupLoading] = createSignal(false)
+  const [restoreLoading, setRestoreLoading] = createSignal(false)
+  const [showRestoreDialog, setShowRestoreDialog] = createSignal(false)
+  const [restoreFile, setRestoreFile] = createSignal<File | null>(null)
 
   // Coop controller settings
   const [tempThresholdOnF, setTempThresholdOnF] = createSignal<number | null>(null)
@@ -66,6 +74,11 @@ function Settings() {
       setBuzzerEnabled(settings.buzzer_enabled ?? true)
       setBuzzerType(settings.buzzer_type ?? 'ACTIVE')
 
+      // Set hostname if available
+      if (settings.hostname) {
+        setHostname(settings.hostname)
+      }
+
       setLoaded(true)
       setError('')
     } catch (err: any) {
@@ -103,24 +116,24 @@ function Settings() {
       setError('')
 
       const settingsPayload = {
-           ap_mode: false,
-            water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
-           ...(apMode() && { ssid: ssid(), passwd: password() }),
-           temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
-           temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
-           water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
-           pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
-           pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
-           // include log level string
-           log_level: logLevel() ?? 'INFO',
-           light_auto_mode: lightAutoMode() ?? false,
-           light_on_hour: lightOnHour() ?? 6,
-           light_off_hour: lightOffHour() ?? 20,
-           pulses_per_gallon: pulsesPerGallon() ?? 450.0,
-            wifi_led_enabled: wifiLedEnabled() ?? true,
-             buzzer_enabled: buzzerEnabled() ?? true,
-             buzzer_type: buzzerType() ?? 'ACTIVE'
-       }
+        ap_mode: false,
+        water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
+        ...(apMode() && { ssid: ssid(), passwd: password() }),
+        temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
+        temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
+        water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
+        pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
+        pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
+        // include log level string
+        log_level: logLevel() ?? 'INFO',
+        light_auto_mode: lightAutoMode() ?? false,
+        light_on_hour: lightOnHour() ?? 6,
+        light_off_hour: lightOffHour() ?? 20,
+        pulses_per_gallon: pulsesPerGallon() ?? 450.0,
+        wifi_led_enabled: wifiLedEnabled() ?? true,
+        buzzer_enabled: buzzerEnabled() ?? true,
+        buzzer_type: buzzerType() ?? 'ACTIVE'
+      }
 
       const response = await fetch('/update_settings', {
         method: 'POST',
@@ -142,49 +155,112 @@ function Settings() {
 
   const handleFactoryReset = async () => {
     try {
-      const formData = new FormData();
-      formData.append('confirm', 'RESET');
+      const formData = new FormData()
+      formData.append('confirm', 'RESET')
       
       const response = await fetch('/factory_reset', {
         method: 'POST',
         body: formData
-      });
+      })
       
       if (response.ok) {
-        alert('Factory reset complete! Device is restarting...');
+        alert('Factory reset complete! Device is restarting...')
         // Reload page after a delay
-        setTimeout(() => window.location.reload(), 5000);
+        setTimeout(() => window.location.reload(), 5000)
       } else {
-        const error = await response.text();
-        alert(`Factory reset failed: ${error}`);
+        const error = await response.text()
+        alert(`Factory reset failed: ${error}`)
       }
     } catch (error) {
-      alert(`Factory reset error: ${error}`);
+      alert(`Factory reset error: ${error}`)
     }
-  };
+  }
 
   const handleReboot = async () => {
     try {
-      const formData = new FormData();
-      formData.append('confirm', 'REBOOT');
+      const formData = new FormData()
+      formData.append('confirm', 'REBOOT')
       
       const response = await fetch('/reboot', {
         method: 'POST',
         body: formData
-      });
+      })
       
       if (response.ok) {
-        alert('Device is rebooting...');
+        alert('Device is rebooting...')
         // Reload page after a delay
-        setTimeout(() => window.location.reload(), 5000);
+        setTimeout(() => window.location.reload(), 5000)
       } else {
-        const error = await response.text();
-        alert(`Reboot failed: ${error}`);
+        const error = await response.text()
+        alert(`Reboot failed: ${error}`)
       }
     } catch (error) {
-      alert(`Reboot error: ${error}`);
+      alert(`Reboot error: ${error}`)
     }
-  };
+  }
+
+  const handleBackup = async () => {
+    try {
+      setBackupLoading(true)
+      setError('')
+
+      const response = await fetch('/settings/backup')
+      if (!response.ok) {
+        throw new Error(`Failed to backup settings: ${response.status} ${response.statusText}`)
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'coop_controller_settings.json'
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (err: any) {
+      setError(`Error backing up settings: ${err.message || 'Unknown error'}`)
+      console.error('Failed to backup settings:', err)
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  const handleRestore = async () => {
+    if (!restoreFile()) {
+      setError('Please select a settings file to restore')
+      return
+    }
+
+    try {
+      setRestoreLoading(true)
+      setError('')
+
+      const fileContent = await restoreFile()!.text()
+      const settings = JSON.parse(fileContent)
+
+      const response = await fetch('/settings/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Failed to restore settings: ${response.status} ${response.statusText}`)
+      }
+
+      alert('Settings restored successfully! The page will reload.')
+      setTimeout(() => window.location.reload(), 1000)
+    } catch (err: any) {
+      setError(`Error restoring settings: ${err.message || 'Unknown error'}`)
+      console.error('Failed to restore settings:', err)
+    } finally {
+      setRestoreLoading(false)
+      setShowRestoreDialog(false)
+      setRestoreFile(null)
+    }
+  }
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
@@ -216,12 +292,36 @@ function Settings() {
 
               <fieldset class="fieldset">
                 <legend class="fieldset-legend">Password</legend>
-                <input type="password" id="password" value={password()} onInput={(e) => setPassword(e.target.value)} placeholder="Enter WiFi password..." class="input" />
+                <div class="input-group">
+                  <input type={showPassword() ? "text" : "password"} id="password" value={password()} onInput={(e) => setPassword(e.target.value)} placeholder="Enter WiFi password..." class="input" />
+                  <button 
+                    type="button" 
+                    class="btn btn-ghost" 
+                    onClick={() => setShowPassword(!showPassword())}
+                    title={showPassword() ? "Hide password" : "Show password"}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={showPassword() ? "lucide lucide-eye-off" : "lucide lucide-eye"}>
+                      {showPassword() ? (
+                        <>
+                          <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path>
+                          <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path>
+                          <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path>
+                          <line x1="2" x2="22" y1="2" y2="22"></line>
+                        </>
+                      ) : (
+                        <>
+                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </>
+                      )}
+                    </svg>
+                  </button>
+                </div>
               </fieldset>
 
               <div role="alert" class="mt-4 alert alert-info alert-soft">
                 <span>
-                  Note: after changing the wifi network you may need to enter a new IP address to get to this device. If the wifi connection fails, the device will revert to AP mode and you can reconnect by connecting to the Wifi network named coopcontroller. If your network supports MDNS discovery you can also find this device at <a class="link link-accent" href="http://coopcontroller.local">coopcontroller.local</a>
+                  Note: after changing the wifi network you may need to enter a new IP address to get to this device. If the wifi connection fails, the device will revert to AP mode and you can reconnect by connecting to the Wifi network named {hostname()}. If your network supports MDNS discovery you can also find this device at <a class="link link-accent" href={`http://${hostname()}.local`}>{hostname()}.local</a>
                 </span>
               </div>
             </div>
@@ -423,6 +523,112 @@ function Settings() {
             </div>
           </fieldset>
 
+          <h2 class="text-lg font-bold mb-4 mt-10">Advanced Settings</h2>
+
+          {/* Backup/Restore Section */}
+          <div class="card bg-base-200 card-sm shadow-sm mt-4">
+            <div class="card-body">
+              <h2 class="card-title">Backup & Restore Settings</h2>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <button 
+                    class="btn btn-accent btn-soft w-full"
+                    onClick={handleBackup}
+                    disabled={backupLoading()}
+                  >
+                    {backupLoading() ? (
+                      <>
+                        <span class="loading loading-spinner loading-xs"></span>
+                        Backing Up...
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7,10 12,15 17,10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Backup Settings
+                      </>
+                    )}
+                  </button>
+                  <div class="fieldset-label mt-2">
+                    Download current settings as JSON file for backup
+                  </div>
+                </div>
+                
+                <div>
+                  <button 
+                    class="btn btn-warning btn-soft w-full"
+                    onClick={() => setShowRestoreDialog(true)}
+                    disabled={restoreLoading()}
+                  >
+                    {restoreLoading() ? (
+                      <>
+                        <span class="loading loading-spinner loading-xs"></span>
+                        Restoring...
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="17,8 12,3 7,8"></polyline>
+                          <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        Restore Settings
+                      </>
+                    )}
+                  </button>
+                  <div class="fieldset-label mt-2">
+                    Upload settings file to restore configuration
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Restore Confirmation Dialog */}
+          <Show when={showRestoreDialog()}>
+            <div class="modal modal-open">
+              <div class="modal-box">
+                <h3 class="font-bold text-lg">Restore Settings</h3>
+                <p class="py-4">
+                  Select a settings file to restore. This will overwrite all current settings.
+                </p>
+                <div class="form-control">
+                  <input 
+                    type="file" 
+                    accept=".json"
+                    class="file-input file-input-bordered w-full"
+                    onChange={(e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0]
+                      if (file) {
+                        setRestoreFile(file)
+                      }
+                    }}
+                  />
+                </div>
+                <div class="modal-action">
+                  <button class="btn" onClick={() => setShowRestoreDialog(false)}>Cancel</button>
+                  <button 
+                    class="btn btn-warning" 
+                    onClick={handleRestore}
+                    disabled={!restoreFile() || restoreLoading()}
+                  >
+                    {restoreLoading() ? (
+                      <>
+                        <span class="loading loading-spinner loading-xs"></span>
+                        Restoring...
+                      </>
+                    ) : (
+                      'Restore Settings'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Show>
+
           <h2 class="text-lg font-bold mb-4 mt-10">Danger Zone</h2>
           <div class="card bg-error text-error-content">
             <div class="card-body py-4 px-6">
@@ -468,8 +674,8 @@ function Settings() {
                   <button 
                     class="btn btn-error" 
                     onClick={() => {
-                      setShowResetDialog(false);
-                      handleFactoryReset();
+                      setShowResetDialog(false)
+                      handleFactoryReset()
                     }}
                   >
                     Yes, Reset Everything
@@ -493,8 +699,8 @@ function Settings() {
                   <button 
                     class="btn btn-error" 
                     onClick={() => {
-                      setShowRebootDialog(false);
-                      handleReboot();
+                      setShowRebootDialog(false)
+                      handleReboot()
                     }}
                   >
                     Yes, Reboot Device
