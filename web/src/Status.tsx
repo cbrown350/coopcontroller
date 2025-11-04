@@ -29,7 +29,7 @@ function Status() {
     pump: {
       state: 'OFF',
       is_active: false,
-      temperature_f: 0,
+      temperature_f: null as number | null,
       temperature_below_threshold: false,
       flow_error: false,
       current_cycle_time: 0,

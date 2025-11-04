@@ -14,6 +14,7 @@
 #include "BuzzerController.h"
 #include "SensorManager.h"
 #include "PumpController.h"
+#include "LightController.h"
 
 
 
