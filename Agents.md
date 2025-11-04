@@ -346,12 +346,51 @@ All pins are defined in [`platformio.ini`](platformio.ini:45) as build flags and
 | TBD | DOOR_A_HALL_SENSOR_OPEN_B_PIN | Door Fully Open Sensor | Input | Hall effect sensor, active low - door fully open |
 | TBD | DOOR_A_HALL_SENSOR_CLOSED_B_PIN | Door Fully Closed Sensor | Input | Hall effect sensor, active low - door fully closed |
 
-### Pin Assignment Notes
-- Ensure no conflicts between defined pins and ESP32 reserved pins
-- Pins used for boot mode (GPIO 0, 2, 15) should be avoided for critical functions
-- SPI flash pins (GPIO 6-11) are reserved
-- ADC2 pins cannot be used when WiFi is active
-- Refer to [`esp32_devkitC_v4_pinlayout.png`](esp32_devkitC_v4_pinlayout.png) for detailed capabilities
+### Development Notes
+
+- **Ambiguities:** Any ambiguities or questions should be clarified before coding
+- **Web UI Settings:** Should be stored in [`data/user_settings.json`](data/user_settings.json), NOT hardcoded in firmware
+- **Build Process:** PlatformIO commands build the C++ firmware (pio run) and npm builds the web UI (cd web && npm run build)
+- **C++ Standard:** Code uses C++11 (`-std=gnu++11` in platformio.ini)
+- **Compatibility:** Ensure C++ code is ESP32-compatible while using modern features where appropriate
+
+### PlatformIO Configuration Changes
+
+**MANDATORY APPROVAL REQUIREMENT:** Any modifications to `platformio.ini` (build flags, pins, libraries, etc.) must be proposed first with detailed justification and require explicit user approval before implementation. This prevents unintended hardware conflicts or configuration changes.
+
+**Required Approval Process:**
+1. **Documentation Update First:** Propose changes in documentation updates before any code implementation
+2. **Detailed Justification:** Clearly explain the purpose, hardware implications, and necessity of each change
+3. **Conflict Analysis:** Verify no conflicts with existing pin assignments or ESP32 reserved pins
+4. **User Confirmation:** Use ask_followup_question to get explicit approval before implementing platformio.ini changes
+
+**Examples Requiring Approval:**
+- Pin definitions: `-DBUZZER_B_PIN=27` or `-DOUT_DOOR_A_OPEN_POS_PIN=14`
+- Library additions or version changes
+- Build flag modifications affecting compilation
+- Upload protocol or port configuration changes
+
+**Temporary Implementation Guidelines:**
+- For development: All pins should be defined in platformio.ini using `-D` flags
+- For production: Propose platformio.ini build flags after approval
+- Request approval via orchestrator before finalizing any platformio.ini modifications
+
+**Hardware Pin Approval Guidelines:**
+1. **Pin Availability:** Ensure available, non-conflicting pins chosen (check reserved pins table)
+2. **Hardware Compatibility:** Validates with specified sensor or device
+3. **Interrupt Needs:** Supports interrupt-driven configurations if used
+4. **Development Testing:** Tested in development with platformio.ini changes only after approval with conflicting values commented out if the change is temporary
+5. **Documentation Update:** Added to this file before platformio.ini change
+
+### Hardware Pin Approval Guidelines
+
+Before adding new hardware pins, developers must:
+
+1. **Pin Availability Verification:** Check against existing pin assignments and ESP32 reserved pins
+2. **Documentation Update:** Add proposed pins to "Pins Defined for Future Implementation" table in this file first
+3. **User Approval Request:** Use ask_followup_question to get explicit approval for platformio.ini changes
+4. **Conflict Prevention:** Avoid boot pins (GPIO 0, 2, 15) and SPI flash pins (GPIO 6-11)
+5. **Development Guidelines:** For temporary development, pins changes should be defined in platformio.ini with conflicts commented out with approval, but production implementation requires platformio.ini approval
 
 ---
 
@@ -818,6 +857,10 @@ upload_flags = --auth=<password>
 - **Build Process:** Web UI automatically builds and compresses assets via [`build_web.py`](build_scripts/build_web.py)
 - **C++ Standard:** Code uses C++11 (`-std=gnu++11` in platformio.ini)
 - **Compatibility:** Ensure C++ code is ESP32-compatible while using modern features where appropriate
+
+### PlatformIO Configuration Changes
+
+**MANDATORY APPROVAL REQUIREMENT:** Any modifications to `platformio.ini` (build flags, pins, libraries, etc.) must be proposed first with detailed justification and require explicit user approval before implementation.
 
 ### Factory Reset Procedure
 
