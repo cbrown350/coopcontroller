@@ -141,7 +141,7 @@ void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData&
         sensor.is_connected = true;
         sensor.last_reading_time = millis();
         
-        logger.logDebug(String("Dallas temp reading: ") + String(tempC) + "°C (" + String(sensor.temperature_f) + "°F");
+        logger.logDebug(String("Dallas temp reading: ") + String(tempC) + "°C (" + String(sensor.temperature_f) + "°F)");
     } else {
         sensor.is_connected = false;
         sensor.temperature_f = NAN;
