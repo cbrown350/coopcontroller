@@ -38,6 +38,13 @@ struct user_settings
     // Buzzer settings
     bool   buzzer_enabled;         // Enable buzzer alerts (default: true)
     String buzzer_type;            // Buzzer type: "ACTIVE" or "PASSIVE" (default: "ACTIVE")
+    
+    // Door control settings
+    bool   door_auto_mode;          // Enable automatic door control (default: false)
+    int    door_open_timeout_seconds; // Door open timeout in seconds (default: 30)
+    int    door_close_timeout_seconds; // Door close timeout in seconds (default: 30)
+    int    sunrise_offset_minutes;   // Sunrise offset for door opening (default: 0)
+    int    sunset_offset_minutes;    // Sunset offset for door closing (default: 0)
 };
 
 class SettingsManager
@@ -98,6 +105,13 @@ class SettingsManager
     // Buzzer settings getters
     bool   getBuzzerEnabled() const;
     String getBuzzerType() const;
+    
+    // Door control settings getters
+    bool   getDoorAutoMode() const;
+    int    getDoorOpenTimeoutSeconds() const;
+    int    getDoorCloseTimeoutSeconds() const;
+    int    getSunriseOffsetMinutes() const;
+    int    getSunsetOffsetMinutes() const;
 
     void setSSID(const String &ssid);
     void setPassword(const String &password);
@@ -133,6 +147,13 @@ class SettingsManager
     // Buzzer settings setters
     void setBuzzerEnabled(bool enabled);
     void setBuzzerType(const String& type);
+    
+    // Door control settings setters
+    void setDoorAutoMode(bool enabled);
+    void setDoorOpenTimeoutSeconds(int seconds);
+    void setDoorCloseTimeoutSeconds(int seconds);
+    void setSunriseOffsetMinutes(int minutes);
+    void setSunsetOffsetMinutes(int minutes);
 
     void factoryReset();
     String toJson(bool includePassword = true) const;

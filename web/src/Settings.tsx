@@ -44,6 +44,13 @@ function Settings() {
   // Buzzer settings
   const [buzzerEnabled, setBuzzerEnabled] = createSignal<boolean | null>(null)
   const [buzzerType, setBuzzerType] = createSignal<string | null>(null)
+  
+  // Door control settings
+  const [doorAutoMode, setDoorAutoMode] = createSignal<boolean | null>(null)
+  const [doorOpenTimeoutSeconds, setDoorOpenTimeoutSeconds] = createSignal<number | null>(null)
+  const [doorCloseTimeoutSeconds, setDoorCloseTimeoutSeconds] = createSignal<number | null>(null)
+  const [sunriseOffsetMinutes, setSunriseOffsetMinutes] = createSignal<number | null>(null)
+  const [sunsetOffsetMinutes, setSunsetOffsetMinutes] = createSignal<number | null>(null)
 
   // Load settings from server
   onMount(async () => {
@@ -73,6 +80,13 @@ function Settings() {
       setWifiLedEnabled(settings.wifi_led_enabled ?? true)
       setBuzzerEnabled(settings.buzzer_enabled ?? true)
       setBuzzerType(settings.buzzer_type ?? 'ACTIVE')
+      
+      // Load door control settings
+      setDoorAutoMode(settings.door_auto_mode ?? false)
+      setDoorOpenTimeoutSeconds(settings.door_open_timeout_seconds ?? 30)
+      setDoorCloseTimeoutSeconds(settings.door_close_timeout_seconds ?? 30)
+      setSunriseOffsetMinutes(settings.sunrise_offset_minutes ?? 0)
+      setSunsetOffsetMinutes(settings.sunset_offset_minutes ?? 0)
 
       // Set hostname if available
       if (settings.hostname) {
@@ -132,7 +146,12 @@ function Settings() {
         pulses_per_gallon: pulsesPerGallon() ?? 450.0,
         wifi_led_enabled: wifiLedEnabled() ?? true,
         buzzer_enabled: buzzerEnabled() ?? true,
-        buzzer_type: buzzerType() ?? 'ACTIVE'
+        buzzer_type: buzzerType() ?? 'ACTIVE',
+        door_auto_mode: doorAutoMode() ?? false,
+        door_open_timeout_seconds: doorOpenTimeoutSeconds() ?? 30,
+        door_close_timeout_seconds: doorCloseTimeoutSeconds() ?? 30,
+        sunrise_offset_minutes: sunriseOffsetMinutes() ?? 0,
+        sunset_offset_minutes: sunsetOffsetMinutes() ?? 0
       }
 
       const response = await fetch('/update_settings', {
@@ -523,6 +542,76 @@ function Settings() {
             </div>
           </fieldset>
 
+          <h2 class="text-lg font-bold mb-4 mt-10">Door Control Settings</h2>
+          
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Door Auto Mode</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Automatic Door Control</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={doorAutoMode() ?? false}
+                  onChange={(e) => setDoorAutoMode(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Enable automatic door opening/closing based on sunrise/sunset schedule
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Door Open Timeout (seconds)</legend>
+              <Show when={loaded()}>
+                <input type="number" value={doorOpenTimeoutSeconds()!} onInput={(e) => setDoorOpenTimeoutSeconds(parseInt(e.target.value))} placeholder="30" step="1" min="5" max="120" class="input" />
+              </Show>
+              <Show when={!loaded()}>
+                <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+              </Show>
+              <div class="fieldset-label">Time to wait before declaring open timeout (default: 10 seconds)</div>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Door Close Timeout (seconds)</legend>
+              <Show when={loaded()}>
+                <input type="number" value={doorCloseTimeoutSeconds()!} onInput={(e) => setDoorCloseTimeoutSeconds(parseInt(e.target.value))} placeholder="30" step="1" min="5" max="120" class="input" />
+              </Show>
+              <Show when={!loaded()}>
+                <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+              </Show>
+              <div class="fieldset-label">Time to wait before declaring close timeout (default: 10 seconds)</div>
+            </fieldset>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Sunrise Offset (minutes)</legend>
+              <Show when={loaded()}>
+                <input type="number" value={sunriseOffsetMinutes()!} onInput={(e) => setSunriseOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-60" max="60" class="input" />
+              </Show>
+              <Show when={!loaded()}>
+                <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+              </Show>
+              <div class="fieldset-label">Minutes before/after sunrise to open door (default: 0)</div>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Sunset Offset (minutes)</legend>
+              <Show when={loaded()}>
+                <input type="number" value={sunsetOffsetMinutes()!} onInput={(e) => setSunsetOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-60" max="60" class="input" />
+              </Show>
+              <Show when={!loaded()}>
+                <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+              </Show>
+              <div class="fieldset-label">Minutes before/after sunset to close door (default: 0)</div>
+            </fieldset>
+          </div>
+
           <h2 class="text-lg font-bold mb-4 mt-10">Advanced Settings</h2>
 
           {/* Backup/Restore Section */}
@@ -597,6 +686,7 @@ function Settings() {
                 </p>
                 <div class="form-control">
                   <input 
+                    title="Select settings file"
                     type="file" 
                     accept=".json"
                     class="file-input file-input-bordered w-full"

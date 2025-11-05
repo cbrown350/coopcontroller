@@ -54,6 +54,19 @@ function Status() {
       has_active_alert: false,
       current_alert_type: undefined,
       silence_remaining_ms: 0
+    },
+    door: {
+      state: 'IDLE',
+      position: 'UNKNOWN',
+      progress: 0,
+      auto_mode: false,
+      test_mode: false,
+      hall_open: false,
+      hall_closed: false,
+      total_open_time: 0,
+      total_close_time: 0,
+      total_cycles: 0,
+      next_scheduled_action: 'No scheduled action'
     }
   })
   const [error, setError] = createSignal('')
@@ -418,6 +431,205 @@ function Status() {
                   >
                     {sensorStatus().buzzer?.has_active_alert && sensorStatus().buzzer?.current_alert_type === 'TEST_ALERT' ? 'Clear Buzzer' : 'Test Buzzer'}
                   </button>
+                </div>
+              </div>
+            </div>
+          </Show>
+
+          {/* Door Control Section */}
+          <Show when={sensorStatus().door}>
+            <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
+              <div class="card-body">
+                <h2 class="card-title">Door Control</h2>
+                <div class="stats w-full shadow bg-base-300">
+                  <div class="stat">
+                    <div class="stat-title">Door State</div>
+                    <div class={`stat-value text-lg ${sensorStatus().door?.state === 'FAULT' ? 'text-error' : 
+                                                   sensorStatus().door?.state === 'OPENING' || sensorStatus().door?.state === 'CLOSING' ? 'text-warning' : 
+                                                   sensorStatus().door?.state === 'OPEN' || sensorStatus().door?.state === 'CLOSED' ? 'text-success' : 'text-info'}`}>
+                      {sensorStatus().door?.state || 'UNKNOWN'}
+                    </div>
+                    <div class="stat-desc">
+                      {sensorStatus().door?.state === 'OPENING' ? 'Door is opening' :
+                       sensorStatus().door?.state === 'CLOSING' ? 'Door is closing' :
+                       sensorStatus().door?.state === 'OPEN' ? 'Door is fully open' :
+                       sensorStatus().door?.state === 'CLOSED' ? 'Door is fully closed' :
+                       sensorStatus().door?.state === 'FAULT' ? 'Door fault detected' :
+                       'Door is idle'}
+                    </div>
+                  </div>
+                  
+                  <div class="stat">
+                    <div class="stat-title">Position</div>
+                    <div class={`stat-value text-lg ${sensorStatus().door?.position === 'OPEN' ? 'text-success' : 
+                                                   sensorStatus().door?.position === 'CLOSED' ? 'text-info' : 
+                                                   sensorStatus().door?.position === 'PARTIAL' ? 'text-warning' : 'text-error'}`}>
+                      {sensorStatus().door?.position || 'UNKNOWN'}
+                    </div>
+                    <div class="stat-desc">
+                      {sensorStatus().door?.position === 'OPEN' ? 'Fully open' :
+                       sensorStatus().door?.position === 'CLOSED' ? 'Fully closed' :
+                       sensorStatus().door?.position === 'PARTIAL' ? 'Partially open/closed' :
+                       'Position unknown'}
+                    </div>
+                  </div>
+                  
+                  <div class="stat">
+                    <div class="stat-title">Progress</div>
+                    <div class="stat-value text-lg">
+                      {sensorStatus().door?.progress || 0}%
+                    </div>
+                    <div class="stat-desc">
+                      <progress 
+                        class="progress progress-primary w-full mt-2" 
+                        value={sensorStatus().door?.progress || 0} 
+                        max="100"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Door Control Buttons */}
+                <div class="flex gap-2 mt-4">
+                  <button 
+                    class="btn btn-success btn-sm"
+                    onClick={() => {
+                      fetch('/door/open', { method: 'GET' })
+                        .then(response => {
+                          if (response.ok) {
+                            // Status will be updated on next refresh
+                          }
+                        })
+                        .catch(error => {
+                          console.error('Door open error:', error);
+                        });
+                    }}
+                    disabled={sensorStatus().door?.state === 'OPENING' || sensorStatus().door?.state === 'OPEN'}
+                  >
+                    Open
+                  </button>
+                  <button 
+                    class="btn btn-error btn-sm"
+                    onClick={() => {
+                      fetch('/door/close', { method: 'GET' })
+                        .then(response => {
+                          if (response.ok) {
+                            // Status will be updated on next refresh
+                          }
+                        })
+                        .catch(error => {
+                          console.error('Door close error:', error);
+                        });
+                    }}
+                    disabled={sensorStatus().door?.state === 'CLOSING' || sensorStatus().door?.state === 'CLOSED'}
+                  >
+                    Close
+                  </button>
+                  <button 
+                    class="btn btn-warning btn-sm"
+                    onClick={() => {
+                      fetch('/door/stop', { method: 'GET' })
+                        .then(response => {
+                          if (response.ok) {
+                            // Status will be updated on next refresh
+                          }
+                        })
+                        .catch(error => {
+                          console.error('Door stop error:', error);
+                        });
+                    }}
+                    disabled={sensorStatus().door?.state === 'IDLE' || sensorStatus().door?.state === 'OPEN' || sensorStatus().door?.state === 'CLOSED'}
+                  >
+                    Stop
+                  </button>
+                  <Show when={sensorStatus().door?.state === 'FAULT'}>
+                    <button 
+                      class="btn btn-outline btn-sm"
+                      onClick={() => {
+                        fetch('/door/clear_fault', { method: 'POST' })
+                          .then(response => {
+                            if (response.ok) {
+                              // Status will be updated on next refresh
+                            }
+                          })
+                          .catch(error => {
+                            console.error('Door clear fault error:', error);
+                          });
+                      }}
+                    >
+                      Clear Fault
+                    </button>
+                  </Show>
+                </div>
+                
+                {/* Door Status Details */}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div class="stat">
+                    <div class="stat-title">Auto Mode</div>
+                    <div class={`stat-value text-lg ${sensorStatus().door?.auto_mode ? 'text-success' : 'text-warning'}`}>
+                      {sensorStatus().door?.auto_mode ? 'Enabled' : 'Disabled'}
+                    </div>
+                    <div class="stat-desc">
+                      {sensorStatus().door?.next_scheduled_action || 'No scheduled action'}
+                    </div>
+                  </div>
+                  
+                  <div class="stat">
+                    <div class="stat-title">Statistics</div>
+                    <div class="stat-desc text-sm">
+                      Total Cycles: {sensorStatus().door?.total_cycles || 0}
+                    </div>
+                    <div class="stat-desc text-sm">
+                      Open Time: {formatTime(sensorStatus().door?.total_open_time || 0)}
+                    </div>
+                    <div class="stat-desc text-sm">
+                      Close Time: {formatTime(sensorStatus().door?.total_close_time || 0)}
+                    </div>
+                    <button 
+                      class="btn btn-xs btn-outline mt-2"
+                      onClick={() => {
+                        fetch('/door/reset_stats', { method: 'GET' })
+                          .then(response => {
+                            if (response.ok) {
+                              // Status will be updated on next refresh
+                            }
+                          })
+                          .catch(error => {
+                            console.error('Door reset stats error:', error);
+                          });
+                      }}
+                    >
+                      Reset Statistics
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Hall Sensor Status */}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div class="stat">
+                    <div class="stat-title">Hall Sensors</div>
+                    <div class="stat-desc text-sm">
+                      Open Sensor: {sensorStatus().door?.hall_open ? 'ACTIVE' : 'INACTIVE'}
+                    </div>
+                    <div class="stat-desc text-sm">
+                      Closed Sensor: {sensorStatus().door?.hall_closed ? 'ACTIVE' : 'INACTIVE'}
+                    </div>
+                    <Show when={sensorStatus().door?.test_mode}>
+                      <div class="stat-desc text-sm text-warning">
+                        Test Mode Active
+                      </div>
+                    </Show>
+                  </div>
+                  
+                  <div class="stat">
+                    <div class="stat-title">Test Mode</div>
+                    <div class={`stat-value text-lg ${sensorStatus().door?.test_mode ? 'text-warning' : 'text-info'}`}>
+                      {sensorStatus().door?.test_mode ? 'ENABLED' : 'DISABLED'}
+                    </div>
+                    <div class="stat-desc">
+                      Test mode simulates door movement without hardware
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

@@ -6,6 +6,7 @@
 #include "SensorManager.h"
 #include "PumpController.h"
 #include "BuzzerController.h"
+#include "DoorController.h"
 
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
@@ -23,6 +24,7 @@ extern const char* otaPasswd;
 extern SensorManager tempSensor;
 extern PumpController pumpController;
 extern BuzzerController buzzerController;
+extern DoorController doorController;
 
 WebServer::WebServer(int port) : server(port) {}
 
@@ -134,6 +136,23 @@ void WebServer::begin()
                 BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
                 buzzerController.setBuzzerType(buzzerType);
                 logger.logf("Buzzer type set to: %s", type.c_str());
+            }
+            
+            // Handle door control settings
+            if (jsonObj["door_auto_mode"].is<bool>()) {
+                settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
+            }
+            if (jsonObj["door_open_timeout_seconds"].is<int>()) {
+                settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
+            }
+            if (jsonObj["door_close_timeout_seconds"].is<int>()) {
+                settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
+            }
+            if (jsonObj["sunrise_offset_minutes"].is<int>()) {
+                settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
+            }
+            if (jsonObj["sunset_offset_minutes"].is<int>()) {
+                settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
             }
             
             // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
@@ -258,6 +277,10 @@ void WebServer::begin()
                    // Buzzer status
                    JsonObject buzzer = jsonDoc["buzzer"].to<JsonObject>();
                    buzzerController.toJson(buzzer);
+                   
+                   // Door status
+                   JsonObject door = jsonDoc["door"].to<JsonObject>();
+                   doorController.toJson(door);
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
@@ -347,6 +370,56 @@ void WebServer::begin()
                   } else {
                       request->send(200, "text/plain", "No active alert to clear");
                   }
+              });
+
+    // Door control endpoints
+    server.on("/door/open", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  doorController.open();
+                  request->send(200, "text/plain", "Door opening");
+              });
+
+    server.on("/door/close", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  doorController.close();
+                  request->send(200, "text/plain", "Door closing");
+              });
+
+    server.on("/door/stop", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  doorController.stop();
+                  request->send(200, "text/plain", "Door stopped");
+              });
+
+    server.on("/door/set_auto", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  if (!request->hasParam("auto", true)) {
+                      request->send(400, "text/plain", "Missing auto parameter");
+                      return;
+                  }
+                  
+                  String autoStr = request->getParam("auto", true)->value();
+                  bool autoMode = (autoStr == "true" || autoStr == "1");
+                  doorController.setAutoMode(autoMode);
+                  request->send(200, "text/plain", autoMode ? "Door auto mode enabled" : "Door auto mode disabled");
+              });
+
+    server.on("/door/clear_fault", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  doorController.clearFault();
+                  request->send(200, "text/plain", "Door fault cleared");
+              });
+
+    server.on("/door/reset_stats", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  doorController.resetStatistics();
+                  request->send(200, "text/plain", "Door statistics reset");
               });
 
     // Logs endpoint
@@ -546,6 +619,36 @@ void WebServer::begin()
           BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
           buzzerController.setBuzzerType(buzzerType);
           logger.logf("Buzzer type restored: %s", type.c_str());
+        }
+        if (jsonObj["door_auto_mode"].is<bool>()) {
+          settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
+        }
+        if (jsonObj["door_open_timeout_seconds"].is<int>()) {
+          settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
+        }
+        if (jsonObj["door_close_timeout_seconds"].is<int>()) {
+          settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
+        }
+        if (jsonObj["sunrise_offset_minutes"].is<int>()) {
+          settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
+        }
+        if (jsonObj["sunset_offset_minutes"].is<int>()) {
+          settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
+        }
+        if (jsonObj["door_auto_mode"].is<bool>()) {
+          settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
+        }
+        if (jsonObj["door_open_timeout_seconds"].is<int>()) {
+          settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
+        }
+        if (jsonObj["door_close_timeout_seconds"].is<int>()) {
+          settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
+        }
+        if (jsonObj["sunrise_offset_minutes"].is<int>()) {
+          settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
+        }
+        if (jsonObj["sunset_offset_minutes"].is<int>()) {
+          settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
         }
         
         // Save settings to persistent storage

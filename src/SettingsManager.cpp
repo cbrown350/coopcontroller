@@ -42,6 +42,13 @@ SettingsManager::SettingsManager()
     // Initialize buzzer settings with defaults
     settings.buzzer_enabled = true;          // Enable buzzer alerts by default
     settings.buzzer_type = "ACTIVE";         // Default to active buzzer type
+    
+    // Initialize door control settings with defaults
+    settings.door_auto_mode = false;        // Disable automatic door control initially
+    settings.door_open_timeout_seconds = 10; // Default 10 seconds timeout
+    settings.door_close_timeout_seconds = 10; // Default 10 seconds timeout
+    settings.sunrise_offset_minutes = 0;    // No offset by default
+    settings.sunset_offset_minutes = 0;     // No offset by default
 }
 
 bool SettingsManager::load()
@@ -90,6 +97,13 @@ bool SettingsManager::load()
     // Load buzzer settings
     settings.buzzer_enabled = doc["buzzer_enabled"] | true;
     settings.buzzer_type = doc["buzzer_type"] | "ACTIVE";
+    
+    // Load door control settings
+    settings.door_auto_mode = doc["door_auto_mode"] | false;
+    settings.door_open_timeout_seconds = doc["door_open_timeout_seconds"] | 10;
+    settings.door_close_timeout_seconds = doc["door_close_timeout_seconds"] | 10;
+    settings.sunrise_offset_minutes = doc["sunrise_offset_minutes"] | 0;
+    settings.sunset_offset_minutes = doc["sunset_offset_minutes"] | 0;
 
     isLoaded = true;
     return true;
@@ -384,6 +398,68 @@ void SettingsManager::setBuzzerType(const String& type)
     settings.buzzer_type = type;
 }
 
+// Door control settings getters
+bool SettingsManager::getDoorAutoMode() const
+{
+    return settings.door_auto_mode;
+}
+
+int SettingsManager::getDoorOpenTimeoutSeconds() const
+{
+    return settings.door_open_timeout_seconds;
+}
+
+int SettingsManager::getDoorCloseTimeoutSeconds() const
+{
+    return settings.door_close_timeout_seconds;
+}
+
+int SettingsManager::getSunriseOffsetMinutes() const
+{
+    return settings.sunrise_offset_minutes;
+}
+
+int SettingsManager::getSunsetOffsetMinutes() const
+{
+    return settings.sunset_offset_minutes;
+}
+
+// Door control settings setters
+void SettingsManager::setDoorAutoMode(bool enabled)
+{
+    if (!isLoaded)
+        load();
+    settings.door_auto_mode = enabled;
+}
+
+void SettingsManager::setDoorOpenTimeoutSeconds(int seconds)
+{
+    if (!isLoaded)
+        load();
+    settings.door_open_timeout_seconds = seconds;
+}
+
+void SettingsManager::setDoorCloseTimeoutSeconds(int seconds)
+{
+    if (!isLoaded)
+        load();
+    settings.door_close_timeout_seconds = seconds;
+}
+
+void SettingsManager::setSunriseOffsetMinutes(int minutes)
+{
+    if (!isLoaded)
+        load();
+    settings.sunrise_offset_minutes = minutes;
+}
+
+void SettingsManager::setSunsetOffsetMinutes(int minutes)
+{
+    if (!isLoaded)
+        load();
+    settings.sunset_offset_minutes = minutes;
+}
+
 void SettingsManager::setSSID(const String &ssid)
 {
     if (!isLoaded)
@@ -454,6 +530,13 @@ String SettingsManager::toJson(bool includePassword) const
     // Buzzer settings
     doc["buzzer_enabled"] = settings.buzzer_enabled;
     doc["buzzer_type"] = settings.buzzer_type;
+    
+    // Door control settings
+    doc["door_auto_mode"] = settings.door_auto_mode;
+    doc["door_open_timeout_seconds"] = settings.door_open_timeout_seconds;
+    doc["door_close_timeout_seconds"] = settings.door_close_timeout_seconds;
+    doc["sunrise_offset_minutes"] = settings.sunrise_offset_minutes;
+    doc["sunset_offset_minutes"] = settings.sunset_offset_minutes;
 
     if (includePassword)
     {
@@ -495,6 +578,13 @@ void SettingsManager::factoryReset()
     // Reset buzzer settings to defaults
     settings.buzzer_enabled = true;
     settings.buzzer_type = "ACTIVE";
+    
+    // Reset door control settings to defaults
+    settings.door_auto_mode = false;
+    settings.door_open_timeout_seconds = 30;
+    settings.door_close_timeout_seconds = 30;
+    settings.sunrise_offset_minutes = 0;
+    settings.sunset_offset_minutes = 0;
     
     // Delete settings file
     if (LittleFS.exists("/user_settings.json")) {
