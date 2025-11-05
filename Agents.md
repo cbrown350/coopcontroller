@@ -340,8 +340,8 @@ All pins are defined in [`platformio.ini`](platformio.ini:45) as build flags and
 |-----|----------|----------|------|--------|
 | TBD | WIFI_LED_B_PIN | WiFi Status LED | Output | Heartbeat when connected, active low, fast blink when disconnected |
 | TBD | BUZZER_B_PIN | Alert Buzzer | Output | Sounds on fault conditions, active low |
-| TBD | OUT_DOOR_A_OPEN_POS_PIN | Door Open Positive | Output | Drive motor to open door |
-| TBD | OUT_DOOR_A_OPEN_NEG_PIN | Door Open Negative | Output | Drive motor negative (polarity reversed to close) |
+| TBD | OUT_DOOR_A_OPEN_POS_PIN | Door Open Positive | Output | Drive motor to open door (polarity reversed to close) |
+| TBD | OUT_DOOR_A_OPEN_NEG_PIN | Door Open Negative | Output | Drive motor negative to open door (polarity reversed to close) |
 | TBD | DOOR_A_FAULT_B_PIN | Door Fault Input | Input | Active LOW on fault detected by DRV8833 driver board |
 | TBD | DOOR_MANUAL_SWITCH_B_PIN | Door Manual Control Input | Input | Momentary switch to toggle door open/close |
 | TBD | DOOR_A_HALL_SENSOR_OPEN_B_PIN | Door Fully Open Sensor | Input | Hall effect sensor, active low - door fully open |
