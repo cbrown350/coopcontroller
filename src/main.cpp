@@ -113,10 +113,10 @@ void wifiSetup()
     {
         logger.log("Starting AP mode");
         if (apPasswd && strlen(apPasswd) >= 0) {
-            WiFi.softAP("CoopController", apPasswd);
+            WiFi.softAP(hostName, apPasswd);
             Serial.println("AP password set: " + String(apPasswd));
         } else {
-            WiFi.softAP("CoopController", NULL);
+            WiFi.softAP(hostName, NULL);
         }
         WiFi.softAPsetHostname(hostName); 
         logger.log("AP mode started, IP address: " + WiFi.softAPIP().toString());
