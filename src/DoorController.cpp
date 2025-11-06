@@ -62,20 +62,20 @@ void DoorController::begin() {
     updatePosition();
     
     logger.logInfo("Door controller initialized with Hall sensor interrupts");
-    logger.logf("Initial door position: %s", getPositionString().c_str());
+    logger.logfInfo("Initial door position: %s", getPositionString().c_str());
     
     // Debug: Read and log all pin states
-    logger.logf("Pin states at startup:");
-    logger.logf("  Hall Open (pin %d): %d (active=%s)", DOOR_A_HALL_SENSOR_OPEN_B_PIN, 
+    logger.logfDebug("Pin states at startup:");
+    logger.logfDebug("  Hall Open (pin %d): %d (active=%s)", DOOR_A_HALL_SENSOR_OPEN_B_PIN, 
                 digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN),
                 digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN) == LOW ? "YES" : "no");
-    logger.logf("  Hall Closed (pin %d): %d (active=%s)", DOOR_A_HALL_SENSOR_CLOSED_B_PIN,
+    logger.logfDebug("  Hall Closed (pin %d): %d (active=%s)", DOOR_A_HALL_SENSOR_CLOSED_B_PIN,
                 digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN),
                 digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN) == LOW ? "YES" : "no");
-    logger.logf("  Fault (pin %d): %d (fault=%s)", DOOR_A_FAULT_B_PIN,
+    logger.logfDebug("  Fault (pin %d): %d (fault=%s)", DOOR_A_FAULT_B_PIN,
                 digitalRead(DOOR_A_FAULT_B_PIN),
                 digitalRead(DOOR_A_FAULT_B_PIN) == LOW ? "YES" : "no");
-    logger.logf("  Manual Switch (pin %d): %d (pressed=%s)", DOOR_MANUAL_SWITCH_B_PIN,
+    logger.logfDebug("  Manual Switch (pin %d): %d (pressed=%s)", DOOR_MANUAL_SWITCH_B_PIN,
                 digitalRead(DOOR_MANUAL_SWITCH_B_PIN),
                 digitalRead(DOOR_MANUAL_SWITCH_B_PIN) == LOW ? "YES" : "no");
 }

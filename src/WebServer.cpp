@@ -657,6 +657,13 @@ void WebServer::begin()
         jsonObj.clear();
         request->send(200, "application/json", "{\"success\":true,\"message\":\"Settings restored successfully\"}");
       }));
+      
+    // SPA route rewrites (avoid FS open errors for client-side routes)
+    server.addRewrite(new AsyncWebRewrite("/status", "/index.htm"));
+    server.addRewrite(new AsyncWebRewrite("/settings", "/index.htm"));
+    server.addRewrite(new AsyncWebRewrite("/log", "/index.htm"));
+    server.addRewrite(new AsyncWebRewrite("/updates", "/index.htm"));
+    server.addRewrite(new AsyncWebRewrite("/about", "/index.htm"));
 
     // Serve static files from SPIFFS
     server.serveStatic("/assets/", SPIFFS, "/assets/");

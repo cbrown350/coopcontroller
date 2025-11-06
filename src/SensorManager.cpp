@@ -63,8 +63,7 @@ void SensorManager::begin() {
         
         // Attach interrupt for water meter pulse detection
         attachInterrupt(digitalPinToInterrupt(TEMP_METER_2_PIN), std::bind(&SensorManager::sensor2PulseISR, this), FALLING);
-        logger.logf("Sensor 2 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_2_PIN);
-        logger.logDebug(String("Sensor 2 interrupt attached to pin ") + String(TEMP_METER_2_PIN));
+        logger.logfDebug("Sensor 2 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_2_PIN);
     }
 }
 

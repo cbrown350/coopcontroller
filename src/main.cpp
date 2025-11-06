@@ -569,17 +569,17 @@ void loop()
         lastSensorLog = currentTime;
         float threshold = settingsManager.getTempThresholdOnF();
         if (tempSensor.isSensor1Connected()) {
-            logger.logf("Sensor 1 (Pin %d): %.1f°F %s", TEMP_METER_PIN, tempSensor.getTemperature1F(),
+            logger.logfDebug("Sensor 1 (Pin %d): %.1f°F %s", TEMP_METER_PIN, tempSensor.getTemperature1F(),
                        tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "(Temperature)" : "(Water Meter)");
         }
         if (tempSensor.isSensor2Connected()) {
             if (tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP) {
                 float temp2 = tempSensor.getTemperature2F();
                 if (!isnan(temp2)) {
-                    logger.logf("Sensor 2 (Pin %d): %.1f°F (Temperature)", TEMP_METER_2_PIN, temp2);
+                    logger.logfDebug("Sensor 2 (Pin %d): %.1f°F (Temperature)", TEMP_METER_2_PIN, temp2);
                 }
             } else {
-                logger.logf("Sensor 2 (Pin %d): %.2f GPM, %lu pulses (Water Meter)", 
+                logger.logfDebug("Sensor 2 (Pin %d): %.2f GPM, %lu pulses (Water Meter)", 
                            TEMP_METER_2_PIN, tempSensor.getFlowRate2(), tempSensor.getPulseCount2());
             }
         }
