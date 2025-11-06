@@ -9,6 +9,9 @@ data/assets/
 data/index.htm
 data/index.htm.gz
 data/user_settings.json
+data/favicon.ico
+data/favicon.ico.gz
+data/logo.webp
 
 *.url
 

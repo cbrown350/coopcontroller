@@ -6,7 +6,7 @@ const zlib = require('zlib');
 const rootDir = path.resolve(__dirname, '../../data');
 
 // File extensions to match
-const extensions = ['.htm', '.css', '.js'];
+const extensions = ['.htm', '.css', '.js', '.ico'];
 
 function gzipFile(filepath) {
   const gzip = zlib.createGzip();
