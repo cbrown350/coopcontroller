@@ -186,3 +186,4 @@ def add_diagonal_text(image_path, output_path, text="DEV", font_path=None, font_
 # Watermark logo and favicon (ICO now handled safely)
 env.AddPreAction("$BUILD_DIR/littlefs.bin", lambda target, source, env: add_diagonal_text("data/logo.webp", "data/logo.webp", text="DEV")) # type: ignore
 env.AddPreAction("$BUILD_DIR/littlefs.bin", lambda target, source, env: add_diagonal_text("data/favicon.ico", "data/favicon.ico", text="DEV")) # type: ignore
+env.AddPreAction("$BUILD_DIR/littlefs.bin", lambda target, source, env: os.remove("data/favicon.ico.gz") if os.path.exists("data/favicon.ico.gz") else None) # type: ignore
