@@ -29,12 +29,18 @@
 - **Temperature Monitoring** - Dual sensor inputs supporting Dallas temperature sensors or water meters with automatic detection
 - **Water System Management** - Automated pump control with freeze prevention and water flow monitoring
 - **Door Automation** - Motorized door control with safety sensors (planned)
-- **Lighting Control** - Automated lighting for egg production optimization (planned)
+- **Lighting Control** - PWM-based automated lighting with smooth transitions; the web server UI still needs to be implemented for light control
 - **Remote Monitoring** - Web-based UI with real-time status updates
 - **Alert System** - Email/Telegram notifications for critical events (planned)
 - **AI Integration** - Weather-based decision making for daily operations (planned)
 
 The project uses Platform.io for firmware development and features a modern SolidJS web interface with Tailwind CSS styling. All settings are configurable through the web UI and persisted in LittleFS storage.
+
+**Implementation Status:**
+- Phase 3 (Hardware I/O): 100% complete
+- Core features: Sensors, Pump, Light controllers implemented but light web UI pending
+- Current build: RAM 17.7% (58,248 bytes), Flash 80.8% (1,058,350 bytes)
+- Ready for Phase 4 (External Service Integrations)
 
 **Key References:**
 - ESP32 pin functions defined in [`platformio.ini`](platformio.ini:45)
@@ -65,11 +71,12 @@ This system automates chicken coop management to ensure optimal bird health, saf
 - Current monitoring for fault detection (motor stall/obstruction)
 - Daily confirmation via Telegram/Email/Web UI/Home Assistant
 
-**3. Lighting for Production (Planned)**
+**3. Lighting for Production (Active)**
 - Extends daylight exposure during darker seasons
-- PWM dimming with gradual sunrise/sunset simulation
-- Automatic scheduling based on sunrise/sunset with configurable offsets
-- Manual override capabilities
+- PWM dimming with gradual sine-curve transitions
+- Automatic scheduling based on configurable ON/OFF hours
+- Manual override capabilities with timers
+- Smooth fade-in/fade-out for bird comfort
 
 **4. Monitoring & Alerts (Planned)**
 - Real-time status via web UI
@@ -332,7 +339,7 @@ All pins are defined in [`platformio.ini`](platformio.ini:45) as build flags and
 | 32 | TEMP_METER_PIN | Sensor 1 Input | Input+Pullup | Auto-detects Dallas temp or water meter |
 | 33 | TEMP_METER_2_PIN | Sensor 2 Input | Input+Pullup | Auto-detects Dallas temp or water meter |
 | 26 | OUT_PUMP_PIN | Pump Control | Output | Relay control for water pump |
-| 25 | OUT_LIGHT_PIN | Light Control | PWM Output | PWM-capable for dimming (planned) |
+| 25 | OUT_LIGHT_PIN | Light Control | PWM Output | LEDC channel 0, 5kHz, 8-bit resolution |
 
 ### Pins Defined for Future Implementation
 
@@ -521,6 +528,17 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 - **Syslog integration** - Optional remote logging to syslog server
 - **Serial output** - Simultaneous logging to Serial monitor
 
+#### LightController ([`LightController.h`](include/LightController.h:1) / [`LightController.cpp`](src/LightController.cpp))
+- **PWM dimming control** - ESP32 LEDC (LED Control) peripheral with 8-bit resolution
+- **Sine curve transitions** - Smooth fade-in/fade-out following natural lighting curves
+- **Configurable timing** - Separate ON/OFF hours with transition duration settings
+- **Manual control modes** - Force ON, force OFF, or AUTO mode
+- **Timer functionality** - Manual ON with configurable duration (15min, 30min, 1hr, 2hr, 4hr)
+- **State machine** - Handles OFF, FADING_IN, ON, FADING_OUT, MANUAL states
+- **Settings integration** - Auto mode flag, brightness levels, ON/OFF hours, fade duration
+- **REST API** - Manual control endpoints and status reporting
+- **Note:** Web UI implementation pending in Status.tsx and Settings.tsx
+
 ### Sensor Management
 - Automatic sensor type detection on startup (Dallas temperature vs water meter) - Each pin independently tested for Dallas sensor first; if none found, configured as water meter
 - Temperature readings in Fahrenheit with user-configurable thresholds
@@ -564,6 +582,22 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 
 Features organized by priority and implementation status.
 
+### Critical Priority - Code Quality & Refactoring
+
+#### WiFi Code Refactoring
+- Extract WiFi functions from main.cpp to WifiController.cpp/.h
+- Move WiFi-related globals into WifiController class
+- Implement proper initialization via constructor or begin() method
+- Maintain existing functionality while improving code organization
+- Update other components to use WifiController interface
+
+#### Logger Method Refactoring
+- Replace all logger.logf() calls with appropriate level methods
+- Use logInfo(), logWarning(), logError(), logDebug(), logVerbose() as appropriate
+- Remove conditional debug if/then blocks where logger methods handle filtering
+- Improve log message clarity and consistency
+- Ensure all critical events are logged at appropriate levels
+
 ### Critical Priority - Core Functionality
 
 #### Water Meter Calibration
@@ -577,7 +611,28 @@ Features organized by priority and implementation status.
 - Currently shows 0°F which is misleading
 - Show descriptive error message in web UI
 - Add retry logic for sensor detection
-- Fall back to weather API currwnt twmp if available and show it as the aource in UI
+- Fall back to weather API current temp if available and show it as the source in UI
+
+#### Pump Flow Calculation Improvements
+- Make GPM calculation configurable: per-interval OR per-pulse basis
+- Add setting to choose calculation method in web UI
+- Per-interval: Current behavior (pulses counted over time period)
+- Per-pulse: Calculate instantaneous flow based on time between pulses
+- Allow users to select method based on their water meter characteristics
+
+#### Pump Flow Monitoring Enhancement
+- Monitor for water flow when pump is OFF
+- Detect if pump fails to stop (stuck relay, valve leak)
+- Log warning and alert user if flow detected when pump should be off
+- Add configurable grace period after pump turns off
+- Help identify hardware faults and water leaks
+
+#### Minimum Pump Cycles Per Day
+- Ensure pump runs minimum number of times daily regardless of temperature
+- Prevents water stagnation and pump seal degradation
+- Configurable minimum cycles (default: 2-3 per day)
+- Configurable minimum run duration per cycle
+- Schedule evenly throughout day when not triggered by temperature
 
 #### Factory Reset Functionality
 - Hard reset button or procedure to clear all settings
@@ -604,12 +659,42 @@ Features organized by priority and implementation status.
 - Prevents system lockup
 - Log watchdog resets for debugging
 
-#### Enhanced Logging
-- Implement log levels: info, warning, error, debug, verbose
-- Replace debug if/then blocks with logDebug() calls or logVerbose() calls as appropriate
-- Configurable log level from web UI
-- Filter logs by level in viewer
-- Methods defined in [`Logger.h`](include/Logger.h:1)
+#### Sunrise/Sunset Integration
+- Implement full sunrise/sunset calculations using SolarCalculator library
+- Display current sunrise/sunset times in web UI (Settings and Status pages)
+- Use for door automation scheduling
+- Use for light scheduling enhancements (future)
+- Configurable location (latitude/longitude) in settings
+- Update calculations daily based on location
+
+#### Automatic Door Close After Sunset
+- Add setting `door_auto_close_after_sunset_enabled` (boolean, default false)
+- Add setting `door_auto_close_after_sunset_minutes` (integer, default 0)
+- Automatically close door X minutes after calculated sunset time when enabled
+- **Dependencies:** Requires Sunrise/Sunset Integration (above) to be completed first
+- **Implementation Notes:**
+  - Separate from existing `sunset_offset_minutes` setting (which affects both open and close times)
+  - This specifically adds a delay AFTER sunset for closing only
+  - Respects door auto mode settings
+  - Example: If sunset is 6:30 PM and setting is 30 minutes, door closes at 7:00 PM
+  - Logs scheduled close time and actual execution
+  - User can disable entirely or set to 0 for immediate close at sunset
+  - Web UI displays calculated close time based on current sunset + offset
+
+#### Door Timeout Auto-Calculation
+- Track historical door open/close times
+- Calculate timeout automatically: max(historical_time) + 1 second buffer
+- Store last N operations for averaging
+- Fallback to user-configured value if no history
+- Display calculated timeout in web UI
+- Allow manual override of auto-calculated value
+
+#### Door Progress Calculation
+- Calculate open/close progress percentage during operation
+- Based on elapsed time vs expected timeout duration
+- Display progress bar in web UI during door movement
+- Helps identify slow operations or obstructions
+- Update progress in real-time via status endpoint
 
 #### Improved Connection Status
 - Only show "connected" if water meter pulse detected
@@ -633,6 +718,14 @@ Features organized by priority and implementation status.
 - Alert notifications for critical events
 - Daily forecast and automation plan
 - Approval/confirmation commands for AI door recommendations
+
+#### External Pushbutton for Manual Pump Cycle
+- Add support for external momentary pushbutton
+- Single press triggers one complete pump cycle (ON time + OFF time)
+- Useful for testing or manual water circulation
+- Pin configuration in platformio.ini (requires approval)
+- Debouncing and interrupt-driven detection
+- Visual/audio feedback when activated
 
 #### System Status Display
 - Show heap memory, CPU usage in web UI
@@ -667,18 +760,51 @@ Features organized by priority and implementation status.
   - Home Assistant integration
 - Safety override: manual control always available
 
-### Medium Priority - Light Automation
+### Medium Priority - UI Improvements
 
-#### Light Control
-- PWM dimming on OUT_LIGHT_PIN (active HIGH)
-- Gradual on/off following sine curve using PWM brightness
-- Configurable transition duration (settings interval)
-- Configurable brightness levels for on/off states
-- Manual control from web UI with timer
-- Automatic mode based on:
-  - Sunrise/sunset times with offsets
-  - Configurable ON hour and OFF hour
-  - Smooth transitions for bird comfort
+#### Light Control Web UI Implementation
+- Add light controls to Status.tsx (manual ON/OFF/AUTO, timer selection)
+- Add light settings to Settings.tsx (auto mode, brightness, hours, fade duration)
+- Display current light state and brightness level
+- Show remaining time for manual timer mode
+- Real-time updates of light status
+- Match existing UI patterns and styling
+
+#### Event-Driven Web UI Updates
+- Replace polling-based status updates with Server-Sent Events (SSE) or WebSockets
+- Push updates only when state changes occur
+- Reduces network traffic and improves responsiveness
+- Maintain fallback to polling for compatibility
+- Implement on ESP32 using AsyncWebServer capabilities
+
+#### Web UI Routing Fix
+- Fix error when refreshing page on non-root routes
+- Configure proper fallback routing in Vite and web server
+- Serve index.html for all unknown routes (SPA behavior)
+- Test all routes work correctly after refresh
+- Ensure proper 404 handling for actual missing resources
+
+#### Web UI Theming Based on Logo
+- Design color scheme based on provided logo.webp
+- Update Tailwind/DaisyUI theme configuration
+- Create cohesive visual identity
+- Consider dark/light mode variations
+- Apply consistently across all pages
+
+#### Mobile UI Optimization
+- Fix horizontal scrolling issues on mobile devices
+- Prevent content cutoff on smaller screens
+- Optimize touch targets for mobile interaction
+- Test on various mobile screen sizes
+- Improve responsive breakpoints in Tailwind config
+
+#### Historical Data Visualization
+- Add graphs showing past 24 hours of data
+- Temperature trends from both sensors
+- Water meter flow rates and totals
+- Pump on/off states and cycle history
+- Light brightness levels over time
+- Use lightweight charting library (Chart.js or similar)
 
 ### Medium Priority - API Integrations
 
@@ -711,6 +837,15 @@ Features organized by priority and implementation status.
 - Automation integration
 - Alert notifications via HA
 - Auto discovery in Hime Assistant
+
+### Low Priority - Documentation & Clarifications
+
+#### Door Test Mode Documentation
+- Document what door test mode is and its purpose (it doesn't seem to do anytthing currently?)
+- Explain when and why to use test mode
+- Detail test mode behaviors and safety features
+- Add to user documentation and web UI help text
+- Include in API documentation
 
 ### Low Priority - Enhancements
 
