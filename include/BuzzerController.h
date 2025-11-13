@@ -10,9 +10,10 @@ enum class AlertType : uint8_t {
     SENSOR_ERROR = 1,
     WIFI_DISCONNECTED = 2,
     LOW_MEMORY = 3,
-    DOOR_FAULT = 4,      // Future-proof for door system
-    SYSTEM_ERROR = 5,     // General system errors
-    TEST_ALERT = 6        // For testing purposes - corrected from 255 to 6
+    DOOR_FAULT = 4,
+    LIGHT_FAULT = 5,
+    SYSTEM_ERROR = 6,     // General system errors
+    TEST_ALERT = 7        // For testing purposes
 };
 
 // Buzzer types

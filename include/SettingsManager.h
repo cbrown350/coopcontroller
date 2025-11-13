@@ -18,9 +18,11 @@ struct user_settings
     int    pump_on_time_seconds;    // Pump ON time in seconds (default 30)
     int    pump_off_time_seconds;   // Pump OFF time in seconds (default 300)
     bool   pump_auto_mode;          // Enable automatic pump control based on temperature
-    bool   light_auto_mode;         // Enable automatic light control (future feature)
+    bool   light_auto_mode;         // Enable automatic light control
     int    light_on_hour;           // Hour to turn on light (24-hour format)
     int    light_off_hour;          // Hour to turn off light (24-hour format)
+    int    light_brightness_percent; // Maximum brightness percentage (0-100)
+    int    light_transition_duration_minutes; // Fade transition duration in minutes
     int    water_flow_error_timeout_seconds; // Timeout for water flow error detection in seconds (default 10 = 10 seconds)
     String log_level;               // Log level: "VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR" (default "INFO")
     
@@ -87,6 +89,8 @@ class SettingsManager
     bool   getLightAutoMode() const;
     int    getLightOnHour();
     int    getLightOffHour();
+    int    getLightBrightnessPercent() const;
+    int    getLightTransitionDurationMinutes() const;
     String getLogLevel() const;
     
     // Water meter calibration getter
@@ -129,6 +133,8 @@ class SettingsManager
     void setLightAutoMode(bool mode);
     void setLightOnHour(int hour);
     void setLightOffHour(int hour);
+    void setLightBrightnessPercent(int percent);
+    void setLightTransitionDurationMinutes(int minutes);
     void setLogLevel(const String& level);
     
     // Water meter calibration setters

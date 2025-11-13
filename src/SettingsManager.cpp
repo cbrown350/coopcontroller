@@ -30,8 +30,10 @@ SettingsManager::SettingsManager()
     settings.pump_off_time_seconds = 300;    // Default 5 minutes (300 seconds)
     settings.pump_auto_mode     = true;      // Enable automatic pump control by default
     settings.light_auto_mode     = false;     // Disable automatic light control initially
-    settings.light_on_hour       = 16;         // Default turn on at 4 PM
-    settings.light_off_hour      = 22;        // Default turn off at 10 PM
+    settings.light_on_hour       = 6;         // Default turn on at 6 AM
+    settings.light_off_hour      = 21;        // Default turn off at 9 PM
+    settings.light_brightness_percent = 100;  // Default 100% brightness
+    settings.light_transition_duration_minutes = 5; // Default 5 minute fade
     settings.log_level           = "INFO";    // Default log level
     settings.watchdog_timeout_seconds = 30;   // Default watchdog timeout 30 seconds
     settings.pulses_per_gallon   = 450.0;     // Default pulses per gallon for water meter
@@ -84,6 +86,10 @@ bool SettingsManager::load()
     settings.pump_off_time_seconds = doc["pump_off_time_seconds"] | 300;
     settings.pump_auto_mode     = doc["pump_auto_mode"] | true;
     settings.light_auto_mode     = doc["light_auto_mode"] | false;
+    settings.light_on_hour       = doc["light_on_hour"] | 6;
+    settings.light_off_hour      = doc["light_off_hour"] | 21;
+    settings.light_brightness_percent = doc["light_brightness_percent"] | 100;
+    settings.light_transition_duration_minutes = doc["light_transition_duration_minutes"] | 5;
     settings.log_level = doc["log_level"] | "INFO";
     settings.wifi_max_retries = doc["wifi_max_retries"] | 5;
     settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 5;
@@ -205,6 +211,22 @@ bool SettingsManager::getLightAutoMode() const {
     return settings.light_auto_mode;
 }
 
+int SettingsManager::getLightOnHour() {
+    return getSettings().light_on_hour;
+}
+
+int SettingsManager::getLightOffHour() {
+    return getSettings().light_off_hour;
+}
+
+int SettingsManager::getLightBrightnessPercent() const {
+    return settings.light_brightness_percent;
+}
+
+int SettingsManager::getLightTransitionDurationMinutes() const {
+    return settings.light_transition_duration_minutes;
+}
+
 String SettingsManager::getLogLevel() const {
     return settings.log_level;
 }
@@ -281,6 +303,20 @@ void SettingsManager::setLightOffHour(int hour)
     if (!isLoaded)
         load();
     settings.light_off_hour = hour;
+}
+
+void SettingsManager::setLightBrightnessPercent(int percent)
+{
+    if (!isLoaded)
+        load();
+    settings.light_brightness_percent = constrain(percent, 0, 100);
+}
+
+void SettingsManager::setLightTransitionDurationMinutes(int minutes)
+{
+    if (!isLoaded)
+        load();
+    settings.light_transition_duration_minutes = constrain(minutes, 1, 60);
 }
 
 void SettingsManager::setLogLevel(const String &level)
@@ -519,6 +555,8 @@ String SettingsManager::toJson(bool includePassword) const
     doc["light_auto_mode"] = settings.light_auto_mode;
     doc["light_on_hour"] = settings.light_on_hour;
     doc["light_off_hour"] = settings.light_off_hour;
+    doc["light_brightness_percent"] = settings.light_brightness_percent;
+    doc["light_transition_duration_minutes"] = settings.light_transition_duration_minutes;
     doc["log_level"] = settings.log_level;
     doc["watchdog_timeout_seconds"] = settings.watchdog_timeout_seconds;
     doc["pulses_per_gallon"] = settings.pulses_per_gallon;
@@ -565,6 +603,8 @@ void SettingsManager::factoryReset()
     settings.light_auto_mode = false;
     settings.light_on_hour = 6;
     settings.light_off_hour = 21;
+    settings.light_brightness_percent = 100;
+    settings.light_transition_duration_minutes = 5;
     settings.log_level = "INFO";
     settings.water_flow_error_timeout_seconds = 120;
     settings.wifi_max_retries = 5;

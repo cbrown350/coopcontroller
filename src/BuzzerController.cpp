@@ -8,7 +8,7 @@ const AlertPattern BuzzerController::DEFAULT_PATTERNS[] = {
     // PUMP_ERROR: 3 long beeps, repeat every 10 seconds, max 30 cycles
     {1000, 500, 3, 10000, 30},
     
-    // SENSOR_ERROR: 2 short beeps, repeat every 5 seconds, max 20 cycles  
+    // SENSOR_ERROR: 2 short beeps, repeat every 5 seconds, max 20 cycles
     {200, 300, 2, 5000, 20},
     
     // WIFI_DISCONNECTED: 1 short beep, repeat every 30 seconds, infinite
@@ -19,6 +19,9 @@ const AlertPattern BuzzerController::DEFAULT_PATTERNS[] = {
     
     // DOOR_FAULT: 4 medium beeps, repeat every 8 seconds, max 15 cycles
     {500, 200, 4, 8000, 15},
+    
+    // LIGHT_FAULT: 3 short beeps, repeat every 10 seconds, max 20 cycles
+    {300, 200, 3, 10000, 20},
     
     // SYSTEM_ERROR: 2 long beeps, repeat every 12 seconds, max 25 cycles
     {1000, 1000, 2, 12000, 25},
@@ -224,6 +227,7 @@ String BuzzerController::getAlertTypeString(AlertType type) const {
         case AlertType::WIFI_DISCONNECTED: return "WIFI_DISCONNECTED";
         case AlertType::LOW_MEMORY: return "LOW_MEMORY";
         case AlertType::DOOR_FAULT: return "DOOR_FAULT";
+        case AlertType::LIGHT_FAULT: return "LIGHT_FAULT";
         case AlertType::SYSTEM_ERROR: return "SYSTEM_ERROR";
         case AlertType::TEST_ALERT: return "TEST_ALERT";
         default: return "UNKNOWN";

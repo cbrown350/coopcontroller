@@ -44,6 +44,7 @@ const char* apPasswd      = (strcmp(TOSTRING(AP_PASSWD), "") == 0 || strcmp(TOST
 #define SENSOR_UPDATE_INTERVAL 5000    // Update sensors every 5 seconds
 #define PUMP_UPDATE_INTERVAL 1000     // Update pump controller every 1 second
 #define DOOR_UPDATE_INTERVAL 100      // Update door controller every 100ms for faster response
+#define LIGHT_UPDATE_INTERVAL 100     // Update light controller every 100ms for smooth fading
 
 
 // NTP server to request epoch time
@@ -56,6 +57,7 @@ SensorManager tempSensor;
 PumpController pumpController(&tempSensor, &tempSensor, OUT_PUMP_PIN);
 BuzzerController buzzerController;
 DoorController doorController;
+LightController lightController;
 
 // Variables to track WiFi connection monitoring
 unsigned long lastWifiCheck      = 0;
@@ -69,6 +71,7 @@ int           wifiRetryCount       = 0;
 unsigned long lastSensorUpdate = 0;
 unsigned long lastPumpUpdate = 0;
 unsigned long lastDoorUpdate = 0;
+unsigned long lastLightUpdate = 0;
 // WiFi LED control variables
 unsigned long lastLedToggle = 0;
 bool ledState = false;
@@ -331,6 +334,7 @@ void setup()
     pumpController.begin();
     buzzerController.begin();
     doorController.begin();
+    lightController.begin();
     
     // Set water meter calibration from settings
     tempSensor.setPulsesPerGallon(settingsManager.getPulsesPerGallon());
@@ -614,6 +618,13 @@ void loop()
     {
         lastDoorUpdate = currentTime;
         doorController.update();
+    }
+    
+    // Update light controller
+    if (currentTime - lastLightUpdate >= LIGHT_UPDATE_INTERVAL)
+    {
+        lastLightUpdate = currentTime;
+        lightController.update();
     }
     
     webServer.loop();

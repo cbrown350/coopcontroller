@@ -7,6 +7,7 @@
 #include "PumpController.h"
 #include "BuzzerController.h"
 #include "DoorController.h"
+#include "LightController.h"
 
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
@@ -25,6 +26,7 @@ extern SensorManager tempSensor;
 extern PumpController pumpController;
 extern BuzzerController buzzerController;
 extern DoorController doorController;
+extern LightController lightController;
 
 WebServer::WebServer(int port) : server(port) {}
 
@@ -78,6 +80,23 @@ void WebServer::begin()
             }
             if (jsonObj["light_auto_mode"].is<bool>()) {
                 settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
+                lightController.setAutoMode(jsonObj["light_auto_mode"].as<bool>());
+            }
+            if (jsonObj["light_on_hour"].is<int>()) {
+                settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
+                lightController.setOnHour(jsonObj["light_on_hour"].as<int>());
+            }
+            if (jsonObj["light_off_hour"].is<int>()) {
+                settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
+                lightController.setOffHour(jsonObj["light_off_hour"].as<int>());
+            }
+            if (jsonObj["light_brightness_percent"].is<int>()) {
+                settingsManager.setLightBrightnessPercent(jsonObj["light_brightness_percent"].as<int>());
+                lightController.setMaxBrightness(jsonObj["light_brightness_percent"].as<int>());
+            }
+            if (jsonObj["light_transition_duration_minutes"].is<int>()) {
+                settingsManager.setLightTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
+                lightController.setTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
             }
             if (jsonObj["log_level"].is<String>()) {
                 settingsManager.setLogLevel(jsonObj["log_level"].as<String>());
@@ -281,6 +300,10 @@ void WebServer::begin()
                    // Door status
                    JsonObject door = jsonDoc["door"].to<JsonObject>();
                    doorController.toJson(door);
+                   
+                   // Light status
+                   JsonObject light = jsonDoc["light"].to<JsonObject>();
+                   lightController.toJson(light);
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
@@ -420,6 +443,90 @@ void WebServer::begin()
               {
                   doorController.resetStatistics();
                   request->send(200, "text/plain", "Door statistics reset");
+              });
+
+    // Light control endpoints
+    server.on("/light/on", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  lightController.turnOn();
+                  request->send(200, "text/plain", "Light turned on");
+              });
+
+    server.on("/light/off", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  lightController.turnOff();
+                  request->send(200, "text/plain", "Light turned off");
+              });
+
+    server.on("/light/fade_in", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  lightController.fadeIn();
+                  request->send(200, "text/plain", "Light fading in");
+              });
+
+    server.on("/light/fade_out", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  lightController.fadeOut();
+                  request->send(200, "text/plain", "Light fading out");
+              });
+
+    server.on("/light/set_brightness", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  if (!request->hasParam("brightness", true)) {
+                      request->send(400, "text/plain", "Missing brightness parameter");
+                      return;
+                  }
+                  
+                  int brightness = request->getParam("brightness", true)->value().toInt();
+                  if (brightness < 0 || brightness > 100) {
+                      request->send(400, "text/plain", "Brightness must be 0-100");
+                      return;
+                  }
+                  
+                  lightController.setBrightness(brightness);
+                  request->send(200, "text/plain", "Light brightness set to " + String(brightness) + "%");
+              });
+
+    server.on("/light/set_auto", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  if (!request->hasParam("auto", true)) {
+                      request->send(400, "text/plain", "Missing auto parameter");
+                      return;
+                  }
+                  
+                  String autoStr = request->getParam("auto", true)->value();
+                  bool autoMode = (autoStr == "true" || autoStr == "1");
+                  lightController.setAutoMode(autoMode);
+                  settingsManager.setLightAutoMode(autoMode);
+                  settingsManager.save();
+                  request->send(200, "text/plain", autoMode ? "Light auto mode enabled" : "Light auto mode disabled");
+              });
+
+    server.on("/light/reset_stats", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  lightController.resetStatistics();
+                  request->send(200, "text/plain", "Light statistics reset");
+              });
+
+    server.on("/light/test_mode", HTTP_POST,
+              [](AsyncWebServerRequest *request)
+              {
+                  if (!request->hasParam("enabled", true)) {
+                      request->send(400, "text/plain", "Missing enabled parameter");
+                      return;
+                  }
+                  
+                  String enabledStr = request->getParam("enabled", true)->value();
+                  bool enabled = (enabledStr == "true" || enabledStr == "1");
+                  lightController.setTestMode(enabled);
+                  request->send(200, "text/plain", enabled ? "Light test mode enabled" : "Light test mode disabled");
               });
 
     // Logs endpoint
@@ -591,6 +698,12 @@ void WebServer::begin()
         }
         if (jsonObj["light_off_hour"].is<int>()) {
           settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
+        }
+        if (jsonObj["light_brightness_percent"].is<int>()) {
+          settingsManager.setLightBrightnessPercent(jsonObj["light_brightness_percent"].as<int>());
+        }
+        if (jsonObj["light_transition_duration_minutes"].is<int>()) {
+          settingsManager.setLightTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
         }
         if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
           settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
