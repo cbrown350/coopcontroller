@@ -8,6 +8,7 @@
 #include "BuzzerController.h"
 #include "DoorController.h"
 #include "LightController.h"
+#include "SunriseSunset.h"
 
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
@@ -27,6 +28,9 @@ extern PumpController pumpController;
 extern BuzzerController buzzerController;
 extern DoorController doorController;
 extern LightController lightController;
+
+// External reference to sunrise/sunset calculator
+extern SunriseSunsetCalculator sunriseSunset;
 
 WebServer::WebServer(int port) : server(port) {}
 
@@ -174,6 +178,38 @@ void WebServer::begin()
                 settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
             }
             
+            // Handle location settings
+            bool locationChanged = false;
+            if (jsonObj["latitude"].is<float>()) {
+                settingsManager.setLatitude(jsonObj["latitude"].as<float>());
+                locationChanged = true;
+            }
+            if (jsonObj["longitude"].is<float>()) {
+                settingsManager.setLongitude(jsonObj["longitude"].as<float>());
+                locationChanged = true;
+            }
+            if (jsonObj["timezone_offset_hours"].is<int>()) {
+                settingsManager.setTimezoneOffsetHours(jsonObj["timezone_offset_hours"].as<int>());
+                locationChanged = true;
+            }
+            
+            // Recalculate sunrise/sunset if location changed
+            if (locationChanged) {
+                sunriseSunset.begin(settingsManager.getLatitude(),
+                                   settingsManager.getLongitude(),
+                                   settingsManager.getTimezoneOffsetHours());
+                sunriseSunset.forceUpdate();
+                logger.log("Location settings updated, sunrise/sunset recalculated");
+            }
+            
+            // Handle Task 3.5k preparation settings
+            if (jsonObj["door_auto_close_after_sunset_enabled"].is<bool>()) {
+                settingsManager.setDoorAutoCloseAfterSunsetEnabled(jsonObj["door_auto_close_after_sunset_enabled"].as<bool>());
+            }
+            if (jsonObj["door_auto_close_after_sunset_minutes"].is<int>()) {
+                settingsManager.setDoorAutoCloseAfterSunsetMinutes(jsonObj["door_auto_close_after_sunset_minutes"].as<int>());
+            }
+            
             // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
             
             settingsManager.save();
@@ -304,6 +340,13 @@ void WebServer::begin()
                    // Light status
                    JsonObject light = jsonDoc["light"].to<JsonObject>();
                    lightController.toJson(light);
+                   
+                   // Sun times
+                   JsonObject sun = jsonDoc["sun"].to<JsonObject>();
+                   sun["sunrise"] = sunriseSunset.getSunriseTime();
+                   sun["sunset"] = sunriseSunset.getSunsetTime();
+                   sun["sunrise_minutes"] = sunriseSunset.getSunriseMinutes();
+                   sun["sunset_minutes"] = sunriseSunset.getSunsetMinutes();
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
@@ -538,6 +581,45 @@ void WebServer::begin()
                   String jsonResponse = logger.getLogsAsJson();
                   request->send(200, "application/json", jsonResponse);
               });
+
+   // Sun times endpoint
+   server.on("/sun/times", HTTP_GET,
+             [](AsyncWebServerRequest *request)
+             {
+                 JsonDocument doc;
+                 
+                 // Format sunrise time without leading zero
+                 int sunriseMin = sunriseSunset.getSunriseMinutes();
+                 int sunriseHour = sunriseMin / 60;
+                 int sunriseMinute = sunriseMin % 60;
+                 String sunrisePeriod = (sunriseHour >= 12) ? "PM" : "AM";
+                 sunriseHour = (sunriseHour > 12) ? sunriseHour - 12 : sunriseHour;
+                 sunriseHour = (sunriseHour == 0) ? 12 : sunriseHour;
+                 char sunriseBuffer[16];
+                 sprintf(sunriseBuffer, "%d:%02d %s", sunriseHour, sunriseMinute, sunrisePeriod.c_str());
+                 doc["sunrise"] = String(sunriseBuffer);
+                 
+                 // Format sunset time without leading zero
+                 int sunsetMin = sunriseSunset.getSunsetMinutes();
+                 int sunsetHour = sunsetMin / 60;
+                 int sunsetMinute = sunsetMin % 60;
+                 String sunsetPeriod = (sunsetHour >= 12) ? "PM" : "AM";
+                 sunsetHour = (sunsetHour > 12) ? sunsetHour - 12 : sunsetHour;
+                 sunsetHour = (sunsetHour == 0) ? 12 : sunsetHour;
+                 char sunsetBuffer[16];
+                 sprintf(sunsetBuffer, "%d:%02d %s", sunsetHour, sunsetMinute, sunsetPeriod.c_str());
+                 doc["sunset"] = String(sunsetBuffer);
+                 
+                 doc["sunrise_minutes"] = sunriseSunset.getSunriseMinutes();
+                 doc["sunset_minutes"] = sunriseSunset.getSunsetMinutes();
+                 doc["latitude"] = settingsManager.getLatitude();
+                 doc["longitude"] = settingsManager.getLongitude();
+                 doc["timezone_offset"] = settingsManager.getTimezoneOffsetHours();
+                 
+                 String response;
+                 serializeJson(doc, response);
+                 request->send(200, "application/json", response);
+             });
 
     // System status endpoint
     server.on("/system_status", HTTP_GET,

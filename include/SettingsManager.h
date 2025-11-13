@@ -19,6 +19,9 @@ struct user_settings
     int    pump_off_time_seconds;   // Pump OFF time in seconds (default 300)
     bool   pump_auto_mode;          // Enable automatic pump control based on temperature
     bool   light_auto_mode;         // Enable automatic light control
+    int    light_on_minute;           // Minute to turn on light (0-59)
+    String light_on_mode;           // 'fixed' or 'sunset_offset'
+    int    light_on_sunset_offset_minutes; // Minutes before/after sunset for light on (default: 0)
     int    light_on_hour;           // Hour to turn on light (24-hour format)
     int    light_off_hour;          // Hour to turn off light (24-hour format)
     int    light_brightness_percent; // Maximum brightness percentage (0-100)
@@ -47,6 +50,15 @@ struct user_settings
     int    door_close_timeout_seconds; // Door close timeout in seconds (default: 30)
     int    sunrise_offset_minutes;   // Sunrise offset for door opening (default: 0)
     int    sunset_offset_minutes;    // Sunset offset for door closing (default: 0)
+    
+    // Location settings for sunrise/sunset calculations
+    float  latitude;               // Latitude for sunrise/sunset calculations (default: 40.7128 - NYC)
+    float  longitude;              // Longitude for sunrise/sunset calculations (default: -74.0060 - NYC)
+    int    timezone_offset_hours;   // UTC timezone offset in hours (default: -5 - EST)
+    
+    // Task 3.5k preparation
+    bool   door_auto_close_after_sunset_enabled; // Enable auto-close X minutes after sunset (default: false)
+    int    door_auto_close_after_sunset_minutes;  // Minutes after sunset to auto-close (default: 0)
 };
 
 class SettingsManager
@@ -85,6 +97,12 @@ class SettingsManager
     int    getWaterFlowErrorTimeoutSeconds();
     int    getPumpErrorRetrySeconds();
     int    getPumpOnTimeSeconds();
+    int    getLightOnMinute() const;
+    void   setLightOnMinute(int minute);
+    String getLightOnMode() const;
+    void   setLightOnMode(const String& mode);
+    int    getLightOnSunsetOffsetMinutes() const;
+    void   setLightOnSunsetOffsetMinutes(int minutes);
     int    getPumpOffTimeSeconds();
     bool   getLightAutoMode() const;
     int    getLightOnHour();
@@ -114,8 +132,17 @@ class SettingsManager
     bool   getDoorAutoMode() const;
     int    getDoorOpenTimeoutSeconds() const;
     int    getDoorCloseTimeoutSeconds() const;
-    int    getSunriseOffsetMinutes() const;
-    int    getSunsetOffsetMinutes() const;
+    int getSunriseOffsetMinutes() const;
+    int getSunsetOffsetMinutes() const;
+    
+    // Location settings getters
+    float getLatitude() const;
+    float getLongitude() const;
+    int getTimezoneOffsetHours() const;
+    
+    // Task 3.5k preparation getters
+    bool getDoorAutoCloseAfterSunsetEnabled() const;
+    int getDoorAutoCloseAfterSunsetMinutes() const;
 
     void setSSID(const String &ssid);
     void setPassword(const String &password);
@@ -160,6 +187,15 @@ class SettingsManager
     void setDoorCloseTimeoutSeconds(int seconds);
     void setSunriseOffsetMinutes(int minutes);
     void setSunsetOffsetMinutes(int minutes);
+    
+    // Location settings setters
+    void setLatitude(float latitude);
+    void setLongitude(float longitude);
+    void setTimezoneOffsetHours(int offset);
+    
+    // Task 3.5k preparation setters
+    void setDoorAutoCloseAfterSunsetEnabled(bool enabled);
+    void setDoorAutoCloseAfterSunsetMinutes(int minutes);
 
     void factoryReset();
     String toJson(bool includePassword = true) const;

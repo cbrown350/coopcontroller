@@ -39,6 +39,9 @@ private:
     
     // Schedule configuration
     int onHour;
+    int onMinute;
+    String onMode;  // "fixed" or "sunset_offset"
+    int onSunsetOffsetMinutes;
     int offHour;
     int sunriseOffsetMinutes;
     int sunsetOffsetMinutes;
@@ -59,6 +62,7 @@ private:
     time_t getTodaySunrise() const;
     time_t getTodaySunset() const;
     int calculateSineWaveBrightness(float progress) const;
+    String getStateStringForState(LightState state) const;
     
 public:
     LightController();
@@ -100,6 +104,12 @@ public:
     void setTransitionDurationMinutes(int minutes);
     int getOnHour() const;
     void setOnHour(int hour);
+    int getOnMinute() const;
+    void setOnMinute(int minute);
+    String getOnMode() const;
+    void setOnMode(const String& mode);
+    int getOnSunsetOffsetMinutes() const;
+    void setOnSunsetOffsetMinutes(int minutes);
     int getOffHour() const;
     void setOffHour(int hour);
     int getSunriseOffsetMinutes() const;

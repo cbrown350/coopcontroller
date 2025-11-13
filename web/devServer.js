@@ -31,7 +31,29 @@ const mockSettings = {
   pulses_per_gallon: 450.0,        // Water meter calibration
   wifi_led_enabled: true,              // WiFi status LED enabled
   buzzer_enabled: true,           // Buzzer enabled
-  buzzer_type: 'ACTIVE'           // Buzzer type
+  buzzer_type: 'ACTIVE',          // Buzzer type
+  
+  // Door control settings
+  door_auto_mode: false,
+  door_open_timeout_seconds: 30,
+  door_close_timeout_seconds: 30,
+  sunrise_offset_minutes: 0,
+  sunset_offset_minutes: 0,
+  
+  // Location settings for sunrise/sunset calculations
+  latitude: 40.7128,
+  longitude: -74.0060,
+  timezone_offset_hours: -5,
+  
+  // Task 3.5k preparation settings
+  door_auto_close_after_sunset_enabled: false,
+  door_auto_close_after_sunset_minutes: 0,
+  
+  // New light timing settings
+  light_on_mode: 'fixed', // 'fixed' or 'sunset_offset'
+  light_on_hour: 6,
+  light_on_minute: 0,
+  light_on_sunset_offset_minutes: 0, // minutes before/after sunset
 };
 
 const mockVersionInfo = {
@@ -98,6 +120,39 @@ const mockLogs = {
       message: "Water meter calibration set to 450.0 pulses per gallon"
     }
   ]
+};
+
+// Calculate sunrise/sunset times for mock data
+const calculateSunriseSunset = () => {
+  const now = new Date();
+  const latitude = mockSettings.latitude;
+  const longitude = mockSettings.longitude;
+  const timezoneOffset = mockSettings.timezone_offset_hours;
+  
+  // Simple mock calculation - in real implementation this would use proper sunrise/sunset library
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+  
+  // Mock sunrise/sunset calculation (simplified)
+  const sunriseHour = 6 + Math.sin(dayOfYear * 0.0172) * 1.5; // Varies around 6am
+  const sunsetHour = 18 + Math.sin(dayOfYear * 0.0172) * 1.5;  // Varies around 6pm
+  
+  const sunrise = new Date(now);
+  sunrise.setHours(Math.floor(sunriseHour), (sunriseHour % 1) * 60, 0, 0);
+  
+  const sunset = new Date(now);
+  sunset.setHours(Math.floor(sunsetHour), (sunsetHour % 1) * 60, 0, 0);
+  
+  // Apply timezone offset
+  sunrise.setHours(sunrise.getHours() + timezoneOffset);
+  sunset.setHours(sunset.getHours() + timezoneOffset);
+  
+  return {
+    sunrise: sunrise,
+    sunset: sunset,
+    latitude: latitude,
+    longitude: longitude,
+    timezone: timezoneOffset
+  };
 };
 
 const getSensorStatus = () => ({
@@ -193,6 +248,17 @@ async function createServer() {
     res.end(elegantOTAHTML);
   });
 
+  app.use("/sun/times", async (req, res) => {
+    const sunData = calculateSunriseSunset();
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({
+      sunrise: sunData.sunrise.toISOString(),
+      sunset: sunData.sunset.toISOString(),
+      sunrise_minutes: Math.floor((sunData.sunrise.getHours() * 60) + sunData.sunrise.getMinutes()),
+      sunset_minutes: Math.floor((sunData.sunset.getHours() * 60) + sunData.sunset.getMinutes())
+    }));
+  });
+
   app.use("/update_settings", express.json(), async (req, res) => {
     try {
       const settings = req.body;
@@ -222,6 +288,15 @@ async function createServer() {
       if (settings.light_on_hour !== undefined) {
         mockSettings.light_on_hour = settings.light_on_hour;
       }
+      if (settings.light_on_minute !== undefined) {
+        mockSettings.light_on_minute = settings.light_on_minute;
+      }
+      if (settings.light_on_mode !== undefined) {
+        mockSettings.light_on_mode = settings.light_on_mode;
+      }
+      if (settings.light_on_sunset_offset_minutes !== undefined) {
+        mockSettings.light_on_sunset_offset_minutes = settings.light_on_sunset_offset_minutes;
+      }
       // debug_enabled removed - incoming debug_enabled values are ignored
       if (settings.light_off_hour !== undefined) {
         mockSettings.light_off_hour = settings.light_off_hour;
@@ -241,6 +316,42 @@ async function createServer() {
       
       if (settings.wifi_led_enabled !== undefined) {
         mockSettings.wifi_led_enabled = settings.wifi_led_enabled;
+      }
+      
+      // Door control settings
+      if (settings.door_auto_mode !== undefined) {
+        mockSettings.door_auto_mode = settings.door_auto_mode;
+      }
+      if (settings.door_open_timeout_seconds !== undefined) {
+        mockSettings.door_open_timeout_seconds = settings.door_open_timeout_seconds;
+      }
+      if (settings.door_close_timeout_seconds !== undefined) {
+        mockSettings.door_close_timeout_seconds = settings.door_close_timeout_seconds;
+      }
+      if (settings.sunrise_offset_minutes !== undefined) {
+        mockSettings.sunrise_offset_minutes = settings.sunrise_offset_minutes;
+      }
+      if (settings.sunset_offset_minutes !== undefined) {
+        mockSettings.sunset_offset_minutes = settings.sunset_offset_minutes;
+      }
+      
+      // Location settings
+      if (settings.latitude !== undefined) {
+        mockSettings.latitude = settings.latitude;
+      }
+      if (settings.longitude !== undefined) {
+        mockSettings.longitude = settings.longitude;
+      }
+      if (settings.timezone_offset_hours !== undefined) {
+        mockSettings.timezone_offset_hours = settings.timezone_offset_hours;
+      }
+      
+      // Task 3.5k preparation settings
+      if (settings.door_auto_close_after_sunset_enabled !== undefined) {
+        mockSettings.door_auto_close_after_sunset_enabled = settings.door_auto_close_after_sunset_enabled;
+      }
+      if (settings.door_auto_close_after_sunset_minutes !== undefined) {
+        mockSettings.door_auto_close_after_sunset_minutes = settings.door_auto_close_after_sunset_minutes;
       }
       
       res.setHeader("Content-Type", "application/json");
@@ -483,6 +594,15 @@ async function createServer() {
 }
 
 createServer();
+
+// Helper function to format time
+function formatTime(date) {
+  return date.toLocaleTimeString('en-US', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: true 
+  });
+}
 
 const elegantOTAHTML = `
 <!doctype html>

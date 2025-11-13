@@ -34,5 +34,10 @@
   "door_open_timeout_seconds": 10,
   "door_close_timeout_seconds": 10,
   "sunrise_offset_minutes": 0,
-  "sunset_offset_minutes": 0
+  "sunset_offset_minutes": 0,
+	"latitude": 0,
+	"longitude": 0,
+	"timezone_offset_hours": 0,
+	"door_auto_close_after_sunset_enabled": true,
+	"door_auto_close_after_sunset_minutes": 45
 }

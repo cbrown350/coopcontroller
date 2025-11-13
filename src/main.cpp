@@ -16,6 +16,7 @@
 #include "PumpController.h"
 #include "LightController.h"
 #include "DoorController.h"
+#include "SunriseSunset.h"
 
 
 
@@ -58,6 +59,7 @@ PumpController pumpController(&tempSensor, &tempSensor, OUT_PUMP_PIN);
 BuzzerController buzzerController;
 DoorController doorController;
 LightController lightController;
+SunriseSunsetCalculator sunriseSunset;
 
 // Variables to track WiFi connection monitoring
 unsigned long lastWifiCheck      = 0;
@@ -336,6 +338,11 @@ void setup()
     doorController.begin();
     lightController.begin();
     
+    // Initialize sunrise/sunset calculator with location settings
+    sunriseSunset.begin(settingsManager.getLatitude(),
+                      settingsManager.getLongitude(),
+                      settingsManager.getTimezoneOffsetHours());
+    
     // Set water meter calibration from settings
     tempSensor.setPulsesPerGallon(settingsManager.getPulsesPerGallon());
     
@@ -364,6 +371,11 @@ void setup()
     wifiSetup();
     logger.log("NTP time synchronization started");
     configTime(0, 0, ntpServer);
+    
+    // Wait a moment for NTP to sync, then calculate sunrise/sunset
+    delay(2000);
+    sunriseSunset.forceUpdate();
+    
     webServer.begin();
     logger.log("Web server started");
 
@@ -625,6 +637,13 @@ void loop()
     {
         lastLightUpdate = currentTime;
         lightController.update();
+    }
+    
+    // Update sunrise/sunset calculations (check every minute, but only recalculates every 24 hours)
+    static unsigned long lastSunUpdate = 0;
+    if (currentTime - lastSunUpdate >= 60000) { // Check every minute
+        lastSunUpdate = currentTime;
+        sunriseSunset.update();
     }
     
     webServer.loop();

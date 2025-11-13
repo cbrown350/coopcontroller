@@ -24,6 +24,9 @@ function Settings() {
   const [pumpOffTimeSeconds, setPumpOffTimeSeconds] = createSignal<number | null>(null)
   const [lightAutoMode, setLightAutoMode] = createSignal<boolean | null>(null)
   const [lightOnHour, setLightOnHour] = createSignal<number | null>(null)
+  const [lightOnMinute, setLightOnMinute] = createSignal<number | null>(null)
+  const [lightOnMode, setLightOnMode] = createSignal<string | null>(null) // 'fixed' or 'sunset_offset'
+  const [lightOnSunsetOffsetMinutes, setLightOnSunsetOffsetMinutes] = createSignal<number | null>(null)
   const [lightOffHour, setLightOffHour] = createSignal<number | null>(null)
   const [lightBrightnessPercent, setLightBrightnessPercent] = createSignal<number | null>(null)
   const [lightTransitionDurationMinutes, setLightTransitionDurationMinutes] = createSignal<number | null>(null)
@@ -53,6 +56,24 @@ function Settings() {
   const [doorCloseTimeoutSeconds, setDoorCloseTimeoutSeconds] = createSignal<number | null>(null)
   const [sunriseOffsetMinutes, setSunriseOffsetMinutes] = createSignal<number | null>(null)
   const [sunsetOffsetMinutes, setSunsetOffsetMinutes] = createSignal<number | null>(null)
+  
+  // Location settings
+  const [latitude, setLatitude] = createSignal<number | null>(null)
+  const [longitude, setLongitude] = createSignal<number | null>(null)
+  const [timezoneOffsetHours, setTimezoneOffsetHours] = createSignal<number | null>(null)
+  
+  // Sunrise/sunset data for preview
+  // Helper function to get timezone display
+  const getTimezoneDisplay = () => {
+    const offset = timezoneOffsetHours() ?? 0;
+    return `UTC${offset >= 0 ? '+' : ''}${offset}`;
+  };
+  const [sunriseData, setSunriseData] = createSignal<any>(null)
+  const [sunsetData, setSunsetData] = createSignal<any>(null)
+  
+  // Task 3.5k preparation settings
+  const [doorAutoCloseAfterSunsetEnabled, setDoorAutoCloseAfterSunsetEnabled] = createSignal<boolean | null>(null)
+  const [doorAutoCloseAfterSunsetMinutes, setDoorAutoCloseAfterSunsetMinutes] = createSignal<number | null>(null)
 
   // Load settings from server
   onMount(async () => {
@@ -74,6 +95,9 @@ function Settings() {
       setPumpOffTimeSeconds(settings.pump_off_time_seconds ?? null)
       setLightAutoMode(settings.light_auto_mode ?? null)
       setLightOnHour(settings.light_on_hour ?? null)
+      setLightOnMinute(settings.light_on_minute ?? 0)
+      setLightOnMode(settings.light_on_mode ?? 'fixed')
+      setLightOnSunsetOffsetMinutes(settings.light_on_sunset_offset_minutes ?? 0)
       setLightOffHour(settings.light_off_hour ?? null)
       setLightBrightnessPercent(settings.light_brightness_percent ?? null)
       setLightTransitionDurationMinutes(settings.light_transition_duration_minutes ?? null)
@@ -91,6 +115,15 @@ function Settings() {
       setDoorCloseTimeoutSeconds(settings.door_close_timeout_seconds ?? 30)
       setSunriseOffsetMinutes(settings.sunrise_offset_minutes ?? 0)
       setSunsetOffsetMinutes(settings.sunset_offset_minutes ?? 0)
+      
+      // Load location settings
+      setLatitude(settings.latitude ?? 40.7128)
+      setLongitude(settings.longitude ?? -74.0060)
+      setTimezoneOffsetHours(settings.timezone_offset_hours ?? -5)
+      
+      // Load Task 3.5k preparation settings
+      setDoorAutoCloseAfterSunsetEnabled(settings.door_auto_close_after_sunset_enabled ?? false)
+      setDoorAutoCloseAfterSunsetMinutes(settings.door_auto_close_after_sunset_minutes ?? 0)
 
       // Set hostname if available
       if (settings.hostname) {
@@ -99,6 +132,8 @@ function Settings() {
 
       setLoaded(true)
       setError('')
+      // Fetch sunrise/sunset data after loading location
+      fetchSunriseSunsetData()
     } catch (err: any) {
       setLoaded(false)
       setError(`Error loading settings: ${err.message || 'Unknown error'}`)
@@ -134,18 +169,17 @@ function Settings() {
       setError('')
 
       const settingsPayload = {
-        ap_mode: false,
-        water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
-        ...(apMode() && { ssid: ssid(), passwd: password() }),
+        ssid: ssid(),
+        passwd: password(),
         temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
         temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
-        water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
         pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
         pump_off_time_seconds: pumpOffTimeSeconds() ?? 300,
-        // include log level string
-        log_level: logLevel() ?? 'INFO',
         light_auto_mode: lightAutoMode() ?? false,
         light_on_hour: lightOnHour() ?? 6,
+        light_on_minute: lightOnMinute() ?? 0,
+        light_on_mode: lightOnMode() ?? 'fixed',
+        light_on_sunset_offset_minutes: lightOnSunsetOffsetMinutes() ?? 0,
         light_off_hour: lightOffHour() ?? 20,
         light_brightness_percent: lightBrightnessPercent() ?? 100,
         light_transition_duration_minutes: lightTransitionDurationMinutes() ?? 5,
@@ -157,7 +191,13 @@ function Settings() {
         door_open_timeout_seconds: doorOpenTimeoutSeconds() ?? 30,
         door_close_timeout_seconds: doorCloseTimeoutSeconds() ?? 30,
         sunrise_offset_minutes: sunriseOffsetMinutes() ?? 0,
-        sunset_offset_minutes: sunsetOffsetMinutes() ?? 0
+        sunset_offset_minutes: sunsetOffsetMinutes() ?? 0,
+        latitude: latitude() ?? 40.7128,
+        longitude: longitude() ?? -74.0060,
+        timezone_offset_hours: timezoneOffsetHours() ?? -5,
+        door_auto_close_after_sunset_enabled: doorAutoCloseAfterSunsetEnabled() ?? false,
+        // Auto close after sunset minutes should be a number, not a string when defined
+        door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0 // Default to 0 if not defined
       }
 
       const response = await fetch('/update_settings', {
@@ -172,6 +212,9 @@ function Settings() {
 
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
+      
+      // Fetch sunrise/sunset data after saving location settings
+      fetchSunriseSunsetData()
     } catch (err: any) {
       setError(`Error saving settings: ${err.message || 'Unknown error'}`)
       console.error('Failed to save settings:', err)
@@ -293,6 +336,19 @@ function Settings() {
     return `${minutes}m ${remainingSeconds}s`
   }
 
+  const fetchSunriseSunsetData = async () => {
+    try {
+      const response = await fetch('/sun/times')
+      if (response.ok) {
+        const data = await response.json()
+        setSunriseData(data)
+        setSunsetData(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch sunrise/sunset data:', error)
+    }
+  }
+
   return (
     <div class="card">
       {loading() ? (
@@ -346,7 +402,7 @@ function Settings() {
 
               <div role="alert" class="mt-4 alert alert-info alert-soft">
                 <span>
-                  Note: after changing the wifi network you may need to enter a new IP address to get to this device. If the wifi connection fails, the device will revert to AP mode and you can reconnect by connecting to the Wifi network named {hostname()}. If your network supports MDNS discovery you can also find this device at <a class="link link-accent" href={`http://${hostname()}.local`}>{hostname()}.local</a>
+                  Note: after changing wifi network you may need to enter a new IP address to get to this device. If wifi connection fails, device will revert to AP mode and you can reconnect by connecting to Wifi network named {hostname()}. If your network supports MDNS discovery you can also find this device at <a class="link link-accent" href={`http://${hostname()}.local`}>{hostname()}.local</a>
                 </span>
               </div>
             </div>
@@ -463,17 +519,69 @@ function Settings() {
            </fieldset>
 
           <Show when={lightAutoMode()}>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div class="mt-4">
               <fieldset class="fieldset">
-                <legend class="fieldset-legend">Light ON Hour</legend>
-                <Show when={loaded()}>
-                  <input type="number" id="light_on_hour" value={lightOnHour()!} onInput={(e) => setLightOnHour(parseInt(e.target.value))} placeholder="6" min="0" max="23" class="input" />
-                </Show>
-                <Show when={!loaded()}>
-                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
-                </Show>
-                <div class="fieldset-label">24-hour format (0-23)</div>
+                <legend class="fieldset-legend">Light ON Mode</legend>
+                <div class="form-control">
+                  <label class="label cursor-pointer">
+                    <span class="label-text">Light ON Mode</span>
+                    <select 
+                      id="light_on_mode" 
+                      title="Light ON Mode" 
+                      class="select" 
+                      value={lightOnMode() ?? 'fixed'} 
+                      onInput={(e) => {setLightOnMode((e.target as HTMLSelectElement).value); fetchSunriseSunsetData()}}
+                    >
+                      <option value="fixed">Fixed Time</option>
+                      <option value="sunset_offset">Sunset Offset</option>
+                    </select>
+                  </label>
+                  <label class="label">
+                    <span class="label-text-alt">
+                      Choose how light ON time is determined
+                    </span>
+                  </label>
+                </div>
               </fieldset>
+
+              <Show when={lightOnMode() === 'fixed'}>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Light ON Hour</legend>
+                    <Show when={loaded()}>
+                      <input type="number" id="light_on_hour" value={lightOnHour()!} onInput={(e) => setLightOnHour(parseInt(e.target.value))} placeholder="6" min="0" max="23" class="input" />
+                    </Show>
+                    <Show when={!loaded()}>
+                      <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                    </Show>
+                    <div class="fieldset-label">24-hour format (0-23)</div>
+                  </fieldset>
+
+                  <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Light ON Minute</legend>
+                    <Show when={loaded()}>
+                      <input type="number" id="light_on_minute" value={lightOnMinute()!} onInput={(e) => setLightOnMinute(parseInt(e.target.value))} placeholder="0" min="0" max="59" class="input" />
+                    </Show>
+                    <Show when={!loaded()}>
+                      <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                    </Show>
+                    <div class="fieldset-label">Minutes (0-59)</div>
+                  </fieldset>
+                </div>
+              </Show>
+
+              <Show when={lightOnMode() === 'sunset_offset'}>
+                <fieldset class="fieldset mt-4">
+                  <legend class="fieldset-legend">Light ON Sunset Offset</legend>
+                  <Show when={loaded()}>
+                    <input type="number" id="light_on_sunset_offset_minutes" value={lightOnSunsetOffsetMinutes()!} onInput={(e) => setLightOnSunsetOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-120" max="120" class="input" />
+                  </Show>
+                  <Show when={!loaded()}>
+                    <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                  </Show>
+                  <div class="fieldset-label">Minutes before/after sunset to turn on light (negative = before, positive = after)</div>
+                </fieldset>
+              </Show>
 
               <fieldset class="fieldset">
                 <legend class="fieldset-legend">Light OFF Hour</legend>
@@ -662,6 +770,167 @@ function Settings() {
             </fieldset>
           </div>
 
+      <h2 class="text-lg font-bold mb-4 mt-10">Location Settings</h2>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Latitude</legend>
+          <Show when={loaded()}>
+            <input type="number" value={latitude()!} onInput={(e) => { setLatitude(parseFloat(e.target.value)); fetchSunriseSunsetData() }} placeholder="40.7128" step="0.0001" min="-90" max="90" class="input" />
+          </Show>
+          <Show when={!loaded()}>
+            <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+          </Show>
+          <div class="fieldset-label">Latitude for sunrise/sunset calculations (-90 to 90)</div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Longitude</legend>
+          <Show when={loaded()}>
+            <input type="number" value={longitude()!} onInput={(e) => { setLongitude(parseFloat(e.target.value)); fetchSunriseSunsetData() }} placeholder="-74.0060" step="0.0001" min="-180" max="180" class="input" />
+          </Show>
+          <Show when={!loaded()}>
+            <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+          </Show>
+          <div class="fieldset-label">Longitude for sunrise/sunset calculations (-180 to 180)</div>
+        </fieldset>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Timezone Offset</legend>
+          <Show when={loaded()}>
+            <select id="timezone_offset_hours" title="Timezone Offset" class="select" value={timezoneOffsetHours() ?? -5} onInput={(e) => { setTimezoneOffsetHours(parseInt((e.target as HTMLSelectElement).value)); fetchSunriseSunsetData() }}>
+              <option value="-12">UTC-12 (Baker Island)</option>
+              <option value="-11">UTC-11 (American Samoa)</option>
+              <option value="-10">UTC-10 (Hawaii)</option>
+              <option value="-9">UTC-9 (Alaska)</option>
+              <option value="-8">UTC-8 (Pacific Time)</option>
+              <option value="-7">UTC-7 (Mountain Time)</option>
+              <option value="-6">UTC-6 (Central Time)</option>
+              <option value="-5">UTC-5 (Eastern Time)</option>
+              <option value="-4">UTC-4 (Atlantic Time)</option>
+              <option value="-3">UTC-3 (Brazil, Argentina)</option>
+              <option value="-2">UTC-2 (Mid-Atlantic)</option>
+              <option value="-1">UTC-1 (Azores)</option>
+              <option value="0">UTC+0 (London, Dublin)</option>
+              <option value="1">UTC+1 (Paris, Berlin)</option>
+              <option value="2">UTC+2 (Cairo, Johannesburg)</option>
+              <option value="3">UTC+3 (Moscow, Istanbul)</option>
+              <option value="4">UTC+4 (Dubai)</option>
+              <option value="5">UTC+5 (Pakistan)</option>
+              <option value="6">UTC+6 (Bangladesh)</option>
+              <option value="7">UTC+7 (Bangkok, Jakarta)</option>
+              <option value="8">UTC+8 (Beijing, Singapore)</option>
+              <option value="9">UTC+9 (Tokyo, Seoul)</option>
+              <option value="10">UTC+10 (Sydney)</option>
+              <option value="11">UTC+11 (Solomon Islands)</option>
+              <option value="12">UTC+12 (New Zealand)</option>
+              <option value="13">UTC+13 (Samoa)</option>
+              <option value="14">UTC+14 (Kiribati)</option>
+            </select>
+          </Show>
+          <Show when={!loaded()}>
+            <select id="timezone_offset_hours-fallback" title="Timezone Offset" class="select input-disabled" disabled>
+              <option>--</option>
+            </select>
+          </Show>
+          <div class="fieldset-label">UTC timezone offset for sunrise/sunset calculations</div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Get Browser Location</legend>
+          <button
+            class="btn btn-accent btn-soft w-full"
+            onClick={() => {
+              if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                  (position) => {
+                    setLatitude(position.coords.latitude);
+                    setLongitude(position.coords.longitude);
+                    // Try to guess timezone from browser
+                    const offset = -new Date().getTimezoneOffset() / 60;
+                    setTimezoneOffsetHours(offset);
+                    fetchSunriseSunsetData();
+                  },
+                  (error) => {
+                    alert(`Location error: ${error.message}`);
+                  },
+                  { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+                );
+              } else {
+                alert('Geolocation is not supported by your browser');
+              }
+            }}
+          >
+            📍 Get Current Location
+          </button>
+          <div class="fieldset-label">Use browser GPS to auto-fill location coordinates</div>
+        </fieldset>
+      </div>
+
+      <div class="card bg-base-200 card-sm shadow-sm mt-4">
+        <div class="card-body">
+          <h3 class="card-title">Sunrise/Sunset Preview</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="stat">
+              <div class="stat-title">Sunrise</div>
+              <div class="stat-value text-lg">
+                {sunriseData() ? sunriseData().sunrise : '--:-- --'}
+              </div>
+              <div class="stat-desc">
+                {sunriseData() ? `Using coordinates: ${latitude()?.toFixed(4)}°, ${longitude()?.toFixed(4)}°` : 'Preview will show after saving location'}
+              </div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Sunset</div>
+              <div class="stat-value text-lg">
+                {sunsetData() ? sunsetData().sunset : '--:-- --'}
+              </div>
+              <div class="stat-desc">
+                {sunsetData() ? `Coordinates: ${latitude()?.toFixed(4)}°, ${longitude()?.toFixed(4)}°` : 'Preview will show after saving location'}
+              </div>
+              <div class="stat-desc">
+                {sunsetData() ? `Timezone: ${getTimezoneDisplay()}` : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="text-lg font-bold mb-4 mt-10">Automatic Door Close</h2>
+      
+      <fieldset class="fieldset mt-4">
+        <legend class="fieldset-legend">Auto-Close After Sunset</legend>
+        <div class="form-control">
+          <label class="label cursor-pointer">
+            <span class="label-text">Enable Auto-Close After Sunset</span>
+            <input
+              type="checkbox"
+              class="toggle toggle-primary"
+              checked={doorAutoCloseAfterSunsetEnabled() ?? false}
+              onChange={(e) => setDoorAutoCloseAfterSunsetEnabled(e.currentTarget.checked)}
+            />
+          </label>
+          <label class="label">
+            <span class="label-text-alt">
+              Enable automatic door closing X minutes after sunset (separate from sunset offset)
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="fieldset mt-4">
+        <legend class="fieldset-legend">Auto-Close Delay (minutes)</legend>
+        <Show when={loaded()}>
+          <input type="number" value={doorAutoCloseAfterSunsetMinutes()!} onInput={(e) => setDoorAutoCloseAfterSunsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="0" max="120" class="input" />
+        </Show>
+        <Show when={!loaded()}>
+          <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+        </Show>
+        <div class="fieldset-label">Minutes after sunset to auto-close door (default: 0 = immediate)</div>
+      </fieldset>
+
           <h2 class="text-lg font-bold mb-4 mt-10">Advanced Settings</h2>
 
           {/* Backup/Restore Section */}
@@ -788,7 +1057,7 @@ function Settings() {
           <div class="card bg-warning text-warning-content mt-4">
             <div class="card-body py-4 px-6">
               <h2 class="card-title">System Reboot</h2>
-              <span class="card-actions mt-2">Reboot the ESP32 device. This will restart the system and reconnect to WiFi.</span>
+              <span class="card-actions mt-2">Reboot ESP32 device. This will restart system and reconnect to WiFi.</span>
               <span class="card-actions mt-4">
                 <button 
                   class="btn btn-error btn-sm"

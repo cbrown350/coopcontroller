@@ -1,4 +1,5 @@
 #include "DoorController.h"
+#include "SunriseSunset.h"
 #include "Logger.h"
 #include "SettingsManager.h"
 #include "BuzzerController.h"
@@ -8,6 +9,7 @@
 
 // External references
 extern BuzzerController buzzerController;
+extern SunriseSunsetCalculator sunriseSunset;
 
 // Static instance for ISR access
 DoorController* DoorController::instance = nullptr;
@@ -559,14 +561,14 @@ void DoorController::restorePosition() {
     logger.logf("Door position restored: %s", getPositionString().c_str());
 }
 
-// Schedule helpers (placeholder implementations)
+// Schedule helpers using sunrise/sunset calculations
 bool DoorController::shouldOpenBySchedule() const {
     time_t now = time(nullptr);
     if (now < 0) return false;
     
     struct tm* timeinfo = localtime(&now);
     int currentMinutes = timeinfo->tm_hour * 60 + timeinfo->tm_min;
-    int openTime = 6 * 60 + sunriseOffsetMinutes;
+    int openTime = sunriseSunset.getSunriseMinutes() + sunriseOffsetMinutes;
     
     return (currentMinutes >= openTime && currentPosition != DoorPosition::OPEN);
 }
@@ -577,7 +579,14 @@ bool DoorController::shouldCloseBySchedule() const {
     
     struct tm* timeinfo = localtime(&now);
     int currentMinutes = timeinfo->tm_hour * 60 + timeinfo->tm_min;
-    int closeTime = 20 * 60 + sunsetOffsetMinutes;
+    
+    // Check for Task 3.5k auto-close after sunset
+    int closeTime = sunriseSunset.getSunsetMinutes() + sunsetOffsetMinutes;
+    if (settingsManager.getDoorAutoCloseAfterSunsetEnabled()) {
+        int autoCloseTime = sunriseSunset.getSunsetMinutes() + settingsManager.getDoorAutoCloseAfterSunsetMinutes();
+        // Use the later of regular sunset offset or auto-close after sunset
+        closeTime = max(closeTime, autoCloseTime);
+    }
     
     return (currentMinutes >= closeTime && currentPosition != DoorPosition::CLOSED);
 }

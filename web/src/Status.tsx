@@ -82,6 +82,14 @@ function Status() {
     }
   })
   const [error, setError] = createSignal('')
+  
+  // Sunrise/sunset state
+  const [sunTimes, setSunTimes] = createSignal({
+    sunrise: '--:-- --',
+    sunset: '--:-- --',
+    sunrise_minutes: 0,
+    sunset_minutes: 0
+  })
 
    const [localBrightness, setLocalBrightness] = createSignal(0)
 
@@ -102,13 +110,39 @@ function Status() {
     return `${temp.toFixed(1)}°F`
   }
 
-  
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    return `${hours}h ${minutes}m ${secs}s`
+  }
+
+  const formatMinutesToTime = (minutes: number) => {
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    const period = hours >= 12 ? 'PM' : 'AM'
+    const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+    return `${displayHours}:${mins.toString().padStart(2, '0')} ${period}`
+  }
+
+  const refreshSunTimes = async () => {
+    try {
+      const response = await fetch('/sun/times')
+      if (response.ok) {
+        const data = await response.json()
+        setSunTimes(data)
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch sun times:', err)
+    }
+  }
 
   const refreshSensorStatus = async () => {
     try {
-      const [sensorResponse, systemResponse] = await Promise.all([
+      const [sensorResponse, systemResponse, sunResponse] = await Promise.all([
         fetch('/sensor_status'),
-        fetch('/system_status')
+        fetch('/system_status'),
+        fetch('/sun/times')
       ])
       
       if (!sensorResponse.ok) {
@@ -127,6 +161,11 @@ function Status() {
       if (systemResponse.ok) {
         const systemData = await systemResponse.json()
         setSystemStatus(systemData)
+      }
+      
+      if (sunResponse.ok) {
+        const sunData = await sunResponse.json()
+        setSunTimes(sunData)
       }
       
       setLoading(false)
@@ -183,20 +222,17 @@ function Status() {
     handleBrightnessChange(value)
   }
 
-  const formatTime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    const secs = seconds % 60
-    return `${hours}h ${minutes}m ${secs}s`
-  }
-
   onMount(() => {
     setLoading(true)
     refreshSensorStatus().finally(() => setLoading(false))
     const intervalId = setInterval(refreshSensorStatus, 2500)
     
+    // Also refresh sun times every 30 seconds
+    const sunIntervalId = setInterval(refreshSunTimes, 30000)
+    
     onCleanup(() => {
       clearInterval(intervalId)
+      clearInterval(sunIntervalId)
     })
   })
 
@@ -888,7 +924,7 @@ function Status() {
                                                      sensorStatus().pump.state === 'ERROR' ? 'text-error' : 'text-warning'}>
                       {sensorStatus().pump.state === 'AUTO' ? 'Auto Mode' : 
                        sensorStatus().pump.state === 'ON' ? 'Manual ON' : 
-                       sensorStatus().pump.state === 'ERROR' ? 'Flow Error' : 'Manual OFF'}
+                       sensorStatus().pump.state as string}
                     </span>
                   </div>
                   <div class="stat-desc text-sm">
@@ -916,6 +952,39 @@ function Status() {
                   >
                     Reset Statistics
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sunrise/Sunset Section */}
+          <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">Sunrise & Sunset</h2>
+              <div class="stats w-full shadow bg-base-300">
+                <div class="stat">
+                  <div class="stat-title">Sunrise</div>
+                  <div class="stat-value text-lg">{sunTimes().sunrise}</div>
+                  <div class="stat-desc text-sm">
+                    {formatMinutesToTime(sunTimes().sunrise_minutes)}
+                  </div>
+                </div>
+                
+                <div class="stat">
+                  <div class="stat-title">Sunset</div>
+                  <div class="stat-value text-lg">{sunTimes().sunset}</div>
+                  <div class="stat-desc text-sm">
+                    {formatMinutesToTime(sunTimes().sunset_minutes)}
+                  </div>
+                </div>
+                
+                <div class="stat">
+                  <div class="stat-title">Daylight Duration</div>
+                  <div class="stat-value text-lg">
+                    {sunTimes().sunset_minutes > sunTimes().sunrise_minutes ?
+                      `${sunTimes().sunset_minutes - sunTimes().sunrise_minutes} minutes` :
+                      'N/A'}
+                  </div>
                 </div>
               </div>
             </div>
