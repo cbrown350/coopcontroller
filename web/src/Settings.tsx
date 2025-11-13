@@ -25,6 +25,8 @@ function Settings() {
   const [lightAutoMode, setLightAutoMode] = createSignal<boolean | null>(null)
   const [lightOnHour, setLightOnHour] = createSignal<number | null>(null)
   const [lightOffHour, setLightOffHour] = createSignal<number | null>(null)
+  const [lightBrightnessPercent, setLightBrightnessPercent] = createSignal<number | null>(null)
+  const [lightTransitionDurationMinutes, setLightTransitionDurationMinutes] = createSignal<number | null>(null)
   const [waterFlowErrorTimeoutSeconds, setWaterFlowErrorTimeoutSeconds] = createSignal<number | null>(null)
 
   // Water meter calibration
@@ -73,6 +75,8 @@ function Settings() {
       setLightAutoMode(settings.light_auto_mode ?? null)
       setLightOnHour(settings.light_on_hour ?? null)
       setLightOffHour(settings.light_off_hour ?? null)
+      setLightBrightnessPercent(settings.light_brightness_percent ?? null)
+      setLightTransitionDurationMinutes(settings.light_transition_duration_minutes ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
       setWaterMeterTimeoutSeconds(settings.water_meter_timeout_seconds ?? null)
       setLogLevel(settings.log_level ?? 'INFO')
@@ -143,6 +147,8 @@ function Settings() {
         light_auto_mode: lightAutoMode() ?? false,
         light_on_hour: lightOnHour() ?? 6,
         light_off_hour: lightOffHour() ?? 20,
+        light_brightness_percent: lightBrightnessPercent() ?? 100,
+        light_transition_duration_minutes: lightTransitionDurationMinutes() ?? 5,
         pulses_per_gallon: pulsesPerGallon() ?? 450.0,
         wifi_led_enabled: wifiLedEnabled() ?? true,
         buzzer_enabled: buzzerEnabled() ?? true,
@@ -432,6 +438,30 @@ function Settings() {
             </fieldset>
           </div>
 
+          <h2 class="text-lg font-bold mb-4 mt-10">Light Settings</h2>
+
+          <h2 class="text-lg font-bold mb-4 mt-10">Light Control Settings</h2>
+          
+           <fieldset class="fieldset mt-4">
+             <legend class="fieldset-legend">Light Auto Mode</legend>
+             <div class="form-control">
+               <label class="label cursor-pointer">
+                 <span class="label-text">Enable Automatic Light Control</span>
+                 <input
+                   type="checkbox"
+                   class="toggle toggle-primary"
+                   checked={lightAutoMode() ?? false}
+                   onChange={(e) => setLightAutoMode(e.currentTarget.checked)}
+                 />
+               </label>
+               <label class="label">
+                 <span class="label-text-alt">
+                   Enable automatic light scheduling based on configured ON/OFF hours
+                 </span>
+               </label>
+             </div>
+           </fieldset>
+
           <Show when={lightAutoMode()}>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               <fieldset class="fieldset">
@@ -458,7 +488,27 @@ function Settings() {
             </div>
           </Show>
 
-          {/* Debug settings removed; logging is controlled via Log Level selector below */}
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Max Brightness</legend>
+            <Show when={loaded()}>
+              <input type="number" id="light_brightness_percent" value={lightBrightnessPercent()!} onInput={(e) => setLightBrightnessPercent(parseInt(e.target.value))} placeholder="100" min="0" max="100" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">Maximum brightness level (0-100%)</div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Transition Duration</legend>
+            <Show when={loaded()}>
+              <input type="number" id="light_transition_duration_minutes" value={lightTransitionDurationMinutes()!} onInput={(e) => setLightTransitionDurationMinutes(parseInt(e.target.value))} placeholder="5" min="1" max="60" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">Fade in/out duration in minutes (1-60)</div>
+          </fieldset>
 
           <fieldset class="fieldset mt-4">
             <legend class="fieldset-legend">Log Level</legend>

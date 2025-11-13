@@ -67,6 +67,18 @@ function Status() {
       total_close_time: 0,
       total_cycles: 0,
       next_scheduled_action: 'No scheduled action'
+    },
+    light: {
+      state: 'OFF',
+      current_brightness: 0,
+      target_brightness: 0,
+      max_brightness: 100,
+      fade_progress: 0,
+      auto_mode: false,
+      test_mode: false,
+      total_on_time: 0,
+      total_cycles: 0,
+      next_scheduled_action: 'No scheduled action'
     }
   })
   const [error, setError] = createSignal('')
@@ -435,6 +447,215 @@ function Status() {
               </div>
             </div>
           </Show>
+
+           {/* Light Control Section */}
+           <Show when={sensorStatus().light}>
+             <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
+               <div class="card-body">
+                 <h2 class="card-title">Light Control</h2>
+                 <div class="stats w-full shadow bg-base-300">
+                   <div class="stat">
+                     <div class="stat-title">Light State</div>
+                     <div class={`stat-value text-lg ${sensorStatus().light?.state === 'FAULT' ? 'text-error' :
+                                                   sensorStatus().light?.state === 'FADING_IN' || sensorStatus().light?.state === 'FADING_OUT' ? 'text-warning' :
+                                                   sensorStatus().light?.state === 'ON' ? 'text-success' : 'text-info'}`}>
+                       {sensorStatus().light?.state || 'UNKNOWN'}
+                     </div>
+                     <div class="stat-desc">
+                       {sensorStatus().light?.state === 'FADING_IN' ? 'Fading in' :
+                        sensorStatus().light?.state === 'FADING_OUT' ? 'Fading out' :
+                        sensorStatus().light?.state === 'ON' ? 'Light is on' :
+                        sensorStatus().light?.state === 'OFF' ? 'Light is off' :
+                        sensorStatus().light?.state === 'FAULT' ? 'Light fault detected' :
+                        'Light state unknown'}
+                     </div>
+                     <Show when={sensorStatus().light?.test_mode}>
+                       <div class="stat-desc text-warning">
+                         Test Mode Active
+                       </div>
+                     </Show>
+                   </div>
+
+                   <div class="stat">
+                     <div class="stat-title">Brightness</div>
+                     <div class="stat-value text-lg">
+                       {sensorStatus().light?.current_brightness || 0}%
+                     </div>
+                     <div class="stat-desc">
+                       Max: {sensorStatus().light?.max_brightness || 100}%
+                     </div>
+                     <div class="stat-desc">
+                       <progress
+                         class="progress progress-primary w-full mt-2"
+                         value={sensorStatus().light?.current_brightness || 0}
+                         max={sensorStatus().light?.max_brightness || 100}
+                       />
+                     </div>
+                   </div>
+
+                   <div class="stat">
+                     <div class="stat-title">Auto Mode</div>
+                     <div class={`stat-value text-lg ${sensorStatus().light?.auto_mode ? 'text-success' : 'text-warning'}`}>
+                       {sensorStatus().light?.auto_mode ? 'Enabled' : 'Disabled'}
+                     </div>
+                     <div class="stat-desc">
+                       {sensorStatus().light?.next_scheduled_action || 'No scheduled action'}
+                     </div>
+                   </div>
+                 </div>
+
+                 {/* Light Control Buttons */}
+                 <div class="flex gap-2 mt-4 flex-wrap">
+                   <button
+                     class="btn btn-success btn-sm"
+                     onClick={() => {
+                       fetch('/light/on', { method: 'GET' })
+                         .then(response => {
+                           if (response.ok) {
+                             // Status will be updated on next refresh
+                           }
+                         })
+                         .catch(error => {
+                           console.error('Light on error:', error);
+                         });
+                     }}
+                     disabled={sensorStatus().light?.state === 'ON'}
+                   >
+                     Turn On
+                   </button>
+                   <button
+                     class="btn btn-error btn-sm"
+                     onClick={() => {
+                       fetch('/light/off', { method: 'GET' })
+                         .then(response => {
+                           if (response.ok) {
+                             // Status will be updated on next refresh
+                           }
+                         })
+                         .catch(error => {
+                           console.error('Light off error:', error);
+                         });
+                     }}
+                     disabled={sensorStatus().light?.state === 'OFF'}
+                   >
+                     Turn Off
+                   </button>
+                   <button
+                     class="btn btn-primary btn-sm"
+                     onClick={() => {
+                       fetch('/light/fade_in', { method: 'GET' })
+                         .then(response => {
+                           if (response.ok) {
+                             // Status will be updated on next refresh
+                           }
+                         })
+                         .catch(error => {
+                           console.error('Light fade in error:', error);
+                         });
+                     }}
+                     disabled={sensorStatus().light?.state === 'FADING_IN' || sensorStatus().light?.state === 'ON'}
+                   >
+                     Fade In
+                   </button>
+                   <button
+                     class="btn btn-primary btn-sm"
+                     onClick={() => {
+                       fetch('/light/fade_out', { method: 'GET' })
+                         .then(response => {
+                           if (response.ok) {
+                             // Status will be updated on next refresh
+                           }
+                         })
+                         .catch(error => {
+                           console.error('Light fade out error:', error);
+                         });
+                     }}
+                     disabled={sensorStatus().light?.state === 'FADING_OUT' || sensorStatus().light?.state === 'OFF'}
+                   >
+                     Fade Out
+                   </button>
+                 </div>
+
+                 {/* Brightness Slider */}
+                 <div class="form-control mt-4">
+                   <label class="label">
+                     <span class="label-text">Brightness Control</span>
+                   </label>
+                   <input
+                     type="range"
+                     min="0"
+                     max={sensorStatus().light?.max_brightness || 100}
+                     value={sensorStatus().light?.current_brightness || 0}
+                     class="range range-primary"
+                     aria-label="Light brightness control"
+                     onInput={(e) => {
+                       const brightness = parseInt((e.target as HTMLInputElement).value);
+                       fetch('/light/set_brightness', {
+                         method: 'POST',
+                         headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify({ brightness })
+                       })
+                         .then(response => {
+                           if (response.ok) {
+                             // Status will be updated on next refresh
+                           }
+                         })
+                         .catch(error => {
+                           console.error('Light brightness error:', error);
+                         });
+                     }}
+                   />
+                   <div class="label">
+                     <span class="label-text-alt">0%</span>
+                     <span class="label-text-alt">{sensorStatus().light?.max_brightness || 100}%</span>
+                   </div>
+                 </div>
+
+                 {/* Light Statistics */}
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                   <div class="stat">
+                     <div class="stat-title">Statistics</div>
+                     <div class="stat-desc text-sm">
+                       Total Cycles: {sensorStatus().light?.total_cycles || 0}
+                     </div>
+                     <div class="stat-desc text-sm">
+                       Total On Time: {formatTime(sensorStatus().light?.total_on_time || 0)}
+                     </div>
+                     <button
+                       class="btn btn-xs btn-outline mt-2"
+                       onClick={() => {
+                         fetch('/light/reset_stats', { method: 'GET' })
+                           .then(response => {
+                             if (response.ok) {
+                               // Status will be updated on next refresh
+                             }
+                           })
+                           .catch(error => {
+                             console.error('Light reset stats error:', error);
+                           });
+                       }}
+                     >
+                       Reset Statistics
+                     </button>
+                   </div>
+
+                   <div class="stat">
+                     <div class="stat-title">Fade Progress</div>
+                     <div class="stat-value text-lg">
+                       {sensorStatus().light?.fade_progress || 0}%
+                     </div>
+                     <div class="stat-desc">
+                       <progress
+                         class="progress progress-secondary w-full mt-2"
+                         value={sensorStatus().light?.fade_progress || 0}
+                         max="100"
+                       />
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </Show>
 
           {/* Door Control Section */}
           <Show when={sensorStatus().door}>

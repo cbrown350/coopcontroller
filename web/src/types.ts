@@ -43,6 +43,7 @@ export interface FullSensorStatus {
   pump: PumpStatus;
   system: SystemSettings;
   buzzer: BuzzerStatus;
+  light?: LightStatus;
 }
 
 export interface BuzzerStatus {
@@ -51,6 +52,19 @@ export interface BuzzerStatus {
   has_active_alert: boolean;
   current_alert_type?: string;
   silence_remaining_ms?: number;
+}
+
+export interface LightStatus {
+  state: string; // "OFF" | "ON" | "FADING_IN" | "FADING_OUT" | "FAULT"
+  current_brightness: number;
+  target_brightness: number;
+  max_brightness: number;
+  fade_progress: number;
+  auto_mode: boolean;
+  test_mode: boolean;
+  total_on_time: number;
+  total_cycles: number;
+  next_scheduled_action: string;
 }
 
 export interface SystemStatus {
@@ -76,6 +90,8 @@ export interface Settings {
   light_auto_mode?: boolean;
   light_on_hour?: number;
   light_off_hour?: number;
+  light_brightness_percent?: number;
+  light_transition_duration_minutes?: number;
   water_flow_error_timeout_seconds?: number;
   log_level?: LogLevel | string;
   pulses_per_gallon?: number;

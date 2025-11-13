@@ -23,6 +23,8 @@ const mockSettings = {
   light_auto_mode: false,           // Light auto mode disabled
   light_on_hour: 6,               // Light on at 6 AM
   light_off_hour: 20,              // Light off at 8 PM
+  light_brightness_percent: 100,   // Max brightness 100%
+  light_transition_duration_minutes: 5, // 5 minute fade transitions
   log_level: 'INFO',
   water_flow_error_timeout_seconds: 20, // 20 seconds
   water_meter_timeout_seconds: 300, // 5 minutes timeout
@@ -118,6 +120,18 @@ const getSensorStatus = () => ({
     has_active_alert: false,
     current_alert_type: null,
     silence_remaining_ms: 0
+  },
+  light: {
+    state: "ON",
+    current_brightness: 75,
+    target_brightness: 100,
+    max_brightness: 100,
+    fade_progress: 0,
+    auto_mode: mockSettings.light_auto_mode,
+    test_mode: false,
+    total_on_time: 7200,
+    total_cycles: 5,
+    next_scheduled_action: "Turn OFF in 4h 30m"
   }
 });
 
@@ -212,6 +226,12 @@ async function createServer() {
       if (settings.light_off_hour !== undefined) {
         mockSettings.light_off_hour = settings.light_off_hour;
       }
+      if (settings.light_brightness_percent !== undefined) {
+        mockSettings.light_brightness_percent = settings.light_brightness_percent;
+      }
+      if (settings.light_transition_duration_minutes !== undefined) {
+        mockSettings.light_transition_duration_minutes = settings.light_transition_duration_minutes;
+      }
       if (settings.pulses_per_gallon !== undefined) {
         mockSettings.pulses_per_gallon = settings.pulses_per_gallon;
       }
@@ -287,6 +307,72 @@ async function createServer() {
       res.end(JSON.stringify({ success: true }));
     } else {
       res.status(400).json({ error: 'Invalid sensor' });
+    }
+  });
+
+  app.use("/light/:action", async (req, res) => {
+    const action = req.params.action;
+    try {
+      switch (action) {
+        case 'on':
+          getSensorStatus().light.state = 'ON';
+          getSensorStatus().light.current_brightness = getSensorStatus().light.max_brightness;
+          getSensorStatus().light.fade_progress = 0;
+          break;
+        case 'off':
+          getSensorStatus().light.state = 'OFF';
+          getSensorStatus().light.current_brightness = 0;
+          getSensorStatus().light.fade_progress = 0;
+          break;
+        case 'fade_in':
+          getSensorStatus().light.state = 'FADING_IN';
+          getSensorStatus().light.fade_progress = 50;
+          setTimeout(() => {
+            getSensorStatus().light.state = 'ON';
+            getSensorStatus().light.current_brightness = getSensorStatus().light.max_brightness;
+            getSensorStatus().light.fade_progress = 0;
+          }, 1000);
+          break;
+        case 'fade_out':
+          getSensorStatus().light.state = 'FADING_OUT';
+          getSensorStatus().light.fade_progress = 50;
+          setTimeout(() => {
+            getSensorStatus().light.state = 'OFF';
+            getSensorStatus().light.current_brightness = 0;
+            getSensorStatus().light.fade_progress = 0;
+          }, 1000);
+          break;
+        case 'set_auto':
+          getSensorStatus().light.auto_mode = !getSensorStatus().light.auto_mode;
+          break;
+        case 'reset_stats':
+          getSensorStatus().light.total_on_time = 0;
+          getSensorStatus().light.total_cycles = 0;
+          break;
+        default:
+          return res.status(400).json({ error: 'Invalid action' });
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ success: true }));
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.use("/light/set_brightness", express.json(), async (req, res) => {
+    try {
+      const { brightness } = req.body;
+      if (typeof brightness === 'number' && brightness >= 0 && brightness <= 100) {
+        getSensorStatus().light.current_brightness = brightness;
+        getSensorStatus().light.target_brightness = brightness;
+        getSensorStatus().light.state = brightness > 0 ? 'ON' : 'OFF';
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ success: true }));
+      } else {
+        res.status(400).json({ error: 'Invalid brightness value' });
+      }
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
   });
 
