@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, Show } from 'solid-js'
+import { createSignal, onMount, onCleanup, Show, createEffect } from 'solid-js'
 import { SystemStatus } from './types'
 
 function Status() {
@@ -83,6 +83,8 @@ function Status() {
   })
   const [error, setError] = createSignal('')
 
+   const [localBrightness, setLocalBrightness] = createSignal(0)
+
   // Helpers accept both new string enums and legacy numeric values for backward compatibility.
   const isDallasType = (t: any) => t === 1 || t === 'DALLAS_TEMP'
   const isWaterType = (t: any) => t === 2 || t === 'WATER_METER'
@@ -159,6 +161,28 @@ function Status() {
     }
   }
 
+  const handleBrightnessChange = async (value: number) => {
+    setLocalBrightness(value)
+    
+    // If light is OFF and slider > 0, turn it on first
+    if (sensorStatus()?.light?.state === "OFF" && value > 0) {
+      await fetch('/light/on')
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    
+    const formData = new FormData()
+    formData.append('brightness', value.toString())
+    await fetch('/light/set_brightness', {
+      method: 'POST',
+      body: formData
+    })
+  }
+
+  const debouncedBrightnessChange = (value: number) => {
+    setLocalBrightness(value)
+    handleBrightnessChange(value)
+  }
+
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
@@ -174,6 +198,13 @@ function Status() {
     onCleanup(() => {
       clearInterval(intervalId)
     })
+  })
+
+  createEffect(() => {
+    const light = sensorStatus()?.light
+    if (light) {
+      setLocalBrightness(light.current_brightness)
+    }
   })
 
   return (
@@ -479,7 +510,7 @@ function Status() {
                    <div class="stat">
                      <div class="stat-title">Brightness</div>
                      <div class="stat-value text-lg">
-                       {sensorStatus().light?.current_brightness || 0}%
+                       {localBrightness()}%
                      </div>
                      <div class="stat-desc">
                        Max: {sensorStatus().light?.max_brightness || 100}%
@@ -536,7 +567,7 @@ function Status() {
                            console.error('Light off error:', error);
                          });
                      }}
-                     disabled={sensorStatus().light?.state === 'OFF'}
+                     // disabled={sensorStatus().light?.state === 'OFF'} (reverted)
                    >
                      Turn Off
                    </button>
@@ -553,7 +584,7 @@ function Status() {
                            console.error('Light fade in error:', error);
                          });
                      }}
-                     disabled={sensorStatus().light?.state === 'FADING_IN' || sensorStatus().light?.state === 'ON'}
+                     disabled={sensorStatus().light?.state === 'ON'}
                    >
                      Fade In
                    </button>
@@ -570,7 +601,7 @@ function Status() {
                            console.error('Light fade out error:', error);
                          });
                      }}
-                     disabled={sensorStatus().light?.state === 'FADING_OUT' || sensorStatus().light?.state === 'OFF'}
+                     disabled={sensorStatus().light?.state === 'OFF'}
                    >
                      Fade Out
                    </button>
@@ -585,28 +616,16 @@ function Status() {
                      type="range"
                      min="0"
                      max={sensorStatus().light?.max_brightness || 100}
-                     value={sensorStatus().light?.current_brightness || 0}
+                     value={localBrightness()}
                      class="range range-primary"
                      aria-label="Light brightness control"
                      onInput={(e) => {
                        const brightness = parseInt((e.target as HTMLInputElement).value);
-                       fetch('/light/set_brightness', {
-                         method: 'POST',
-                         headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({ brightness })
-                       })
-                         .then(response => {
-                           if (response.ok) {
-                             // Status will be updated on next refresh
-                           }
-                         })
-                         .catch(error => {
-                           console.error('Light brightness error:', error);
-                         });
+                       debouncedBrightnessChange(brightness);
                      }}
                    />
                    <div class="label">
-                     <span class="label-text-alt">0%</span>
+                     <span class="label-text-alt">{localBrightness()}%</span>
                      <span class="label-text-alt">{sensorStatus().light?.max_brightness || 100}%</span>
                    </div>
                  </div>
