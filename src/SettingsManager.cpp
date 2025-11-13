@@ -30,7 +30,7 @@ bool SettingsManager::load() {
     String content = file.readString();
     file.close();
 
-    DynamicJsonDocument doc(4096);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, content);
     
     if (error) {
@@ -101,7 +101,7 @@ bool SettingsManager::load() {
 }
 
 bool SettingsManager::save() {
-    DynamicJsonDocument doc(4096);
+    JsonDocument doc;
     
     // WiFi settings
     doc["ssid"] = settings.ssid;
@@ -569,7 +569,7 @@ void SettingsManager::factoryReset() {
 }
 
 String SettingsManager::toJson(bool includePassword) const {
-    DynamicJsonDocument doc(4096);
+    JsonDocument doc;
     
     // WiFi settings
     doc["ssid"] = settings.ssid;
