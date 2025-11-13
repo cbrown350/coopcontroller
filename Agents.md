@@ -9,16 +9,17 @@
 6. [Pin Configuration](#pin-configuration)
 7. [Dependencies](#dependencies)
 8. [Implemented Features](#implemented-features)
-9. [Planned Features](#planned-features)
-10. [Development Environment](#development-environment)
-11. [API Documentation](#api-documentation)
-12. [Coding Style Guidelines](#coding-style-guidelines)
-13. [Component/Feature Creation Rules](#componentfeature-creation-rules)
-14. [Testing & Quality Assurance](#testing--quality-assurance)
-15. [Pull Request and Collaboration Guidelines](#pull-request-and-collaboration-guidelines)
-16. [Troubleshooting](#troubleshooting)
-17. [Restricted or Sensitive Files](#restricted-or-sensitive-files)
-18. [Additional Notes](#additional-notes)
+9. [Recent Critical Fixes](#recent-critical-fixes)
+10. [Planned Features](#planned-features)
+11. [Development Environment](#development-environment)
+12. [API Documentation](#api-documentation)
+13. [Coding Style Guidelines](#coding-style-guidelines)
+14. [Component/Feature Creation Rules](#componentfeature-creation-rules)
+15. [Testing & Quality Assurance](#testing--quality-assurance)
+16. [Pull Request and Collaboration Guidelines](#pull-request-and-collaboration-guidelines)
+17. [Troubleshooting](#troubleshooting)
+18. [Restricted or Sensitive Files](#restricted-or-sensitive-files)
+19. [Additional Notes](#additional-notes)
 
 ---
 
@@ -29,7 +30,7 @@
 - **Temperature Monitoring** - Dual sensor inputs supporting Dallas temperature sensors or water meters with automatic detection
 - **Water System Management** - Automated pump control with freeze prevention and water flow monitoring
 - **Door Automation** - Motorized door control with safety sensors (planned)
-- **Lighting Control** - PWM-based automated lighting with smooth transitions; the web server UI still needs to be implemented for light control
+- **Lighting Control** - PWM-based automated lighting with smooth sine-wave transitions; fully implemented with web UI
 - **Remote Monitoring** - Web-based UI with real-time status updates
 - **Alert System** - Email/Telegram notifications for critical events (planned)
 - **AI Integration** - Weather-based decision making for daily operations (planned)
@@ -38,8 +39,10 @@ The project uses Platform.io for firmware development and features a modern Soli
 
 **Implementation Status:**
 - Phase 3 (Hardware I/O): 100% complete
-- Core features: Sensors, Pump, Light controllers implemented but light web UI pending
-- Current build: RAM 17.7% (58,248 bytes), Flash 80.8% (1,058,350 bytes)
+- Phase 3.5 (Sunrise/Sunset Integration): 100% complete with accurate UTC to local time conversion
+- Phase 3.6 (Light Control with Web UI): 100% complete
+- Core features: Sensors, Pump, Light controllers fully implemented with complete web UI
+- Current build: RAM 17.7% (58,248 bytes), Flash 82.0% (1,074,145 bytes)
 - Ready for Phase 4 (External Service Integrations)
 
 **Key References:**
@@ -109,10 +112,10 @@ graph TB
     
     subgraph "Firmware Components"
         MAIN[main.cpp]
-        TEMP_MGR[TempSensor Manager]
+        TEMP_MGR[SensorManager]
         PUMP_CTRL[PumpController]
         DOOR_CTRL[DoorController]
-        LIGHT_CTRL[Light Controller]
+        LIGHT_CTRL[LightController]
         SETTINGS[SettingsManager]
         LOGGER[Logger System]
         WEB[WebServer]
@@ -186,7 +189,7 @@ graph TB
 5. **Logging** - Maintains in-memory buffer, optional syslog forwarding
 
 **Data Flow:**
-- Sensors → TempSensor → PumpController → Physical Output
+- Sensors → SensorManager → PumpController → Physical Output
 - User Input (Web UI) → WebServer → SettingsManager → LittleFS Storage
 - Status Queries → WebServer → Components → JSON Response
 - Alerts → Logger → Syslog/Email/Telegram (when implemented)
@@ -204,24 +207,26 @@ graph TB
 ```
 coop_controller/
 ├── include/                     # Header files
-│   ├── Buzzer.h                # Buzzer control (planned)
+│   ├── BuzzerController.h      # Buzzer control (planned)
 │   ├── DoorController.h        # Door automation (planned)
-│   ├── Light.h                 # Light control (planned)
+│   ├── LightController.h       # Light control (implemented)
 │   ├── Logger.h                # Logging system
 │   ├── PumpController.h        # Pump control logic
+│   ├── SensorManager.h         # Temperature/water meter handling
 │   ├── SettingsManager.h       # Configuration management
-│   ├── TempSensor.h            # Temperature/water meter handling
+│   ├── SunriseSunset.h         # Sunrise/sunset calculations
 │   └── WebServer.h             # HTTP server and REST API
 │
 ├── src/                        # Implementation files
-│   ├── Buzzer.cpp
+│   ├── BuzzerController.cpp
 │   ├── DoorController.cpp
-│   ├── Light.cpp
+│   ├── LightController.cpp
 │   ├── Logger.cpp
 │   ├── main.cpp                # Main entry point and loop
 │   ├── PumpController.cpp
+│   ├── SensorManager.cpp
 │   ├── SettingsManager.cpp
-│   ├── TempSensor.cpp
+│   ├── SunriseSunset.cpp
 │   └── WebServer.cpp
 │
 ├── data/                       # Filesystem data (LittleFS)
@@ -481,7 +486,7 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 
 ### Core Components
 
-#### TempSensor Manager ([`TempSensor.h`](include/TempSensor.h:1) / [`TempSensor.cpp`](src/TempSensor.cpp))
+#### SensorManager ([`SensorManager.h`](include/SensorManager.h:1) / [`SensorManager.cpp`](src/SensorManager.cpp))
 - **Dual-purpose sensor inputs** - Automatically detects and configures Dallas DS18B20 temperature sensors or water meter pulse inputs on startup. Each pin is independently tested for Dallas sensor first; if none found, it's configured as a water meter input.
 - **Temperature readings** - Fahrenheit conversion from Celsius with configurable thresholds,TODO: add setting to display in web UI either C or F
 - **Water flow monitoring** - Interrupt-driven pulse counting with atomic operations for thread safety
@@ -530,14 +535,24 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 
 #### LightController ([`LightController.h`](include/LightController.h:1) / [`LightController.cpp`](src/LightController.cpp))
 - **PWM dimming control** - ESP32 LEDC (LED Control) peripheral with 8-bit resolution
-- **Sine curve transitions** - Smooth fade-in/fade-out following natural lighting curves
+- **Sine curve transitions** - Smooth fade-in/fade-out following natural lighting curves for auto mode
+- **Immediate manual response** - Manual controls work instantly without unwanted fade transitions
 - **Configurable timing** - Separate ON/OFF hours with transition duration settings
 - **Manual control modes** - Force ON, force OFF, or AUTO mode
 - **Timer functionality** - Manual ON with configurable duration (15min, 30min, 1hr, 2hr, 4hr)
 - **State machine** - Handles OFF, FADING_IN, ON, FADING_OUT, MANUAL states
 - **Settings integration** - Auto mode flag, brightness levels, ON/OFF hours, fade duration
 - **REST API** - Manual control endpoints and status reporting
-- **Note:** Web UI implementation pending in Status.tsx and Settings.tsx
+- **Web UI complete** - Full implementation in Status.tsx (controls) and Settings.tsx (configuration)
+
+#### SunriseSunset ([`SunriseSunset.h`](include/SunriseSunset.h:1) / [`SunriseSunset.cpp`](src/SunriseSunset.cpp))
+- **Accurate calculations** - Uses SolarCalculator library for precise sunrise/sunset times
+- **UTC to local time** - Automatic conversion from UTC to configured timezone offset
+- **Location-based** - Configurable latitude/longitude in settings
+- **Timezone support** - User-configurable UTC offset (e.g., -7 for Mountain Time)
+- **Automatic updates** - Recalculates when location or timezone settings change
+- **Web UI display** - Shows current sunrise/sunset times in Status and Settings pages
+- **Ready for automation** - Foundation for door scheduling and light timing enhancements
 
 ### Sensor Management
 - Automatic sensor type detection on startup (Dallas temperature vs water meter) - Each pin independently tested for Dallas sensor first; if none found, configured as water meter
@@ -557,10 +572,12 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 - State machine implementation for reliable state transitions
 
 ### Web Interface
-- **Real-time status dashboard** - Sensor readings, pump state, system info
+- **Real-time status dashboard** - Sensor readings, pump state, light status, sunrise/sunset times, system info
 - **Auto-refresh** - Status updates every 2.5 seconds
 - **Manual pump controls** - ON/OFF/AUTO buttons with immediate feedback
-- **Settings management** - All system parameters configurable
+- **Light controls** - ON/OFF/AUTO buttons, timer selection, brightness display
+- **Sunrise/Sunset display** - Shows calculated times based on location and timezone
+- **Settings management** - All system parameters configurable including light settings
 - **WiFi configuration** - SSID/password entry with AP mode fallback
 - **System logs** - Scrollable log viewer with timestamps
 - **OTA updates** - Firmware and filesystem update interface
@@ -575,6 +592,49 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 - **Automatic reconnection** - Monitors connection and retries if dropped
 - **mDNS support** - Accessible at `coopcontroller.local` on local network
 - **Configurable timeouts** - AP mode duration, retry intervals
+
+---
+
+## Recent Critical Fixes
+
+Recent bug fixes and improvements that addressed critical issues:
+
+### 1. Sunrise/Sunset UTC to Local Time Conversion
+**Issue:** Sunrise/sunset calculations were displaying incorrect times due to UTC conversion errors.
+
+**Fix:**
+- Implemented proper UTC to local time conversion using timezone offset
+- Added automatic recalculation when location or timezone settings change
+- Calculations now accurately reflect user's local time
+- Web UI displays correct sunrise/sunset times in Status and Settings pages
+
+**Status:** ✅ Complete
+
+### 2. Light Control Regression - Manual vs Auto Mode Fading
+**Issue:** Manual light controls were triggering unwanted fade transitions, making immediate control difficult. Auto mode wasn't properly using sine-wave fades.
+
+**Fix:**
+- Manual controls (ON/OFF/Timer) now respond immediately without fade transitions
+- Auto mode properly implements sine-wave fade-in/fade-out for natural lighting
+- State machine correctly differentiates between MANUAL and AUTO states
+- User can now immediately control lights when needed while auto mode provides smooth transitions
+
+**Status:** ✅ Complete
+
+### 3. Component Naming Refactoring
+**Issue:** Component names didn't accurately reflect their functionality, causing confusion.
+
+**Changes:**
+- `TempSensor` → [`SensorManager`](include/SensorManager.h:1) - Better reflects dual-purpose sensor management
+- `Buzzer` → [`BuzzerController`](include/BuzzerController.h:1) - Consistent naming with other controllers
+- `Light` → [`LightController`](include/LightController.h:1) - Consistent naming with other controllers
+
+**Benefits:**
+- Improved code clarity and maintainability
+- Consistent naming pattern across all controller classes
+- More accurate representation of component responsibilities
+
+**Status:** ✅ Complete
 
 ---
 
@@ -602,7 +662,7 @@ Features organized by priority and implementation status.
 
 #### Water Meter Calibration
 - Make pulse-to-gallons conversion factor configurable from web UI
-- Currently hardcoded in TempSensor constructor
+- Currently hardcoded in SensorManager constructor
 - Allow users to calibrate based on their specific water meter model
 - Store calibration factor in settings
 
@@ -659,13 +719,6 @@ Features organized by priority and implementation status.
 - Prevents system lockup
 - Log watchdog resets for debugging
 
-#### Sunrise/Sunset Integration
-- Implement full sunrise/sunset calculations using SolarCalculator library
-- Display current sunrise/sunset times in web UI (Settings and Status pages)
-- Use for door automation scheduling
-- Use for light scheduling enhancements (future)
-- Configurable location (latitude/longitude) in settings
-- Update calculations daily based on location
 
 #### Automatic Door Close After Sunset
 - Add setting `door_auto_close_after_sunset_enabled` (boolean, default false)
@@ -762,13 +815,6 @@ Features organized by priority and implementation status.
 
 ### Medium Priority - UI Improvements
 
-#### Light Control Web UI Implementation
-- Add light controls to Status.tsx (manual ON/OFF/AUTO, timer selection)
-- Add light settings to Settings.tsx (auto mode, brightness, hours, fade duration)
-- Display current light state and brightness level
-- Show remaining time for manual timer mode
-- Real-time updates of light status
-- Match existing UI patterns and styling
 
 #### Event-Driven Web UI Updates
 - Replace polling-based status updates with Server-Sent Events (SSE) or WebSockets
@@ -866,8 +912,6 @@ Features organized by priority and implementation status.
 - PWA capabilities for app-like experience
 
 #### Component Refactoring
-- Rename TempSensor to SensorManager (more accurate)
-- Update web components to match
 - Change enums to enum class for type safety
 - Update web server JSON handling to use string states for enum classes instead of numeric values for enums
 
@@ -1238,6 +1282,11 @@ Serves static assets (CSS, JS, images) compressed with gzip.
 ---
 
 ## Coding Style Guidelines
+
+- All code must use the standards for the latest versions of libraries and frameworks
+- Must not use deprecated APIs, features, functions, or methods
+- Follow best practices for C++ and JavaScript/TypeScript
+- Ensure code is well-documented and maintainable
 
 ### C++ Code Standards
 
