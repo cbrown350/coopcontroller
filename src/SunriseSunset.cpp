@@ -130,5 +130,5 @@ bool SunriseSunsetCalculator::shouldCalculate() const {
   }
   
   // Check if 24 hours have passed
-  return (now - lastCalculation_) >= 86400; // 24 * 60 * 60
+  return (now - lastCalculation_) >= 86400/2; // 24 * 60 * 60 - twice a day
 }
