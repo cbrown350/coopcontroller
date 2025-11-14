@@ -72,6 +72,8 @@ class SettingsManager
 
     SettingsManager(const SettingsManager &)            = delete;
     SettingsManager &operator=(const SettingsManager &) = delete;
+    
+    String loadFile();
 
    public:
     static SettingsManager &getInstance();
@@ -123,6 +125,7 @@ class SettingsManager
     int    getWifiAPDurationMinutes();
     int    getWatchdogTimeoutSeconds();
     bool   getWifiLedEnabled() const;
+    bool   getWifiChanged() const;
     
     // Buzzer settings getters
     bool   getBuzzerEnabled() const;
@@ -176,6 +179,7 @@ class SettingsManager
     void setWifiAPDurationMinutes(int minutes);
     void setWatchdogTimeoutSeconds(int seconds);
     void setWifiLedEnabled(bool enabled);
+    void setWifiChanged(bool changed);
     
     // Buzzer settings setters
     void setBuzzerEnabled(bool enabled);

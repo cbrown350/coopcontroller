@@ -13,10 +13,7 @@ SettingsManager &SettingsManager::getInstance() {
     return instance;
 }
 
-bool SettingsManager::load() {
-    if (isLoaded) {
-        return true;
-    }
+String SettingsManager::loadFile() {    
 
     File file = LittleFS.open("/user_settings.json", "r");
     if (!file) {
@@ -24,11 +21,23 @@ bool SettingsManager::load() {
         // Set default values
         settings = user_settings{};
         isLoaded = true;
-        return false;
+        return "";
     }
 
     String content = file.readString();
     file.close();
+    return content;
+}
+
+bool SettingsManager::load() {
+    if (isLoaded) {
+        return true;
+    }
+
+    String content = loadFile();
+    if (content.isEmpty()) {
+        return false; // already logged in loadFile
+    }
 
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, content);
@@ -101,6 +110,18 @@ bool SettingsManager::load() {
 }
 
 bool SettingsManager::save() {
+    String content = loadFile(); 
+    // check if wifi settings have changed  
+    if (content.indexOf("\"ssid\": \"" + settings.ssid + "\"") == -1 ||
+        content.indexOf("\"passwd\": \"" + settings.passwd + "\"") == -1) {
+        wifiChanged = true;
+        settings.ap_mode = false; // disable AP mode if SSID or password changed
+    }   
+    if (content.indexOf("\"ap_mode\": " + String(settings.ap_mode ? "true" : "false")) == -1) {
+        wifiChanged = true;
+    } 
+    
+
     JsonDocument doc;
     
     // WiFi settings
@@ -288,6 +309,10 @@ bool SettingsManager::getWifiLedEnabled() const {
     return settings.wifi_led_enabled;
 }
 
+bool SettingsManager::getWifiChanged() const {
+    return wifiChanged;
+}
+
 // Buzzer settings getters
 bool SettingsManager::getBuzzerEnabled() const {
     return settings.buzzer_enabled;
@@ -342,18 +367,21 @@ int SettingsManager::getDoorAutoCloseAfterSunsetMinutes() const {
 
 // WiFi setters
 void SettingsManager::setSSID(const String &ssid) {
+    // if (settings.ssid != ssid)
+    //     wifiChanged = true;
     settings.ssid = ssid;
-    wifiChanged = true;
 }
 
 void SettingsManager::setPassword(const String &password) {
+    // if (settings.passwd != password)
+    //     wifiChanged = true;
     settings.passwd = password;
-    wifiChanged = true;
 }
 
 void SettingsManager::setAPMode(bool apMode) {
+    // if (settings.ap_mode != apMode)
+    //     wifiChanged = true;
     settings.ap_mode = apMode;
-    wifiChanged = true;
 }
 
 void SettingsManager::setPumpAutoMode(bool mode) {
@@ -442,6 +470,10 @@ void SettingsManager::setWatchdogTimeoutSeconds(int seconds) {
 
 void SettingsManager::setWifiLedEnabled(bool enabled) {
     settings.wifi_led_enabled = enabled;
+}
+
+void SettingsManager::setWifiChanged(bool changed) {
+    wifiChanged = changed;
 }
 
 // Buzzer settings setters

@@ -1,7 +1,5 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
-#include <WiFi.h>
-#include <ESPmDNS.h>
 
 #include "LittleFS.h"
 #include "Logger.h"
@@ -17,6 +15,7 @@
 #include "LightController.h"
 #include "DoorController.h"
 #include "SunriseSunset.h"
+#include "WifiController.h"
 
 
 
@@ -40,8 +39,6 @@ const char* hostName      = (strcmp(TOSTRING(HOST_NAME), "") == 0) ? "coopcontro
 const char* otaPasswd      = (strcmp(TOSTRING(OTA_PASSWD), "") == 0 || strcmp(TOSTRING(OTA_PASSWD), "1") == 0) ? "" : TOSTRING(OTA_PASSWD);
 const char* apPasswd      = (strcmp(TOSTRING(AP_PASSWD), "") == 0 || strcmp(TOSTRING(AP_PASSWD), "1") == 0) ? "" : TOSTRING(AP_PASSWD);
 
-#define WIFI_CHECK_INTERVAL 30000     // Check WiFi every 30 seconds
-#define WIFI_RECONNECT_TIMEOUT 10000  // Wait 10 seconds for reconnection
 #define SENSOR_UPDATE_INTERVAL 5000    // Update sensors every 5 seconds
 #define PUMP_UPDATE_INTERVAL 1000     // Update pump controller every 1 second
 #define DOOR_UPDATE_INTERVAL 100      // Update door controller every 100ms for faster response
@@ -61,48 +58,16 @@ DoorController doorController;
 LightController lightController;
 SunriseSunsetCalculator sunriseSunset;
 
-// Variables to track WiFi connection monitoring
-unsigned long lastWifiCheck      = 0;
-unsigned long wifiReconnectStart = 0;
-unsigned long wifiAPModeStart     = 0;
-bool          isReconnecting     = false;
-bool          isInAPMode         = false;
-int           wifiRetryCount       = 0;
+WifiController wifiController(&settingsManager, &buzzerController, hostName, apPasswd);
+
+
+
 
 // Timing variables for coop controller
 unsigned long lastSensorUpdate = 0;
 unsigned long lastPumpUpdate = 0;
 unsigned long lastDoorUpdate = 0;
 unsigned long lastLightUpdate = 0;
-// WiFi LED control variables
-unsigned long lastLedToggle = 0;
-bool ledState = false;
-
-// If wifi fails, revert to AP mode and restart;
-void failWifi()
-{
-    // Only revert to AP mode if WiFi has never successfully connected
-    if (!settingsManager.getHasConnected())
-    {
-        settingsManager.setAPMode(true);
-        if (settingsManager.save())
-        {
-            logger.log("Failed to connect to wifi, reverted to AP mode");
-        }
-        else
-        {
-            logger.log("Failed to update settings");
-        }
-
-        delay(1000);  // Give time for serial output
-        ESP.restart();
-    }
-    else
-    {
-        logger.log("WiFi connection failed, retrying in 30 seconds");
-        // Don't restart, just continue trying to reconnect in checkWifiConnection()
-    }
-}
 
 // Watchdog reset handler - called when watchdog triggers
 void IRAM_ATTR watchdogResetHandler() {
@@ -111,191 +76,6 @@ void IRAM_ATTR watchdogResetHandler() {
     // The actual logging will be done by watchdog reset itself
     // This is just for any last-minute cleanup if needed
 }
-
-void wifiSetup()
-{
-    if (settingsManager.isAPMode())
-    {
-        logger.log("Starting AP mode");
-        if (apPasswd && strlen(apPasswd) >= 0) {
-            WiFi.softAP(hostName, apPasswd);
-            Serial.println("AP password set: " + String(apPasswd));
-        } else {
-            WiFi.softAP(hostName, NULL);
-        }
-        WiFi.softAPsetHostname(hostName); 
-        logger.log("AP mode started, IP address: " + WiFi.softAPIP().toString());
-        isInAPMode = true;
-        wifiAPModeStart = millis();
-        
-        // Add logging for WiFi task status
-        logger.logf("WiFi AP mode started on core %d", xPortGetCoreID());
-        logger.logf("Current WiFi task handle: %p", xTaskGetCurrentTaskHandle());
-    }
-    else
-    {
-        String ssid = settingsManager.getSSID();
-        String password = settingsManager.getPassword();
-        
-        if (ssid.length() == 0) {
-            logger.log("No SSID configured, falling back to AP mode");
-            settingsManager.setAPMode(true);
-            settingsManager.save();
-            delay(1000);
-            ESP.restart();
-            return;
-        }
-        
-        if (hostName && strlen(hostName) > 0) {
-            WiFi.setHostname(hostName); // Need to set hostname in all places for mDNS to work
-            logger.logf("Hostname set to: %s", hostName);
-        } 
-        WiFi.persistent(false); // Fix for issues with reconnection, credentials are stored in settingsManager
-        logger.logf("Connecting to WiFi: %s", ssid.c_str());
-        WiFi.begin(ssid.c_str(), password.c_str());
-        
-        int maxRetries = settingsManager.getWifiMaxRetries();
-        int retryDelay = settingsManager.getWifiRetryDelaySeconds();
-
-        wifiRetryCount = 0;
-        while (!WiFi.isConnected() && wifiRetryCount < maxRetries)
-        {            
-            esp_task_wdt_reset();  
-
-            Serial.print('.');
-            delay(retryDelay * 1000);
-            wifiRetryCount++;  
-
-            // Add some debugging
-            logger.logDebug(String("WiFi status: ") + String(WiFi.status()) + ", attempt " + String(wifiRetryCount) + "/" + String(maxRetries));
-        }
-
-        Serial.println();
-        
-        if (WiFi.isConnected()) {
-            logger.log("WiFi Connected, IP address: " + WiFi.localIP().toString());
-            isInAPMode = false;
-            
-            if (hostName && strlen(hostName) > 0) {
-                int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !MDNS.begin(hostName)) {
-                    Serial.println("Starting mDNS...");
-                    delay(1000);
-                    mDNSRetries--;
-                }
-                
-                Serial.println("MDNS started"); 
-            }
-
-            // Mark that WiFi has successfully connected at least once
-            if (!settingsManager.getHasConnected()) {
-                settingsManager.setHasConnected(true);
-                settingsManager.save();
-                logger.log("First successful WiFi connection recorded");
-            }
-            
-            // Add logging for WiFi task status
-            logger.logf("WiFi connected on core %d", xPortGetCoreID());
-            logger.logf("Current WiFi task handle: %p", xTaskGetCurrentTaskHandle());
-        } else {
-            logger.logf("Failed to connect to WiFi after %d attempts", wifiRetryCount);
-            failWifi();
-        }
-    }
-}
-
-void checkWifiConnection()
-{
-    // Check if we're in AP mode and need to retry WiFi connection
-    if (isInAPMode) {
-        unsigned long apDuration = settingsManager.getWifiAPDurationMinutes() * 60000; // Convert to milliseconds
-        if (millis() - wifiAPModeStart >= apDuration && !settingsManager.getSSID().isEmpty()){
-          logger.log("AP mode duration expired, attempting WiFi connection");
-          settingsManager.setAPMode(false);
-          settingsManager.save();
-          delay(1000);
-          ESP.restart();
-        }
-        return;
-    }
-
-    // Skip check if already in AP mode
-    if (settingsManager.isAPMode())
-    {
-        return;
-    }
-
-    // Check if WiFi is connected
-    if (!WiFi.isConnected())
-    {
-        if (!isReconnecting)
-        {
-            logger.log("WiFi disconnected, attempting to reconnect...");
-            buzzerController.triggerAlert(AlertType::WIFI_DISCONNECTED);
-            String ssid = settingsManager.getSSID();
-            String password = settingsManager.getPassword();
-            
-            if (ssid.length() > 0) {
-                WiFi.begin(ssid.c_str(), password.c_str());
-                wifiReconnectStart = millis();
-                isReconnecting = true;
-                wifiRetryCount = 0;
-                
-                logger.logDebug(String("Starting WiFi reconnection to ") + String(ssid.c_str()));
-            } else {
-                logger.log("No SSID configured for reconnection");
-                failWifi();
-            }
-        }
-        else
-        {
-            // Check if reconnection timeout has elapsed
-            int maxRetries = settingsManager.getWifiMaxRetries();
-            int retryDelay = settingsManager.getWifiRetryDelaySeconds();
-            
-            if (millis() - wifiReconnectStart >= (retryDelay * 1000 * maxRetries))
-            {
-                logger.log("WiFi reconnection timeout, switching to AP mode");
-                settingsManager.setAPMode(true);
-                settingsManager.save();
-                delay(1000);
-                ESP.restart();
-            }
-        }
-    }
-    else
-    {
-        // WiFi is connected, reset reconnection state
-        if (isReconnecting)
-        {
-            logger.log("WiFi reconnected successfully");
-            isReconnecting = false;
-            
-            // Clear WiFi disconnected alert when reconnected
-            buzzerController.clearAlert(AlertType::WIFI_DISCONNECTED);
-            
-            
-            if (hostName && strlen(hostName) > 0) {
-                int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !MDNS.begin(hostName)) {
-                    Serial.println("Starting mDNS...");
-                    delay(1000);
-                    mDNSRetries--;
-                }
-                
-                Serial.println("MDNS started"); 
-            }
-
-            // Mark that WiFi has successfully connected at least once
-            if (!settingsManager.getHasConnected())
-            {
-                settingsManager.setHasConnected(true);
-                settingsManager.save();
-            }
-        }
-    }
-}
-
 
 void setup()
 {
@@ -325,16 +105,11 @@ void setup()
     // Load settings early
     settingsManager.load();
 
-    // Initialize WiFi status LED
-    if (settingsManager.getWifiLedEnabled()) {
-        pinMode(WIFI_LED_B_PIN, OUTPUT);
-        digitalWrite(WIFI_LED_B_PIN, HIGH); // Turn off LED initially (assuming active LOW)
-        logger.logInfo("WiFi status LED initialized on pin " + String(WIFI_LED_B_PIN));
-    }
     // Initialize coop controller components
     tempSensor.begin();
     pumpController.begin();
     buzzerController.begin();
+    wifiController.begin();
     doorController.begin();
     lightController.begin();
     
@@ -368,7 +143,6 @@ void setup()
         logger.logError(String("Failed to initialize Task Watchdog Timer: ") + String(esp_err_to_name(wdtResult)));
     }
 
-    wifiSetup();
     logger.log("NTP time synchronization started");
     configTime(0, 0, ntpServer);
     
@@ -393,40 +167,16 @@ unsigned long getTime()
     time(&now);
     return now;
 }
-// Update WiFi status LED based on connection state
-void updateWifiLed() {
-    unsigned long currentMillis = millis();
-    unsigned long interval;
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        // Heartbeat pattern: 50ms ON, 1950ms OFF
-        if (!ledState) {
-            interval = 50;
-        } else {
-            interval = 1950;
-        }
-    } else if (settingsManager.isAPMode()) {
-        // AP mode: 250ms ON, 250ms OFF
-        interval = 250;
-    } else {
-        // Disconnected: OFF
-        // digitalWrite(WIFI_LED_B_PIN, HIGH);
-        interval = 50;//ULONG_MAX; // Effectively disable toggling
-    }
-    
-    if (currentMillis - lastLedToggle >= interval) {
-        lastLedToggle = currentMillis;
-        ledState = !ledState;
-        digitalWrite(WIFI_LED_B_PIN, ledState ? HIGH : LOW);
-    }
-}
 
 void loop()
 {
     // put your main code here, to run repeatedly:
     // Feed the watchdog timer at the start of each loop iteration
     esp_task_wdt_reset();    
-
+    
+    // Update WiFi controller every loop iteration (handles internal timing)
+    wifiController.update();
+    
     // Log watchdog status every 1000 loops for verbose logging
     static unsigned long loopCount = 0;
     loopCount++;
@@ -434,19 +184,13 @@ void loop()
         logger.logVerbose(String("Watchdog fed at loop iteration ") + String(loopCount));
     }
 
-    // Check WiFi connection periodically
-    unsigned long currentTime = millis();
-
     // Check if restart is requested
+    unsigned long currentTime = millis();
     if (settingsManager.requestRestartAt > 0 && currentTime >= settingsManager.requestRestartAt)
     {
-        logger.log("Restarting device due to WiFi settings change...");
+        logger.logWarning("Restarting device due to WiFi settings change...");
+        delay(1000); // Allow time for log to be sent
         ESP.restart();
-    }
-    if (currentTime - lastWifiCheck >= WIFI_CHECK_INTERVAL)
-    {
-        lastWifiCheck = currentTime;
-        checkWifiConnection();
     }
 
     // Update temperature sensors
@@ -583,7 +327,7 @@ void loop()
     static unsigned long lastSensorLog = 0;
     if (currentTime - lastSensorLog >= 30000) { // Log every 30 seconds
         lastSensorLog = currentTime;
-        float threshold = settingsManager.getTempThresholdOnF();
+
         if (tempSensor.isSensor1Connected()) {
             logger.logfDebug("Sensor 1 (Pin %d): %.1f°F %s", TEMP_METER_PIN, tempSensor.getTemperature1F(),
                        tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "(Temperature)" : "(Water Meter)");
@@ -605,8 +349,11 @@ void loop()
         if (isnan(currentTemp)) {
             currentTemp = tempSensor.getTemperature2F();
         }
+
+        float threshold = settingsManager.getTempThresholdOnF();
         bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold();
         if (!isnan(currentTemp)) {
+
             if (tempBelowThreshold) {
                 logger.logf("Temperature below threshold (%.1f°F < %.1f°F)", currentTemp, threshold);
             } else {
@@ -617,11 +364,6 @@ void loop()
         }
     }
 
-    // Update WiFi LED status
-    if (settingsManager.getWifiLedEnabled()) {
-        updateWifiLed();
-    }
-    
     // Update buzzer controller
     buzzerController.update();
     

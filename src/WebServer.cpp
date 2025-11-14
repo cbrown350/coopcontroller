@@ -9,6 +9,7 @@
 #include "DoorController.h"
 #include "LightController.h"
 #include "SunriseSunset.h"
+#include "WifiController.h"
 
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
@@ -28,6 +29,7 @@ extern PumpController pumpController;
 extern BuzzerController buzzerController;
 extern DoorController doorController;
 extern LightController lightController;
+extern WifiController wifiController;
 
 // External reference to sunrise/sunset calculator
 extern SunriseSunsetCalculator sunriseSunset;
@@ -43,6 +45,8 @@ void WebServer::begin()
               [](AsyncWebServerRequest *request)
               {
                   String jsonResponse = settingsManager.toJson(false);
+                  // add hostName 
+                  jsonResponse.replace("}", ",\"hostname\":\"" + String(hostName) + "\"}");
                   request->send(200, "application/json", jsonResponse);
               });
 
@@ -658,9 +662,9 @@ void WebServer::begin()
                   jsonDoc["flash_size"] = ESP.getFlashChipSize();
                   
                   // WiFi information (if connected)
-                  if (WiFi.status() == WL_CONNECTED) {
-                      jsonDoc["wifi_rssi"] = WiFi.RSSI();
-                      jsonDoc["wifi_ssid"] = WiFi.SSID();
+                  if (wifiController.isConnected()) {
+                      jsonDoc["wifi_rssi"] = wifiController.getRSSI();
+                      jsonDoc["wifi_ssid"] = wifiController.getSSID();
                   } else {
                       jsonDoc["wifi_rssi"] = 0;
                       jsonDoc["wifi_ssid"] = "Not Connected";

@@ -4,7 +4,7 @@
 
 #include "SettingsManager.h"
 
-#include <WiFi.h>
+#include "WifiController.h"
 
 
 extern const char* hostName;
@@ -13,6 +13,8 @@ extern const char* syslogPort;
 
 // External function to get current time (from main.cpp)
 extern unsigned long getTime();
+
+extern WifiController wifiController;
 
 Logger &Logger::getInstance()
 {
@@ -53,7 +55,7 @@ void Logger::log(const String &message)
     // Print to serial with timestamp
     Serial.printf("[%lu] %s\n", timestamp, message.c_str());
 
-    if (syslog != nullptr && WiFi.isConnected())
+    if (syslog != nullptr && wifiController.isConnected())
       syslog->printf(FAC_USER, PRI_DEBUG, (char*) "[%lu] %s", timestamp, message.c_str());
 
     // Generate UUID for this log entry
@@ -106,7 +108,7 @@ void Logger::logWithLevel(const String &message, LogLevel level)
     // Print to serial with timestamp and level
     Serial.printf("[%lu] %s\n", timestamp, fullMessage.c_str());
 
-    if (syslog != nullptr && WiFi.isConnected())
+    if (syslog != nullptr && wifiController.isConnected())
       syslog->printf(FAC_USER, PRI_DEBUG, (char*) "[%lu] %s", timestamp, fullMessage.c_str());
 
     // Generate UUID for this log entry
