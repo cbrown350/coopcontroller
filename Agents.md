@@ -15,11 +15,12 @@
 12. [API Documentation](#api-documentation)
 13. [Coding Style Guidelines](#coding-style-guidelines)
 14. [Component/Feature Creation Rules](#componentfeature-creation-rules)
-15. [Testing & Quality Assurance](#testing--quality-assurance)
-16. [Pull Request and Collaboration Guidelines](#pull-request-and-collaboration-guidelines)
-17. [Troubleshooting](#troubleshooting)
-18. [Restricted or Sensitive Files](#restricted-or-sensitive-files)
-19. [Additional Notes](#additional-notes)
+15. [Compilation and Testing Requirements](#compilation-and-testing-requirements)
+16. [Testing & Quality Assurance](#testing--quality-assurance)
+17. [Pull Request and Collaboration Guidelines](#pull-request-and-collaboration-guidelines)
+18. [Troubleshooting](#troubleshooting)
+19. [Restricted or Sensitive Files](#restricted-or-sensitive-files)
+20. [Additional Notes](#additional-notes)
 
 ---
 
@@ -39,11 +40,12 @@ The project uses Platform.io for firmware development and features a modern Soli
 
 **Implementation Status:**
 - Phase 3 (Hardware I/O): 100% complete
-- Phase 3.5 (Sunrise/Sunset Integration): 100% complete with accurate UTC to local time conversion
-- Phase 3.6 (Light Control with Web UI): 100% complete
-- Core features: Sensors, Pump, Light controllers fully implemented with complete web UI
+- Phase 3.5 (Critical Refactoring): WiFi Controller ✅, Logger Methods ✅, remaining items in progress
+- Phase 3.5a (Sunrise/Sunset Integration): 100% complete with accurate UTC to local time conversion
+- Phase 3.5b (Light Control with Web UI): 100% complete
+- Core features: Sensors, Pump, Light, WiFi controllers fully implemented with complete web UI
 - Current build: RAM 17.7% (58,248 bytes), Flash 82.0% (1,074,145 bytes)
-- Ready for Phase 4 (External Service Integrations)
+- Ready to continue with pump enhancements and remaining Phase 3.5 features
 
 **Key References:**
 - ESP32 pin functions defined in [`platformio.ini`](platformio.ini:45)
@@ -215,7 +217,8 @@ coop_controller/
 │   ├── SensorManager.h         # Temperature/water meter handling
 │   ├── SettingsManager.h       # Configuration management
 │   ├── SunriseSunset.h         # Sunrise/sunset calculations
-│   └── WebServer.h             # HTTP server and REST API
+│   ├── WebServer.h             # HTTP server and REST API
+│   └── WifiController.h        # WiFi management (new)
 │
 ├── src/                        # Implementation files
 │   ├── BuzzerController.cpp
@@ -227,7 +230,8 @@ coop_controller/
 │   ├── SensorManager.cpp
 │   ├── SettingsManager.cpp
 │   ├── SunriseSunset.cpp
-│   └── WebServer.cpp
+│   ├── WebServer.cpp
+│   └── WifiController.cpp      # WiFi implementation (new)
 │
 ├── data/                       # Filesystem data (LittleFS)
 │   ├── assets/                 # Web UI static assets (built)
@@ -528,7 +532,8 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 - **In-memory buffer** - Circular buffer for last 150 log entries
 - **UUID tracking** - Unique identifier for each log entry
 - **Timestamp support** - NTP-synchronized timestamps when available
-- **Multiple formats** - log(), logf() for formatted output
+- **Level-specific methods** - logInfo(), logWarning(), logError(), logDebug(), logVerbose() for clear severity indication
+- **Automatic filtering** - Debug and verbose messages filtered based on settings
 - **JSON export** - REST endpoint for web UI consumption
 - **Syslog integration** - Optional remote logging to syslog server
 - **Serial output** - Simultaneous logging to Serial monitor
@@ -584,7 +589,7 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 - **Responsive design** - Tailwind CSS with DaisyUI components
 - **Dark mode support** - Modern, professional UI
 
-### WiFi Management
+#### WifiController ([`WifiController.h`](include/WifiController.h:1) / [`WifiController.cpp`](src/WifiController.cpp))
 - **Automatic connection** - Connects to saved SSID on boot
 - **Retry logic** - Configurable retry count and delay
 - **AP mode fallback** - Creates `CoopController` WiFi network when connection fails
@@ -592,6 +597,8 @@ Managed via npm in [`web/package.json`](web/package.json:1):
 - **Automatic reconnection** - Monitors connection and retries if dropped
 - **mDNS support** - Accessible at `coopcontroller.local` on local network
 - **Configurable timeouts** - AP mode duration, retry intervals
+- **Clean separation** - Extracted from main.cpp for better code organization
+- **Encapsulated state** - All WiFi-related globals moved into controller class
 
 ---
 
@@ -636,27 +643,48 @@ Recent bug fixes and improvements that addressed critical issues:
 
 **Status:** ✅ Complete
 
+### 4. WiFi Controller Refactoring
+**Issue:** WiFi management code was scattered throughout main.cpp, making it difficult to maintain and understand.
+
+**Fix:**
+- Extracted all WiFi functionality from main.cpp to dedicated WifiController class
+- Moved WiFi-related global variables into WifiController encapsulation
+- Implemented proper initialization through begin() method
+- Maintained existing functionality while improving code organization
+- Other components now use clean WifiController interface
+
+**Benefits:**
+- Improved code organization and separation of concerns
+- Easier to maintain and test WiFi functionality
+- Consistent controller pattern across all system components
+- Reduced complexity in main.cpp
+
+**Status:** ✅ Complete
+
+### 5. Logger Method Refactoring
+**Issue:** Logger used generic log() and logf() methods without clear severity indication, requiring conditional debug checks throughout code.
+
+**Fix:**
+- Replaced all logger.log() and logger.logf() calls with level-specific methods
+- Introduced logInfo(), logWarning(), logError(), logDebug(), logVerbose() methods
+- Removed conditional debug if/then blocks - logger methods now handle filtering internally
+- Improved log message clarity and consistency
+- All critical events now logged at appropriate severity levels
+
+**Benefits:**
+- Clearer code with explicit log severity
+- Eliminated repetitive conditional debug checks
+- Improved log filtering and organization
+- Better debugging and troubleshooting capabilities
+- Consistent logging patterns throughout codebase
+
+**Status:** ✅ Complete
+
 ---
 
 ## Planned Features
 
 Features organized by priority and implementation status.
-
-### Critical Priority - Code Quality & Refactoring
-
-#### WiFi Code Refactoring
-- Extract WiFi functions from main.cpp to WifiController.cpp/.h
-- Move WiFi-related globals into WifiController class
-- Implement proper initialization via constructor or begin() method
-- Maintain existing functionality while improving code organization
-- Update other components to use WifiController interface
-
-#### Logger Method Refactoring
-- Replace all logger.logf() calls with appropriate level methods
-- Use logInfo(), logWarning(), logError(), logDebug(), logVerbose() as appropriate
-- Remove conditional debug if/then blocks where logger methods handle filtering
-- Improve log message clarity and consistency
-- Ensure all critical events are logged at appropriate levels
 
 ### Critical Priority - Core Functionality
 
@@ -673,12 +701,12 @@ Features organized by priority and implementation status.
 - Add retry logic for sensor detection
 - Fall back to weather API current temp if available and show it as the source in UI
 
-#### Pump Flow Calculation Improvements
-- Make GPM calculation configurable: per-interval OR per-pulse basis
-- Add setting to choose calculation method in web UI
-- Per-interval: Current behavior (pulses counted over time period)
-- Per-pulse: Calculate instantaneous flow based on time between pulses
-- Allow users to select method based on their water meter characteristics
+#### Pump Flow Per-Pulse Calculation
+- Calculate flow rate after every pulse instead of fixed interval
+- Provides instantaneous flow measurement based on time between pulses
+- More responsive to flow changes
+- Better detection of flow variations
+- Configurable option to switch between interval-based and per-pulse calculation
 
 #### Pump Flow Monitoring Enhancement
 - Monitor for water flow when pump is OFF
@@ -687,9 +715,10 @@ Features organized by priority and implementation status.
 - Add configurable grace period after pump turns off
 - Help identify hardware faults and water leaks
 
-#### Minimum Pump Cycles Per Day
-- Ensure pump runs minimum number of times daily regardless of temperature
-- Prevents water stagnation and pump seal degradation
+#### Minimum Daily Pump Cycles Enforcement
+- Run pump X times per day regardless of temperature to keep pipe full and prevent water stagnation
+- Prevents algae growth and maintains water freshness
+- Keeps pump seals lubricated for longevity
 - Configurable minimum cycles (default: 2-3 per day)
 - Configurable minimum run duration per cycle
 - Schedule evenly throughout day when not triggered by temperature
@@ -1440,6 +1469,44 @@ type(scope): description
 - Handle updates in `/update_settings` endpoint
 - Validate settings before applying
 - Trigger restart only if necessary (usually only for Wifi changes)
+
+---
+
+## Compilation and Testing Requirements
+
+### Compilation Verification
+
+All code changes MUST be verified with compilation before marking a task as complete:
+
+**For C++ Firmware Changes:**
+```bash
+pio run
+```
+- Must complete without errors
+- Warnings should be reviewed and addressed if relevant
+- Verify flash and RAM usage remain acceptable
+
+**For Web UI Changes:**
+```bash
+cd web && npm run build
+```
+- Must complete without errors
+- TypeScript errors must be fixed
+- Build output should be verified
+
+**For Development Testing:**
+```bash
+cd web && npm run dev
+```
+- Dev server should start without errors
+- Test functionality in browser
+- Verify API endpoints work with mock server
+
+**Quality Standards:**
+- No code should be submitted without successful compilation
+- Build errors indicate incomplete implementation
+- Subtasks are NOT complete until code compiles successfully
+- Test basic functionality when possible
 
 ---
 
