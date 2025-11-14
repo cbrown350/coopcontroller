@@ -17,7 +17,7 @@ void SunriseSunsetCalculator::begin(double lat, double lon, int utcOffset) {
   longitude_ = lon;
   utcOffset_ = utcOffset;
   lastCalculation_ = 0; // Force calculation on first update
-  logger.logf("SunriseSunsetCalculator initialized: lat=%.4f, lon=%.4f, UTC offset=%d", lat, lon, utcOffset);
+  logger.logInfo(String("SunriseSunsetCalculator initialized: lat=") + String(lat, 4) + String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
 }
 
 void SunriseSunsetCalculator::update() {
@@ -76,11 +76,7 @@ void SunriseSunsetCalculator::forceUpdate() {
   
   lastCalculation_ = time(nullptr);
   
-  logger.logf("Sunrise/sunset calculated for %04d-%02d-%02d: Sunrise %s (%02d:%02d local), Sunset %s (%02d:%02d local) [UTC offset: %d]",
-                timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
-                getSunriseTime().c_str(), sunriseHour, sunriseMinute,
-                getSunsetTime().c_str(), sunsetHour, sunsetMinute,
-                utcOffset_);
+  logger.logInfo(String("Sunrise/sunset calculated for ") + String(timeinfo.tm_year + 1900) + String("-") + String(timeinfo.tm_mon + 1) + String("-") + String(timeinfo.tm_mday) + String(": Sunrise ") + getSunriseTime() + String(" (") + String(sunriseHour) + String(":") + String(sunriseMinute) + String(" local), Sunset ") + getSunsetTime() + String(" (") + String(sunsetHour) + String(":") + String(sunsetMinute) + String(" local) [UTC offset: ") + String(utcOffset_) + String("]"));
 }
 
 int SunriseSunsetCalculator::getSunriseMinutes() const {

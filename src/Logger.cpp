@@ -29,14 +29,14 @@ Logger::Logger()
   uuidGenerator.generate();
   currentLogLevel_ = LogLevel::INFO; // Default log level
   
-  log("Initializing SysLog to send logs to " + String(syslogServer) + ":" + String(syslogPort));
+  logInfo(String("Initializing SysLog to send logs to ") + String(syslogServer) + String(":") + String(syslogPort));
   if (!(syslogServer == nullptr || strlen(syslogServer) == 0 || syslogPort == nullptr || strlen(syslogPort) == 0)) 
   {
     syslog = new SimpleSyslog(hostName, "CoopController", syslogServer, atoi(syslogPort), 400); // packet size 400 bytes
-    log("Syslog initialized");
+    logInfo("Syslog initialized");
   } else
   {
-    log("Syslog not configured");
+    logInfo("Syslog not configured");
   }
 }
 
@@ -48,51 +48,7 @@ Logger::~Logger()
   }
 }
 
-void Logger::log(const String &message)
-{
-    unsigned long timestamp = getTime();
-    
-    // Print to serial with timestamp
-    Serial.printf("[%lu] %s\n", timestamp, message.c_str());
-
-    if (syslog != nullptr && wifiController.isConnected())
-      syslog->printf(FAC_USER, PRI_DEBUG, (char*) "[%lu] %s", timestamp, message.c_str());
-
-    // Generate UUID for this log entry
-    uuidGenerator.generate();
-    char* uuidChars = uuidGenerator.toCharArray();
-    String uuid = String(uuidChars);
-
-    // Store in circular buffer
-    logBuffer[currentIndex].uuid = uuid;
-    logBuffer[currentIndex].timestamp = timestamp;
-    logBuffer[currentIndex].message = message;
-    logBuffer[currentIndex].level = LogLevel::INFO; // Default level for legacy calls
-
-    // Update indices
-    currentIndex = (currentIndex + 1) % MAX_LOG_ENTRIES;
-    if (totalEntries < MAX_LOG_ENTRIES)
-    {
-        totalEntries++;
-    }
-}
-
-void Logger::log(const char *message)
-{
-  log(String(message));
-}
-
-void Logger::logf(const char *format, ...)
-{
-  char buffer[512];
-  va_list args;
-  va_start(args, format);
-  vsnprintf(buffer, sizeof(buffer), format, args);
-  va_end(args);
-  log(String(buffer));
-}
-
-void Logger::logWithLevel(const String &message, LogLevel level)
+void Logger::logWithLevel(const String &message, LogLevel level) const
 {
     // Check if this level should be logged
     if (static_cast<int>(level) < static_cast<int>(currentLogLevel_)) {
@@ -144,8 +100,8 @@ String Logger::logLevelToString(LogLevel level) const
 
 void Logger::setLogLevel(LogLevel level)
 {
-    currentLogLevel_ = level;
-    logWithLevel("Log level set to " + logLevelToString(level), LogLevel::INFO);
+  currentLogLevel_ = level;
+  logInfo(String("Log level set to ") + logLevelToString(level));
 }
 
 LogLevel Logger::getLogLevel() const
@@ -153,32 +109,32 @@ LogLevel Logger::getLogLevel() const
     return currentLogLevel_;
 }
 
-void Logger::logVerbose(const String &message)
+void Logger::logVerbose(const String &message) const
 {
     logWithLevel(message, LogLevel::VERBOSE);
 }
 
-void Logger::logDebug(const String &message)
+void Logger::logDebug(const String &message) const
 {
     logWithLevel(message, LogLevel::DEBUG);
 }
 
-void Logger::logInfo(const String &message)
+void Logger::logInfo(const String &message) const
 {
     logWithLevel(message, LogLevel::INFO);
 }
 
-void Logger::logWarning(const String &message)
+void Logger::logWarning(const String &message) const
 {
     logWithLevel(message, LogLevel::WARNING);
 }
 
-void Logger::logError(const String &message)
+void Logger::logError(const String &message) const
 {
     logWithLevel(message, LogLevel::ERROR);
 }
 
-void Logger::logfVerbose(const char *format, ...)
+void Logger::logfVerbose(const char *format, ...) const
 {
     char buffer[512];
     va_list args;
@@ -188,7 +144,7 @@ void Logger::logfVerbose(const char *format, ...)
     logVerbose(String(buffer));
 }
 
-void Logger::logfDebug(const char *format, ...)
+void Logger::logfDebug(const char *format, ...) const
 {
     char buffer[512];
     va_list args;
@@ -198,7 +154,7 @@ void Logger::logfDebug(const char *format, ...)
     logDebug(String(buffer));
 }
 
-void Logger::logfInfo(const char *format, ...)
+void Logger::logfInfo(const char *format, ...) const
 {
     char buffer[512];
     va_list args;
@@ -208,7 +164,7 @@ void Logger::logfInfo(const char *format, ...)
     logInfo(String(buffer));
 }
 
-void Logger::logfWarning(const char *format, ...)
+void Logger::logfWarning(const char *format, ...) const
 {
     char buffer[512];
     va_list args;
@@ -218,7 +174,7 @@ void Logger::logfWarning(const char *format, ...)
     logWarning(String(buffer));
 }
 
-void Logger::logfError(const char *format, ...)
+void Logger::logfError(const char *format, ...) const
 {
     char buffer[512];
     va_list args;
@@ -252,7 +208,7 @@ String Logger::getLogsAsJson() const
   }
   
   if (jsonDoc.overflowed()) {
-    logger.log("JSON document overflowed - logs may be truncated");
+    logWarning("JSON document overflowed - logs may be truncated");
     return "{\"error\":\"JSON overflow\",\"logs\":[]}";
   }
 

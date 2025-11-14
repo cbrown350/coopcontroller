@@ -40,7 +40,7 @@ void WifiController::update() {
 
     if (settingsManager_->getWifiChanged())
     {
-        logger.log("Wifi changed, requesting restart");
+        logger.logInfo("Wifi changed, requesting restart");
         settingsManager_->requestRestartAt = millis() + 3000;
         settingsManager_->setWifiChanged(false);
     }

@@ -62,12 +62,12 @@ void PumpController::begin() {
     pinMode(pumpPin, OUTPUT);
     digitalWrite(pumpPin, LOW);
     
-    logger.logDebug(String("OUT_PUMP_PIN: ") + String(OUT_PUMP_PIN));
-    logger.logDebug(String("PumpController initialized with pin ") + String(pumpPin));
-    logger.logDebug(String("PumpController begin - pin ") + String(pumpPin) + String(" set as OUTPUT, initial state LOW"));
+    logger.logfDebug("OUT_PUMP_PIN: %d", OUT_PUMP_PIN);
+    logger.logfDebug("PumpController initialized with pin %d", pumpPin);
+    logger.logfDebug("PumpController begin - pin %d set as OUTPUT, initial state LOW", pumpPin);
     
-    logger.log("Pump controller initialized");
-    logger.logf("Pump pin: %d", pumpPin);
+    logger.logInfo("Pump controller initialized");
+    logger.logfInfo("Pump pin: %d", pumpPin);
     
     // Start with pump off
     setPumpState(false);
@@ -77,7 +77,7 @@ void PumpController::begin() {
         status.state = PUMP_OFF;
     }
 
-    logger.logDebug(String("PumpController begin - mode set to ") + (settingsManager.getPumpAutoMode() ? "AUTO" : "MANUAL"));
+    logger.logfDebug("PumpController begin - mode set to %s", settingsManager.getPumpAutoMode() ? "AUTO" : "MANUAL");
     logger.logDebug("Pump controller initialization complete");
 }
 
@@ -124,7 +124,7 @@ void PumpController::update() {
             // Error state - turn off pump
             if (status.is_active) {
                 setPumpState(false);
-                logger.log("Pump turned off due to error condition");
+                logger.logError("Pump turned off due to error condition");
             }
             break;
     }
@@ -173,8 +173,8 @@ bool PumpController::checkFlowError() {
     
     // Check if pump has been running long enough and no flow detected
     if (pumpRunTime >= timeoutMs && (currentTimeMs - lastPulseTime) >= timeoutMs) {
-        logger.log("Flow error detected: pump running without flow for timeout period");
-        logger.logDebug(String("Pump run time: ") + String(pumpRunTime) + " ms, Current time: " + String(currentTimeMs) + " ms, Last pulse time: " + String(lastPulseTime) + " ms, Timeout: " + String(timeoutMs) + " ms");
+        logger.logWarning("Flow error detected: pump running without flow for timeout period");
+        logger.logfDebug("Pump run time: %lu ms, Current time: %lu ms, Last pulse time: %lu ms, Timeout: %lu ms", pumpRunTime, currentTimeMs, lastPulseTime, timeoutMs);
         return true;
     }
     
@@ -215,8 +215,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
             clearFlowError();
             status.total_cycles++;
             
-            logger.logf("Temperature below ON threshold (%.1f°F < %.1f°F), starting pump cycle - ON phase", 
-                       status.temperature_f, onThreshold);
+            logger.logfInfo("Temperature below ON threshold (%.1f°F < %.1f°F), starting pump cycle - ON phase", status.temperature_f, onThreshold);
         } else {
             // Check if we need to switch phases
             unsigned long cycleElapsed = currentTime - cycleStartTime;
@@ -231,10 +230,10 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                     currentlyInOnPhase = false;
                     offPhaseStartTime = currentTime;
                     setPumpState(false);
-                    logger.logf("Pump cycle: switching to OFF phase for %d seconds", settingsManager.getPumpOffTimeSeconds());
+                    logger.logfInfo("Pump cycle: switching to OFF phase for %d seconds", settingsManager.getPumpOffTimeSeconds());
                 } else if ((cycleElapsed % 10000 < 1000)) {
                     // Log countdown every 10 seconds in debug mode
-                    logger.logDebug(String("Pump ON phase: ") + String((timeUntilOff + 500) / 1000) + " seconds remaining until OFF");
+                    logger.logfDebug("Pump ON phase: %d seconds remaining until OFF", (timeUntilOff + 500) / 1000);
                 }
             } else {
                 // In OFF phase - check if it's time to switch to ON
@@ -245,11 +244,11 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
                     setPumpState(true);
                     clearFlowError();
                     status.total_cycles++;
-                    logger.logf("Starting new pump cycle, temperature: %.1f°F - ON phase", status.temperature_f);
+                    logger.logfInfo("Starting new pump cycle, temperature: %.1f°F - ON phase", status.temperature_f);
                 } else if ((cycleElapsed % 10000 < 1000)) {
                     // Log countdown every 10 seconds in debug mode
                     unsigned long timeUntilOn = (onTime + offTime) - cycleElapsed;
-                    logger.logDebug(String("Pump OFF phase: ") + String((timeUntilOn + 500) / 1000) + " seconds remaining until ON");
+                    logger.logfDebug("Pump OFF phase: %d seconds remaining until ON", (timeUntilOn + 500) / 1000);
                 }
             }
         }
@@ -261,8 +260,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
             // clearFlowError(); // keep flow error flag so it's known it happened
             cycleStartTime = 0; // Reset cycle
             currentlyInOnPhase = false;
-            logger.logf("Temperature above OFF threshold (%.1f°F > %.1f°F), pump turned off and cycle reset", 
-                       status.temperature_f, offThreshold);
+            logger.logfInfo("Temperature above OFF threshold (%.1f°F > %.1f°F), pump turned off and cycle reset", status.temperature_f, offThreshold);
         }
         status.temperature_below_threshold = false;
     }
@@ -273,12 +271,12 @@ void PumpController::handleAutoMode(unsigned long currentTime) {
         errorStartTime = currentTime;
         waitingForRetry = true;
         setPumpState(false); // Turn off pump but keep AUTO state
-        logger.log("Flow error detected during pump operation, pump turned off but staying in AUTO state");
+        logger.logWarning("Flow error detected during pump operation, pump turned off but staying in AUTO state");
     }
 }
 
 void PumpController::setPumpState(bool isOn) {
-    logger.logDebug(String("Setting pump pin ") + String(pumpPin) + " to " + (isOn ? "HIGH (ON)" : "LOW (OFF)"));
+    logger.logfDebug("Setting pump pin %d to %s", pumpPin, isOn ? "HIGH (ON)" : "LOW (OFF)");
     
     digitalWrite(pumpPin, isOn ? HIGH : LOW);
     
@@ -288,14 +286,14 @@ void PumpController::setPumpState(bool isOn) {
         
         if (isOn) {
             status.current_cycle_start = millis();
-            logger.log("Pump turned ON");
+            logger.logInfo("Pump turned ON");
             logger.logDebug("Pump turned ON - cycle started");
         } else {
             if (status.current_cycle_start > 0) {
                 status.current_cycle_duration = millis() - status.current_cycle_start;
             }
-            logger.log("Pump turned OFF");
-            logger.logDebug(String("Pump turned OFF - cycle duration: ") + String((unsigned long)status.current_cycle_duration) + " ms");
+            logger.logInfo("Pump turned OFF");
+            logger.logfDebug("Pump turned OFF - cycle duration: %lu ms", (unsigned long)status.current_cycle_duration);
         }
     }
 }
@@ -312,7 +310,7 @@ void PumpController::updateStatistics() {
 
 void PumpController::turnOn() {
     status.state = PUMP_ON;
-    logger.log("Pump set to manual ON mode");
+    logger.logInfo("Pump set to manual ON mode");
 }
 
 void PumpController::turnOff() {
@@ -320,18 +318,18 @@ void PumpController::turnOff() {
     cycleStartTime = 0; // Reset any auto cycle
     currentlyInOnPhase = false;
     setPumpState(false); // Force pump off immediately
-    logger.log("Pump set to manual OFF mode");
+    logger.logInfo("Pump set to manual OFF mode");
 }
 
 void PumpController::setAutoMode(bool enabled) {
     if (enabled) {
         status.state = PUMP_AUTO;
         cycleStartTime = 0; // Reset cycle to start fresh
-        logger.log("Pump set to AUTO mode");
+        logger.logInfo("Pump set to AUTO mode");
     } else {
         status.state = PUMP_OFF;
         setPumpState(false);
-        logger.log("Pump AUTO mode disabled");
+        logger.logInfo("Pump AUTO mode disabled");
     }
     if (enabled != settingsManager.getPumpAutoMode()) {
         settingsManager.setPumpAutoMode(enabled);
@@ -342,7 +340,7 @@ void PumpController::setAutoMode(bool enabled) {
 void PumpController::forceCycle() {
     if (status.state == PUMP_AUTO) {
         cycleStartTime = 0; // Reset to start new cycle immediately
-        logger.log("Pump cycle forced to restart");
+        logger.logInfo("Pump cycle forced to restart");
     }
 }
 
@@ -418,12 +416,12 @@ void PumpController::resetStatistics() {
     status.total_cycles = 0;
     status.current_cycle_start = 0;
     status.current_cycle_duration = 0;
-    logger.log("Pump statistics reset");
+    logger.logInfo("Pump statistics reset");
 }
 
 void PumpController::clearFlowError() {
     status.flow_error = false; // Also clear the status flow_error
     errorStartTime = 0;
     waitingForRetry = false;
-    logger.log("Flow error cleared");
+    logger.logInfo("Flow error cleared");
 }

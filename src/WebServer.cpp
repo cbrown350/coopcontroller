@@ -127,26 +127,26 @@ void WebServer::begin()
             
             if (jsonObj["watchdog_timeout_seconds"].is<int>()) {
                 settingsManager.setWatchdogTimeoutSeconds(jsonObj["watchdog_timeout_seconds"].as<int>());
-                logger.log("Watchdog timeout updated - restart required for changes to take effect");
+                logger.logInfo("Watchdog timeout updated - restart required for changes to take effect");
             }
 
             if (jsonObj["pulses_per_gallon"].is<float>()) {
                 float newCalibration = jsonObj["pulses_per_gallon"].as<float>();
                 settingsManager.setPulsesPerGallon(newCalibration);
                 tempSensor.setPulsesPerGallon(newCalibration);
-                logger.logf("Water meter calibration updated: %.1f pulses per gallon", newCalibration);
+                logger.logInfo("Water meter calibration updated: " + String(newCalibration, 1) + " pulses per gallon");
             }
             
             if (jsonObj["water_meter_timeout_seconds"].is<int>()) {
                 int timeout = jsonObj["water_meter_timeout_seconds"].as<int>();
                 settingsManager.setWaterMeterTimeoutSeconds(timeout);
-                logger.logf("Water meter timeout updated: %d seconds", timeout);
+                logger.logInfo("Water meter timeout updated: " + String(timeout) + " seconds");
             }
             
             if (jsonObj["wifi_led_enabled"].is<bool>()) {
                 bool enabled = jsonObj["wifi_led_enabled"].as<bool>();
                 settingsManager.setWifiLedEnabled(enabled);
-                logger.logf("WiFi LED enabled: %s", enabled ? "true" : "false");
+                logger.logInfo("WiFi LED enabled: " + String(enabled ? "true" : "false"));
             }
             
             // Handle buzzer settings
@@ -154,7 +154,7 @@ void WebServer::begin()
                 bool enabled = jsonObj["buzzer_enabled"].as<bool>();
                 settingsManager.setBuzzerEnabled(enabled);
                 buzzerController.setEnabled(enabled);
-                logger.logf("Buzzer enabled: %s", enabled ? "true" : "false");
+                logger.logInfo("Buzzer enabled: " + String(enabled ? "true" : "false"));
             }
             
             if (jsonObj["buzzer_type"].is<String>()) {
@@ -162,7 +162,7 @@ void WebServer::begin()
                 settingsManager.setBuzzerType(type);
                 BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
                 buzzerController.setBuzzerType(buzzerType);
-                logger.logf("Buzzer type set to: %s", type.c_str());
+                logger.logInfo("Buzzer type set to: " + type);
             }
             
             // Handle door control settings
@@ -203,7 +203,7 @@ void WebServer::begin()
                                    settingsManager.getLongitude(),
                                    settingsManager.getTimezoneOffsetHours());
                 sunriseSunset.forceUpdate();
-                logger.log("Location settings updated, sunrise/sunset recalculated");
+                logger.logInfo("Location settings updated, sunrise/sunset recalculated");
             }
             
             // Handle Task 3.5k preparation settings
@@ -228,7 +228,7 @@ void WebServer::begin()
     } 
     if (otaPasswd && strlen(otaPasswd) > 0) {
         ArduinoOTA.setPassword(otaPasswd); // Optional for authentication
-        Serial.println("OTA password set: " + String(otaPasswd));
+        logger.logInfo("OTA password set: " + String(otaPasswd));
     }
     ArduinoOTA.begin();
 
@@ -236,26 +236,26 @@ void WebServer::begin()
     ElegantOTA.begin(&server);
     if (otaPasswd && strlen(otaPasswd) > 0) {
         ElegantOTA.setAuth("admin", otaPasswd);  // Optional: add authentication
-        Serial.println("ElegantOTA admin password set: " + String(otaPasswd));
+        logger.logInfo("ElegantOTA admin password set: " + String(otaPasswd));
     } 
     // Configure ElegantOTA for filesystem updates
     ElegantOTA.onProgress([](unsigned int progress, unsigned int total) {
-        logger.logf("OTA Update Progress: %u%%\r", (progress / (total / 100)));
+        logger.logInfo("OTA Update Progress: " + String(progress / (total / 100)) + "%");
     });
     
     // Add custom callback for filesystem updates
     ElegantOTA.onStart([]() {
-        logger.log("Start OTA updating ");
+        logger.logInfo("Start OTA updating ");
         LittleFS.end();
     });
     
     ElegantOTA.onEnd([](bool success) {
-        logger.log("\nOTA update End");
+        logger.logInfo("OTA update End");
         if(success) {
-            logger.log("OTA update completed successfully, restarting...");
+            logger.logInfo("OTA update completed successfully, restarting...");
             ESP.restart();
         } else {
-            logger.log("OTA update failed");
+            logger.logError("OTA update failed");
             LittleFS.begin();
         }
     });
@@ -798,7 +798,7 @@ void WebServer::begin()
           float newCalibration = jsonObj["pulses_per_gallon"].as<float>();
           settingsManager.setPulsesPerGallon(newCalibration);
           tempSensor.setPulsesPerGallon(newCalibration);
-          logger.logf("Water meter calibration restored: %.1f pulses per gallon", newCalibration);
+          logger.logInfo("Water meter calibration restored: " + String(newCalibration, 1) + " pulses per gallon");
         }
         if (jsonObj["water_meter_timeout_seconds"].is<int>()) {
           settingsManager.setWaterMeterTimeoutSeconds(jsonObj["water_meter_timeout_seconds"].as<int>());
@@ -810,14 +810,14 @@ void WebServer::begin()
           bool enabled = jsonObj["buzzer_enabled"].as<bool>();
           settingsManager.setBuzzerEnabled(enabled);
           buzzerController.setEnabled(enabled);
-          logger.logf("Buzzer enabled restored: %s", enabled ? "true" : "false");
+          logger.logInfo("Buzzer enabled restored: " + String(enabled ? "true" : "false"));
         }
         if (jsonObj["buzzer_type"].is<String>()) {
           String type = jsonObj["buzzer_type"].as<String>();
           settingsManager.setBuzzerType(type);
           BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
           buzzerController.setBuzzerType(buzzerType);
-          logger.logf("Buzzer type restored: %s", type.c_str());
+          logger.logInfo("Buzzer type restored: " + type);
         }
         if (jsonObj["door_auto_mode"].is<bool>()) {
           settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());

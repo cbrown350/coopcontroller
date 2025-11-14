@@ -67,19 +67,19 @@ void DoorController::begin() {
     logger.logfInfo("Initial door position: %s", getPositionString().c_str());
     
     // Debug: Read and log all pin states
-    logger.logfDebug("Pin states at startup:");
+    logger.logDebug("Pin states at startup:");
     logger.logfDebug("  Hall Open (pin %d): %d (active=%s)", DOOR_A_HALL_SENSOR_OPEN_B_PIN, 
-                digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN),
-                digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN) == LOW ? "YES" : "no");
+            digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN),
+            digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN) == LOW ? "YES" : "no");
     logger.logfDebug("  Hall Closed (pin %d): %d (active=%s)", DOOR_A_HALL_SENSOR_CLOSED_B_PIN,
-                digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN),
-                digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN) == LOW ? "YES" : "no");
+            digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN),
+            digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN) == LOW ? "YES" : "no");
     logger.logfDebug("  Fault (pin %d): %d (fault=%s)", DOOR_A_FAULT_B_PIN,
-                digitalRead(DOOR_A_FAULT_B_PIN),
-                digitalRead(DOOR_A_FAULT_B_PIN) == LOW ? "YES" : "no");
+            digitalRead(DOOR_A_FAULT_B_PIN),
+            digitalRead(DOOR_A_FAULT_B_PIN) == LOW ? "YES" : "no");
     logger.logfDebug("  Manual Switch (pin %d): %d (pressed=%s)", DOOR_MANUAL_SWITCH_B_PIN,
-                digitalRead(DOOR_MANUAL_SWITCH_B_PIN),
-                digitalRead(DOOR_MANUAL_SWITCH_B_PIN) == LOW ? "YES" : "no");
+            digitalRead(DOOR_MANUAL_SWITCH_B_PIN),
+            digitalRead(DOOR_MANUAL_SWITCH_B_PIN) == LOW ? "YES" : "no");
 }
 
 void DoorController::update() {
@@ -99,16 +99,15 @@ void DoorController::update() {
         (currentTime - lastDebugLog >= 5000)) {
         lastDebugLog = currentTime;
         logger.logfDebug("Door moving: state=%s, position=%s, elapsed=%lu ms",
-                        getStateString().c_str(), getPositionString().c_str(),
-                        currentTime - stateStartTime);
+                getStateString().c_str(), getPositionString().c_str(),
+                currentTime - stateStartTime);
         logger.logfDebug("  Hall sensors: Open=%d, Closed=%d, Fault=%d",
-                        digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN),
-                        digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN),
-                        digitalRead(DOOR_A_FAULT_B_PIN));
-        // Also log current motor pin states
+                digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN),
+                digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN),
+                digitalRead(DOOR_A_FAULT_B_PIN));
         logger.logfDebug("  Motor pins: POS=%d, NEG=%d",
-                        digitalRead(OUT_DOOR_A_OPEN_POS_PIN),
-                        digitalRead(OUT_DOOR_A_OPEN_NEG_PIN));
+                digitalRead(OUT_DOOR_A_OPEN_POS_PIN),
+                digitalRead(OUT_DOOR_A_OPEN_NEG_PIN));
     }
     
     // Note: Hall sensor position detection removed from main loop
@@ -137,7 +136,7 @@ void DoorController::update() {
     
     // Check for hardware faults
     if (isHardwareFault() && currentState != DoorState::FAULT) {
-        logger.logf("Hardware fault detected on DRV8833 (pin %d is LOW)", DOOR_A_FAULT_B_PIN);
+        logger.logfWarning("Hardware fault detected on DRV8833 (pin %d is LOW)", DOOR_A_FAULT_B_PIN);
         setState(DoorState::FAULT);
     }
     
@@ -184,7 +183,7 @@ void DoorController::setState(DoorState newState) {
     unsigned long currentTime = millis();
     
     // Log state change
-    logger.logf("Door state: %s -> %s", getStateString().c_str(),
+    logger.logfInfo("Door state: %s -> %s", getStateString().c_str(),
                 newState == DoorState::IDLE ? "IDLE" :
                 newState == DoorState::OPENING ? "OPENING" :
                 newState == DoorState::OPEN ? "OPEN" :
@@ -247,15 +246,13 @@ void DoorController::setState(DoorState newState) {
 
 void DoorController::setMotorOutputs(bool openPositive, bool openNegative) {
     if (testMode) {
-        logger.logDebug(openPositive ? "Test: Motor OPEN" : 
-                       openNegative ? "Test: Motor CLOSE" : "Test: Motor STOP");
-        return;
+        logger.logfDebug("Test: Motor %s", openPositive ? "OPEN" : openNegative ? "CLOSE" : "STOP");
+    } else {
+        logger.logfDebug("Motor pins: OPEN_POS=%d, OPEN_NEG=%d", openPositive, openNegative);
     }
     
     digitalWrite(OUT_DOOR_A_OPEN_POS_PIN, openPositive ? HIGH : LOW);
     digitalWrite(OUT_DOOR_A_OPEN_NEG_PIN, openNegative ? HIGH : LOW);
-    
-    logger.logfDebug("Motor pins: OPEN_POS=%d, OPEN_NEG=%d", openPositive, openNegative);
 }
 
 void DoorController::checkManualSwitch() {
@@ -273,17 +270,17 @@ void DoorController::checkManualSwitch() {
     if (lastSwitchState == HIGH && currentSwitchState == LOW && !testMode) {
         // Check debounce timing
         if (currentTime - lastSwitchCheck < switchDebounceMs) {
-            logger.logfDebug("Switch press ignored - debounce (too soon: %lu ms)", currentTime - lastSwitchCheck);
+            logger.logfDebug("Manual switch press ignored - debounce (too soon: %lu ms)", currentTime - lastSwitchCheck);
             return;
         }
         
         lastSwitchCheck = currentTime;
         
         logger.logInfo("Manual switch PRESSED detected");
-        logger.logf("  Current state: %s, position: %s, lastMovement: %s",
-                   getStateString().c_str(), getPositionString().c_str(),
-                   lastMovementDirection == DoorState::OPENING ? "OPENING" :
-                   lastMovementDirection == DoorState::CLOSING ? "CLOSING" : "NONE");
+        logger.logfInfo("  Current state: %s, position: %s, lastMovement: %s",
+               getStateString().c_str(), getPositionString().c_str(),
+               lastMovementDirection == DoorState::OPENING ? "OPENING" :
+               lastMovementDirection == DoorState::CLOSING ? "CLOSING" : "NONE");
         
         if (currentState == DoorState::OPENING || currentState == DoorState::CLOSING) {
             // Stop and remember direction
@@ -356,7 +353,7 @@ void DoorController::open() {
     if (currentState == DoorState::IDLE || currentState == DoorState::CLOSED) {
         setState(DoorState::OPENING);
     } else {
-        logger.logWarning("Cannot open door - current state: " + getStateString());
+        logger.logfWarning("Cannot open door - current state: %s", getStateString().c_str());
     }
 }
 
@@ -364,7 +361,7 @@ void DoorController::close() {
     if (currentState == DoorState::IDLE || currentState == DoorState::OPEN) {
         setState(DoorState::CLOSING);
     } else {
-        logger.logWarning("Cannot close door - current state: " + getStateString());
+        logger.logfWarning("Cannot close door - current state: %s", getStateString().c_str());
     }
 }
 
@@ -377,7 +374,7 @@ void DoorController::stop() {
 // Mode control
 void DoorController::setAutoMode(bool enabled) {
     autoMode = enabled;
-    logger.logf("Door auto mode: %s", enabled ? "ENABLED" : "DISABLED");
+    logger.logfInfo("Door auto mode: %s", enabled ? "ENABLED" : "DISABLED");
 }
 
 bool DoorController::isAutoMode() const {
@@ -461,7 +458,7 @@ int DoorController::getOpenTimeoutSeconds() const {
 
 void DoorController::setOpenTimeoutSeconds(int seconds) {
     openTimeoutSeconds = max(5, min(120, seconds));
-    logger.logf("Door open timeout: %d seconds", openTimeoutSeconds);
+    logger.logfDebug("Door open timeout: %d seconds", openTimeoutSeconds);
 }
 
 int DoorController::getCloseTimeoutSeconds() const {
@@ -470,7 +467,7 @@ int DoorController::getCloseTimeoutSeconds() const {
 
 void DoorController::setCloseTimeoutSeconds(int seconds) {
     closeTimeoutSeconds = max(5, min(120, seconds));
-    logger.logf("Door close timeout: %d seconds", closeTimeoutSeconds);
+    logger.logfDebug("Door close timeout: %d seconds", closeTimeoutSeconds);
 }
 
 int DoorController::getSunriseOffsetMinutes() const {
@@ -479,7 +476,7 @@ int DoorController::getSunriseOffsetMinutes() const {
 
 void DoorController::setSunriseOffsetMinutes(int minutes) {
     sunriseOffsetMinutes = max(-60, min(60, minutes));
-    logger.logf("Door sunrise offset: %d minutes", sunriseOffsetMinutes);
+    logger.logfDebug("Door sunrise offset: %d minutes", sunriseOffsetMinutes);
 }
 
 int DoorController::getSunsetOffsetMinutes() const {
@@ -488,7 +485,7 @@ int DoorController::getSunsetOffsetMinutes() const {
 
 void DoorController::setSunsetOffsetMinutes(int minutes) {
     sunsetOffsetMinutes = max(-60, min(60, minutes));
-    logger.logf("Door sunset offset: %d minutes", sunsetOffsetMinutes);
+    logger.logfDebug("Door sunset offset: %d minutes", sunsetOffsetMinutes);
 }
 
 // Statistics
@@ -553,12 +550,12 @@ bool DoorController::isHardwareFault() const {
 
 // Position memory
 void DoorController::savePosition() {
-    logger.logf("Door position saved: %s", getPositionString().c_str());
+    logger.logfInfo("Door position saved: %s", getPositionString().c_str());
 }
 
 void DoorController::restorePosition() {
     updatePosition();
-    logger.logf("Door position restored: %s", getPositionString().c_str());
+    logger.logfInfo("Door position restored: %s", getPositionString().c_str());
 }
 
 // Schedule helpers using sunrise/sunset calculations

@@ -49,8 +49,7 @@ void LightController::begin() {
     offHour = settingsManager.getLightOffHour();
     
     // Initialize PWM
-    logger.logfInfo("PWM: Channel=%d, Freq=%dHz, Resolution=%d-bit, Pin=%d", 
-                    PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION, OUT_LIGHT_PIN);
+    logger.logInfo(String("PWM: Channel=") + String(PWM_CHANNEL) + String(", Freq=") + String(PWM_FREQ) + "Hz, Resolution=" + String(PWM_RESOLUTION) + "-bit, Pin=" + String(OUT_LIGHT_PIN));
     
     ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
     ledcAttachPin(OUT_LIGHT_PIN, PWM_CHANNEL);
@@ -96,7 +95,7 @@ void LightController::setBrightness(int percent) {
     currentBrightness = targetBrightness;
     updatePWM();
     
-    logger.logfInfo("Light brightness set to %d%%", targetBrightness);
+    logger.logInfo(String("Light brightness set to ") + String(targetBrightness) + "%");
 }
 
 void LightController::fadeIn() {
@@ -119,7 +118,7 @@ void LightController::fadeOut() {
 
 void LightController::setAutoMode(bool enabled) {
     autoMode = enabled;
-    logger.logfInfo("Light auto mode %s", enabled ? "enabled" : "disabled");
+    logger.logInfo(String("Light auto mode ") + String(enabled ? "enabled" : "disabled"));
 }
 
 bool LightController::isAutoMode() const {
@@ -128,7 +127,7 @@ bool LightController::isAutoMode() const {
 
 void LightController::setTestMode(bool enabled) {
     testMode = enabled;
-    logger.logfInfo("Light test mode %s", enabled ? "enabled" : "disabled");
+    logger.logInfo(String("Light test mode ") + String(enabled ? "enabled" : "disabled"));
 }
 
 bool LightController::isTestMode() const {
@@ -188,7 +187,7 @@ void LightController::setMaxBrightness(int percent) {
         updatePWM();
     }
     
-    logger.logfInfo("Light max brightness set to %d%%", maxBrightness);
+    logger.logInfo(String("Light max brightness set to ") + String(maxBrightness) + "%");
 }
 
 int LightController::getTransitionDurationMinutes() const {
@@ -199,7 +198,7 @@ void LightController::setTransitionDurationMinutes(int minutes) {
     transitionDurationMinutes = constrain(minutes, 1, 60);
     settingsManager.setLightTransitionDurationMinutes(transitionDurationMinutes);
     
-    logger.logfInfo("Light transition duration set to %d minutes", transitionDurationMinutes);
+    logger.logInfo(String("Light transition duration set to ") + String(transitionDurationMinutes) + " minutes");
 }
 
 int LightController::getOnHour() const {
@@ -210,7 +209,7 @@ void LightController::setOnHour(int hour) {
     onHour = constrain(hour, 0, 23);
     settingsManager.setLightOnHour(onHour);
     
-    logger.logfInfo("Light on hour set to %d", onHour);
+    logger.logInfo(String("Light on hour set to ") + String(onHour));
 }
 
 int LightController::getOnMinute() const {
@@ -221,7 +220,7 @@ void LightController::setOnMinute(int minute) {
     onMinute = constrain(minute, 0, 59);
     settingsManager.setLightOnMinute(onMinute);
     
-    logger.logfInfo("Light on minute set to %d", onMinute);
+    logger.logInfo(String("Light on minute set to ") + String(onMinute));
 }
 
 String LightController::getOnMode() const {
@@ -232,7 +231,7 @@ void LightController::setOnMode(const String& mode) {
     onMode = mode;
     settingsManager.setLightOnMode(onMode);
     
-    logger.logfInfo("Light on mode set to %s", onMode.c_str());
+    logger.logInfo(String("Light on mode set to ") + onMode);
 }
 
 int LightController::getOnSunsetOffsetMinutes() const {
@@ -243,7 +242,7 @@ void LightController::setOnSunsetOffsetMinutes(int minutes) {
     onSunsetOffsetMinutes = minutes;
     settingsManager.setLightOnSunsetOffsetMinutes(onSunsetOffsetMinutes);
     
-    logger.logfInfo("Light on sunset offset set to %d minutes", onSunsetOffsetMinutes);
+    logger.logInfo(String("Light on sunset offset set to ") + String(onSunsetOffsetMinutes) + " minutes");
 }
 
 int LightController::getOffHour() const {
@@ -254,7 +253,7 @@ void LightController::setOffHour(int hour) {
     offHour = constrain(hour, 0, 23);
     settingsManager.setLightOffHour(offHour);
     
-    logger.logfInfo("Light off hour set to %d", offHour);
+    logger.logInfo(String("Light off hour set to ") + String(offHour));
 }
 
 int LightController::getSunriseOffsetMinutes() const {
@@ -265,7 +264,7 @@ void LightController::setSunriseOffsetMinutes(int minutes) {
     sunriseOffsetMinutes = minutes;
     settingsManager.setSunriseOffsetMinutes(sunriseOffsetMinutes);
     
-    logger.logfInfo("Light sunrise offset set to %d minutes", sunriseOffsetMinutes);
+    logger.logInfo(String("Light sunrise offset set to ") + String(sunriseOffsetMinutes) + " minutes");
 }
 
 int LightController::getSunsetOffsetMinutes() const {
@@ -276,7 +275,7 @@ void LightController::setSunsetOffsetMinutes(int minutes) {
     sunsetOffsetMinutes = minutes;
     settingsManager.setSunsetOffsetMinutes(sunsetOffsetMinutes);
     
-    logger.logfInfo("Light sunset offset set to %d minutes", sunsetOffsetMinutes);
+    logger.logInfo(String("Light sunset offset set to ") + String(sunsetOffsetMinutes) + " minutes");
 }
 
 unsigned long LightController::getTotalOnTime() const {
@@ -413,9 +412,7 @@ void LightController::setState(LightState newState) {
             default: newStateStr = "UNKNOWN"; break;
         }
         
-        logger.logfInfo("Light state changed from %s to %s", 
-                        oldStateStr.c_str(), 
-                        newStateStr.c_str());
+        logger.logInfo(String("Light state changed from ") + oldStateStr + String(" to ") + newStateStr);
         
         // Update statistics
         if (newState == LightState::ON) {

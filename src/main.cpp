@@ -85,21 +85,21 @@ void setup()
     Serial.begin(SERIAL_BAUD);
 
     // Initialize logging system
-    logger.log("ESP Coop Controller System starting up...");
-    logger.logf("Firmware version: %s", firmwareVersion);
-    logger.logf("Chip family: %s", chipFamily);
+    logger.logInfo("ESP Coop Controller System starting up...");
+    logger.logInfo(String("Firmware version: ") + firmwareVersion);
+    logger.logInfo(String("Chip family: ") + chipFamily);
 
     // Initialize filesystem
     if (!LittleFS.begin(true)) {  // The 'true' parameter formats the filesystem if it fails to mount
-        logger.log("Failed to mount LittleFS filesystem, formatting...");
+        logger.logWarning("Failed to mount LittleFS filesystem, formatting...");
         if (!LittleFS.begin(true)) {
-            logger.log("Failed to initialize LittleFS even after formatting");
+            logger.logError("Failed to initialize LittleFS even after formatting");
             // Continue without filesystem - settings will use defaults
         } else {
-            logger.log("LittleFS filesystem initialized after formatting");
+            logger.logInfo("LittleFS filesystem initialized after formatting");
         }
     } else {
-        logger.log("LittleFS filesystem initialized");
+        logger.logInfo("LittleFS filesystem initialized");
     }
 
     // Load settings early
@@ -131,7 +131,7 @@ void setup()
     else if (logLevelStr == "ERROR") level = LogLevel::ERROR;
     logger.setLogLevel(level);
     
-    logger.log("Coop controller components initialized");
+    logger.logInfo("Coop controller components initialized");
 
     // Initialize Task Watchdog Timer
     int watchdogTimeout = settingsManager.getWatchdogTimeoutSeconds();
@@ -143,7 +143,7 @@ void setup()
         logger.logError(String("Failed to initialize Task Watchdog Timer: ") + String(esp_err_to_name(wdtResult)));
     }
 
-    logger.log("NTP time synchronization started");
+    logger.logInfo("NTP time synchronization started");
     configTime(0, 0, ntpServer);
     
     // Wait a moment for NTP to sync, then calculate sunrise/sunset
@@ -151,9 +151,9 @@ void setup()
     sunriseSunset.forceUpdate();
     
     webServer.begin();
-    logger.log("Web server started");
+    logger.logInfo("Web server started");
 
-    logger.log("System initialization complete");
+    logger.logInfo("System initialization complete");
 }
 
 unsigned long getTime()
@@ -207,11 +207,11 @@ void loop()
             // Log temperature readings only if valid
             float temp1 = tempSensor.getTemperature1F();
             if (!isnan(temp1)) {
-                logger.logf("Sensor 1: %.1f°F", temp1);
+                logger.logDebug(String("Sensor 1: ") + String(temp1, 1) + "°F");
             }
             float temp2 = tempSensor.getTemperature2F();
             if (!isnan(temp2)) {
-                logger.logf("Sensor 2: %.1f°F", temp2);
+                logger.logDebug(String("Sensor 2: ") + String(temp2, 1) + "°F");
             }
             
             // Check for sensor errors and trigger buzzer alerts
@@ -329,18 +329,17 @@ void loop()
         lastSensorLog = currentTime;
 
         if (tempSensor.isSensor1Connected()) {
-            logger.logfDebug("Sensor 1 (Pin %d): %.1f°F %s", TEMP_METER_PIN, tempSensor.getTemperature1F(),
-                       tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "(Temperature)" : "(Water Meter)");
+            logger.logDebug(String("Sensor 1 (Pin ") + String(TEMP_METER_PIN) + String("): ") + String(tempSensor.getTemperature1F(), 1) + "°F " +
+               (tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "(Temperature)" : "(Water Meter)"));
         }
         if (tempSensor.isSensor2Connected()) {
             if (tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP) {
                 float temp2 = tempSensor.getTemperature2F();
                 if (!isnan(temp2)) {
-                    logger.logfDebug("Sensor 2 (Pin %d): %.1f°F (Temperature)", TEMP_METER_2_PIN, temp2);
+                    logger.logDebug(String("Sensor 2 (Pin ") + String(TEMP_METER_2_PIN) + String("): ") + String(temp2, 1) + String("°F (Temperature)"));
                 }
             } else {
-                logger.logfDebug("Sensor 2 (Pin %d): %.2f GPM, %lu pulses (Water Meter)", 
-                           TEMP_METER_2_PIN, tempSensor.getFlowRate2(), tempSensor.getPulseCount2());
+                logger.logDebug(String("Sensor 2 (Pin ") + String(TEMP_METER_2_PIN) + String("): ") + String(tempSensor.getFlowRate2(), 2) + String(" GPM, ") + String(tempSensor.getPulseCount2()) + String(" pulses (Water Meter)"));
             }
         }
         
@@ -352,15 +351,15 @@ void loop()
 
         float threshold = settingsManager.getTempThresholdOnF();
         bool tempBelowThreshold = tempSensor.isTemperatureBelowThreshold();
-        if (!isnan(currentTemp)) {
+        if (!isnan(currentTemp) && (!tempBelowThreshold || tempBelowThreshold)) {
 
             if (tempBelowThreshold) {
-                logger.logf("Temperature below threshold (%.1f°F < %.1f°F)", currentTemp, threshold);
+                logger.logInfo(String("Temperature below threshold (") + String(currentTemp, 1) + String("°F < ") + String(threshold) + String("°F)"));
             } else {
-                logger.logf("Temperature above threshold (%.1f°F >= %.1f°F)", currentTemp, settingsManager.getTempThresholdOffF());
+                logger.logInfo(String("Temperature above threshold (") + String(currentTemp, 1) + String("°F >= ") + String(settingsManager.getTempThresholdOffF()) + String("°F)"));
             }
         } else {
-            logger.log("No temperature sensor available for threshold comparison");
+            logger.logWarning("No temperature sensor available for threshold comparison");
         }
     }
 

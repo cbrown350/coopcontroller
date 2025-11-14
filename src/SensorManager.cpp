@@ -28,7 +28,7 @@ SensorManager::SensorManager()
 SensorManager::~SensorManager() {}
 
 void SensorManager::begin() {
-    logger.log("Initializing temperature sensors...");
+    logger.logInfo("Initializing temperature sensors...");
     
     logger.logDebug(String("Pin configuration - TEMP_METER_PIN: ") + String(TEMP_METER_PIN) + ", TEMP_METER_2_PIN: " + String(TEMP_METER_2_PIN));
     
@@ -52,7 +52,7 @@ void SensorManager::begin() {
         
         // Only attach interrupt if we're sure it's a water meter
         attachInterrupt(digitalPinToInterrupt(TEMP_METER_PIN), std::bind(&SensorManager::sensor1PulseISR, this), FALLING);
-        logger.logf("Sensor 1 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_PIN);
+        logger.logInfo(String("Sensor 1 (Pin ") + String(TEMP_METER_PIN) + String("): Water meter interrupt attached (FALLING mode)"));
         logger.logDebug(String("Sensor 1 interrupt attached to pin ") + String(TEMP_METER_PIN));
     }
     
@@ -63,7 +63,7 @@ void SensorManager::begin() {
         
         // Attach interrupt for water meter pulse detection
         attachInterrupt(digitalPinToInterrupt(TEMP_METER_2_PIN), std::bind(&SensorManager::sensor2PulseISR, this), FALLING);
-        logger.logfDebug("Sensor 2 (Pin %d): Water meter interrupt attached (FALLING mode)", TEMP_METER_2_PIN);
+        logger.logInfo(String("Sensor 2 (Pin ") + String(TEMP_METER_2_PIN) + String("): Water meter interrupt attached (FALLING mode)"));
     }
 }
 
@@ -106,7 +106,7 @@ void SensorManager::detectSensorType(int pin, SensorData& sensor) {
             sensor.type = SensorType::DALLAS_TEMP;
             sensor.is_connected = true;
             sensor.was_detected = true;
-            logger.logf("Sensor on pin %d: Detected Dallas temperature sensor (%d devices)", pin, deviceCount);
+            logger.logInfo(String("Sensor on pin ") + String(pin) + String(": Detected Dallas temperature sensor (") + String(deviceCount) + String(" devices)"));
             return;
         }
     }
@@ -117,7 +117,7 @@ void SensorManager::detectSensorType(int pin, SensorData& sensor) {
     sensor.was_detected = true;   // But they are "detected" once configured
     sensor.last_pulse_time.store(0); // Initialize pulse time
     sensor.is_connected = false;  // Water meters are "connected" only when pulses are detected
-    logger.logf("Sensor on pin %d: No Dallas sensor found, configured as water meter", pin);
+    logger.logInfo(String("Sensor on pin ") + String(pin) + String(": No Dallas sensor found, configured as water meter"));
 }
 
 void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData& sensor) {
@@ -144,8 +144,7 @@ void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData&
     } else {
         sensor.is_connected = false;
         sensor.temperature_f = NAN;
-        logger.logf("WARNING: Dallas temperature sensor disconnected on pin %d", 
-                   (dallas == dallasTemp1) ? TEMP_METER_PIN : TEMP_METER_2_PIN);
+        logger.logWarning(String("WARNING: Dallas temperature sensor disconnected on pin ") + String((dallas == dallasTemp1) ? TEMP_METER_PIN : TEMP_METER_2_PIN));
     }
 }
 
@@ -185,19 +184,19 @@ void SensorManager::resetPulseCount(int sensor) {
         sensor1.pulse_count.store(0);
         sensor1.last_pulse_time.store(0);
         sensor1.last_flow_calculation_time = 0;
-        logger.log("Sensor 1 pulse count reset");
+        logger.logInfo("Sensor 1 pulse count reset");
     } else if (sensor == 2) {
         sensor2.pulse_count.store(0);
         sensor2.last_pulse_time.store(0);
         sensor2.last_flow_calculation_time = 0;
-        logger.log("Sensor 2 pulse count reset");
+        logger.logInfo("Sensor 2 pulse count reset");
     }
 }
 
 // Water meter calibration
 void SensorManager::setPulsesPerGallon(float pulsesPerGallon) {
     this->pulsesPerGallon = pulsesPerGallon;
-    logger.logf("Water meter calibration updated: %.1f pulses per gallon", pulsesPerGallon);
+    logger.logInfo(String("Water meter calibration updated: ") + String(pulsesPerGallon, 1) + " pulses per gallon");
 }
 
 bool SensorManager::hasWaterFlowError(int sensor) const {
