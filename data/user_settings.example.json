@@ -27,7 +27,6 @@
   "telegram_alerts_enabled": false,
   "telegram_admin_user_ids": [],
   "telegram_command_user_ids": [],
-  "hostname": "CoopControllerTest",
   "buzzer_enabled": true,
   "buzzer_type": "ACTIVE",
   "door_auto_mode": false,
