@@ -141,7 +141,7 @@ void DoorController::update() {
     }
     
     // Check automatic schedule
-    if (autoMode && currentState == DoorState::IDLE) {
+    if (autoMode && (currentState == DoorState::IDLE || currentState == DoorState::OPEN || currentState == DoorState::CLOSED)) {
         checkSchedule();
     }
 }
