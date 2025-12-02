@@ -13,7 +13,10 @@ data/favicon.ico
 data/favicon.ico.gz
 data/logo.webp
 
+data_testbed/
+
 *.url
+*.rar
 
 logs
 
