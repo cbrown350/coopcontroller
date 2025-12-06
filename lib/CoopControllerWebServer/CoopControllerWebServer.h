@@ -12,13 +12,13 @@
 // Define SPIFFS as LittleFS
 #define SPIFFS LittleFS
 
-class WebServer
+class CoopControllerWebServer
 {
    private:
     AsyncWebServer server;
 
    public:
-    WebServer(int port = 80);
+    CoopControllerWebServer(int port = 80);
     void begin();
     void loop();
 };

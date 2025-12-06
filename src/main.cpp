@@ -4,10 +4,10 @@
 #include "LittleFS.h"
 #include "Logger.h"
 #include "SettingsManager.h"
-#include "WebServer.h"
+#include "CoopControllerWebServer.h"
 #include "time.h"
 
-#include <esp_task_wdt.h>
+#include "esp_task_wdt.h"
 
 #include "BuzzerController.h"
 #include "SensorManager.h"
@@ -48,7 +48,7 @@ const char* apPasswd      = (strcmp(TOSTRING(AP_PASSWD), "") == 0 || strcmp(TOST
 // NTP server to request epoch time
 const char* ntpServer = "pool.ntp.org";
 
-WebServer webServer(80);
+CoopControllerWebServer webServer(80);
 
 // Coop Controller components
 SensorManager tempSensor;

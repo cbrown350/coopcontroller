@@ -1,0 +1,10 @@
+{
+  "name": "CoopControllerWebServer",
+  "version": "1.0.0",
+  "description": "Async HTTP web server and REST API",
+  "dependencies": {
+    "bblanchon/ArduinoJson": "^7.4.2",
+    "esp32async/ESPAsyncWebServer": "^3.9.2",
+    "ayushsharma82/ElegantOTA": "^3.1.7"
+  }
+}

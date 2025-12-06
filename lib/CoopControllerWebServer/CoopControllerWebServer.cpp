@@ -1,6 +1,7 @@
-#include "WebServer.h"
-
+#include "CoopControllerWebServer.h"
 #include <AsyncJson.h>
+#include <ElegantOTA.h>
+#include <ArduinoOTA.h>
 
 #include "Logger.h"
 #include "SensorManager.h"
@@ -10,9 +11,6 @@
 #include "LightController.h"
 #include "SunriseSunset.h"
 #include "WifiController.h"
-
-#include <ElegantOTA.h>
-#include <ArduinoOTA.h>
 
 #define SPIFFS LittleFS
 
@@ -34,9 +32,9 @@ extern WifiController wifiController;
 // External reference to sunrise/sunset calculator
 extern SunriseSunsetCalculator sunriseSunset;
 
-WebServer::WebServer(int port) : server(port) {}
+CoopControllerWebServer::CoopControllerWebServer(int port) : server(port) {}
 
-void WebServer::begin()
+void CoopControllerWebServer::begin()
 {
     server.begin();
 
@@ -872,7 +870,7 @@ void WebServer::begin()
     });
 }
 
-void WebServer::loop()
+void CoopControllerWebServer::loop()
 {
     ArduinoOTA.handle();
     ElegantOTA.loop();
