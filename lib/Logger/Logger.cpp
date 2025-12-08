@@ -1,6 +1,7 @@
 #include "Logger.h"
 #include "time.h"
 #include <cstdlib>
+#include <stdarg.h>
 
 #include "SettingsManager.h"
 
