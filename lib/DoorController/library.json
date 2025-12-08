@@ -1,0 +1,6 @@
+{
+  "name": "DoorController",
+  "version": "1.0.0",
+  "description": "Door automation and motor control",
+  "dependencies": {}
+}

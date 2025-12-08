@@ -1,0 +1,6 @@
+{
+  "name": "PumpController",
+  "version": "1.0.0",
+  "description": "Pump control with temperature monitoring and flow error detection",
+  "dependencies": {}
+}

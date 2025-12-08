@@ -1,8 +1,8 @@
 #include "WifiController.h"
 #include "Logger.h"
 #include "BuzzerController.h"
-#include <esp_task_wdt.h>
-#include <mDNS.h>
+#include "esp_task_wdt.h"
+#include "mDNS.h"
 
 // Define constants (from main.cpp)
 #define WIFI_CHECK_INTERVAL 30000     // Check WiFi every 30 seconds

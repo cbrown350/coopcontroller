@@ -1,0 +1,8 @@
+{
+  "name": "LightController",
+  "version": "1.0.0",
+  "description": "PWM-controlled light with sine-wave transitions",
+  "dependencies": {
+    "jpb10/SolarCalculator": "^2.0.2"
+  }
+}

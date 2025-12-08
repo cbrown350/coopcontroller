@@ -208,30 +208,50 @@ graph TB
 
 ```
 coop_controller/
-├── include/                     # Header files
-│   ├── BuzzerController.h      # Buzzer control (planned)
-│   ├── DoorController.h        # Door automation (planned)
-│   ├── LightController.h       # Light control (implemented)
-│   ├── Logger.h                # Logging system
-│   ├── PumpController.h        # Pump control logic
-│   ├── SensorManager.h         # Temperature/water meter handling
-│   ├── SettingsManager.h       # Configuration management
-│   ├── SunriseSunset.h         # Sunrise/sunset calculations
-│   ├── WebServer.h             # HTTP server and REST API
-│   └── WifiController.h        # WiFi management (new)
+├── lib
+|   ├── BuzzerController 
+│   |   ├── BuzzerController.cpp
+│   |   ├── BuzzerController.h      # Buzzer control (planned)
+│   |   ├── library.json
+|   ├── DoorController 
+│   |   ├── DoorController.cpp
+│   |   ├── DoorController.h        # Door automation (planned)
+│   |   ├── library.json
+|   ├── LightController 
+│   |   ├── LightController.cpp
+│   |   ├── LightController.h       # Light control (implemented)
+│   |   ├── library.json
+|   ├── Logger 
+│   |   ├── library.json
+│   |   ├── Logger.cpp
+│   |   ├── Logger.h                # Logging system
+│   ├── PumpController 
+│   |   ├── library.json
+│   |   ├── PumpController.cpp
+│   |   ├── PumpController.h        # Pump control logic
+│   ├── SensorManager 
+│   |   ├── library.json
+│   |   ├── SensorManager.cpp
+│   |   ├── SensorManager.h         # Temperature/water meter handling
+|   ├── SettingsManager 
+│   |   ├── library.json
+│   |   ├── SettingsManager.cpp
+│   |   ├── SettingsManager.h       # Configuration management
+|   ├── SunriseSunset 
+│   |   ├── library.json
+│   |   ├── SunriseSunset.cpp
+│   |   ├── SunriseSunset.h         # Sunrise/sunset calculations
+|   ├── WebServer 
+│   |   ├── library.json
+│   |   ├── WebServer.cpp
+│   |   ├── WebServer.h             # HTTP server and REST API
+│   └── WifiController 
+│       ├── library.json
+│       └── WifiController.cpp      # WiFi implementation (new)
+│       └── WifiController.h        # WiFi management (new)
 │
 ├── src/                        # Implementation files
-│   ├── BuzzerController.cpp
-│   ├── DoorController.cpp
-│   ├── LightController.cpp
-│   ├── Logger.cpp
-│   ├── main.cpp                # Main entry point and loop
-│   ├── PumpController.cpp
-│   ├── SensorManager.cpp
-│   ├── SettingsManager.cpp
-│   ├── SunriseSunset.cpp
-│   ├── WebServer.cpp
-│   └── WifiController.cpp      # WiFi implementation (new)
+│   └── main.cpp                # Main entry point and loop
 │
 ├── data/                       # Filesystem data (LittleFS)
 │   ├── assets/                 # Web UI static assets (built)
@@ -258,8 +278,14 @@ coop_controller/
 │   ├── post_build.py           # Post-build processing
 │   └── merge_bin.py            # Binary merging for releases
 │
-├── test/                       # Unit tests
-│   └── test.cpp                # Test implementations
+├── test/                       # Unit tests for various test including library/module tests
+│   ├── test_common 
+│   |   ├── test_main.cpp
+|   ├── test_embedded 
+│   |   ├── test_main.cpp
+|   └── test_desktop 
+│       └── test_main.cpp
+|
 │
 ├── platformio.ini              # PlatformIO configuration
 ├── README.md                   # User documentation
@@ -273,7 +299,7 @@ coop_controller/
 - **Source (src/)** - Implementation details
 - **Data (data/)** - Runtime files deployed to ESP32 filesystem
 - **Web (web/)** - Complete web application with dev server
-- **Tests (test/)** - Unit tests using Google Test framework
+- **Tests (test/)** - Unit tests using Google Test framework for desktop/native builds and UnitTest for embedded tests
 - **Build Scripts** - Automation for building and deploying
 
 ---
@@ -945,7 +971,7 @@ Features organized by priority and implementation status.
 - Update web server JSON handling to use string states for enum classes instead of numeric values for enums
 
 #### Enhanced Testing
-- Add unit tests for key components using Google Test framework
+- Add unit tests for key components using Google Test framework for desktop/native testing and UnitTest for embedded testing
 - Increase code coverage
 - Automated testing in CI/CD pipeline
 - Integration tests for API endpoints
@@ -1515,7 +1541,7 @@ cd web && npm run dev
 ### Unit Testing
 
 **C++ Testing:**
-- Use Google Test framework
+- Use Google Test framework for desktop/native tests and UnitTest for embedded tests
 - Test all public methods and edge cases
 - Mock external dependencies
 - Test error conditions and recovery
@@ -1842,7 +1868,7 @@ logs/
 - Modular component design
 - API versioning strategy
 - Configuration migration
-- Deaign for future mobile app and Google Messaging Service
+- Design for future mobile app and Google Messaging Service
 
 **Maintenance:**
 - Automated health checks
