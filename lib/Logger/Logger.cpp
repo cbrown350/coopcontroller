@@ -1,39 +1,37 @@
 #include "Logger.h"
-#include "time.h"
-#include <cstdlib>
+#include "config.h"
+
+#include "IHAL.h"
+
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <cassert>
+
 #include <stdarg.h>
 
-#include "SettingsManager.h"
 
-#include "WifiController.h"
-
-
-extern const char* hostName;
-extern const char* syslogServer;
-extern const char* syslogPort;
-
-// External function to get current time (from main.cpp)
-extern unsigned long getTime();
-
-extern WifiController wifiController;
-
-Logger &Logger::getInstance()
+Logger &Logger::getInstance(IHAL* hal)
 {
-  static Logger instance;
+  static Logger instance; // NOSONAR - must construct Logger here instead of inline since constructed UUID uses hal in constructor
+  if(hal != nullptr) {
+    instance.hal = hal;
+    instance.init();
+  }
+  assert(instance.hal != nullptr && "IHAL pointer must be provided on first getInstance() call");
   return instance;
 }
 
-Logger::Logger()
+void Logger::init()
 {
   currentIndex = 0;
   totalEntries = 0;
   uuidGenerator.generate();
-  currentLogLevel_ = LogLevel::INFO; // Default log level
+  currentLogLevel_ = stringToLogLevel(DEFAULT_LOGLEVEL);
   
   logInfo(String("Initializing SysLog to send logs to ") + String(syslogServer) + String(":") + String(syslogPort));
   if (!(syslogServer == nullptr || strlen(syslogServer) == 0 || syslogPort == nullptr || strlen(syslogPort) == 0)) 
   {
-    syslog = new SimpleSyslog(hostName, "CoopController", syslogServer, atoi(syslogPort), 400); // packet size 400 bytes
+    syslog = new SimpleSyslog(hostName, "CoopController", syslogServer, (uint16_t)atoi(syslogPort), 400); // NOSONAR, packet size 400 bytes
     logInfo("Syslog initialized");
   } else
   {
@@ -45,8 +43,9 @@ Logger::~Logger()
 {
   if (syslog != nullptr) 
   {
-    delete syslog;
+    delete syslog; // NOSONAR
   }
+  hal = nullptr;
 }
 
 void Logger::logWithLevel(const String &message, LogLevel level) const
@@ -56,22 +55,22 @@ void Logger::logWithLevel(const String &message, LogLevel level) const
         return; // Filter out messages below current log level
     }
 
-    unsigned long timestamp = getTime();
+    unsigned long timestamp = hal->getTime();
     
     // Create level prefix
-    String levelPrefix = "[" + logLevelToString(level) + "] ";
+    String levelPrefix = "[" + String(logLevelToString(level)) + "] ";
     String fullMessage = levelPrefix + message;
     
     // Print to serial with timestamp and level
-    Serial.printf("[%lu] %s\n", timestamp, fullMessage.c_str());
+    hal->SerialPrintf("[%lu] %s\n", timestamp, fullMessage.c_str());
 
-    if (syslog != nullptr && wifiController.isConnected())
-      syslog->printf(FAC_USER, PRI_DEBUG, (char*) "[%lu] %s", timestamp, fullMessage.c_str());
+    if (syslog != nullptr && hal->WiFiIsConnected())
+      syslog->printf(FAC_USER, PRI_DEBUG, const_cast<char*>("([%lu] %s)"), timestamp, fullMessage.c_str()); // NOSONAR
 
     // Generate UUID for this log entry
     uuidGenerator.generate();
-    char* uuidChars = uuidGenerator.toCharArray();
-    String uuid = String(uuidChars);
+    const char* uuidChars = uuidGenerator.toCharArray();
+    auto uuid = String(uuidChars);
 
     // Store in circular buffer
     logBuffer[currentIndex].uuid = uuid;
@@ -97,6 +96,21 @@ String Logger::logLevelToString(LogLevel level) const
         case LogLevel::ERROR: return "ERROR";
         default: return "UNKNOWN";
     }
+}
+
+LogLevel Logger::stringToLogLevel(const String &levelStr, uint depth) const
+{
+    if (levelStr == "VERBOSE") return LogLevel::VERBOSE;
+    if (levelStr == "DEBUG") return LogLevel::DEBUG;
+    if (levelStr == "INFO") return LogLevel::INFO;
+    if (levelStr == "WARNING") return LogLevel::WARNING;
+    if (levelStr == "ERROR") return LogLevel::ERROR;
+    if(depth > 0) {
+        logWarning(String("Unknown log level string '") + levelStr + String("', defaulting to INFO"));
+        return LogLevel::INFO; // prevent infinite recursion
+    }
+    logWarning(String("Unknown log level string '") + levelStr + String("', attempting default ") + DEFAULT_LOGLEVEL);
+    return stringToLogLevel(DEFAULT_LOGLEVEL, depth+1); 
 }
 
 void Logger::setLogLevel(LogLevel level)
@@ -135,59 +149,59 @@ void Logger::logError(const String &message) const
     logWithLevel(message, LogLevel::ERROR);
 }
 
-void Logger::logfVerbose(const char *format, ...) const
+void Logger::logfVerbose(const char *format, ...) const // NOSONAR
 {
-    char buffer[512];
+    char buffer[512]; // NOSONAR
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    vsnprintf(buffer, sizeof(buffer), format, args); // NOSONAR
     va_end(args);
     logVerbose(String(buffer));
 }
 
-void Logger::logfDebug(const char *format, ...) const
+void Logger::logfDebug(const char *format, ...) const // NOSONAR
 {
-    char buffer[512];
+    char buffer[512]; // NOSONAR
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    vsnprintf(buffer, sizeof(buffer), format, args); // NOSONAR
     va_end(args);
     logDebug(String(buffer));
 }
 
-void Logger::logfInfo(const char *format, ...) const
+void Logger::logfInfo(const char *format, ...) const // NOSONAR
 {
-    char buffer[512];
+    char buffer[512]; // NOSONAR
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    vsnprintf(buffer, sizeof(buffer), format, args); // NOSONAR
     va_end(args);
     logInfo(String(buffer));
 }
 
-void Logger::logfWarning(const char *format, ...) const
+void Logger::logfWarning(const char *format, ...) const // NOSONAR
 {
-    char buffer[512];
+    char buffer[512]; // NOSONAR
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    vsnprintf(buffer, sizeof(buffer), format, args); // NOSONAR
     va_end(args);
     logWarning(String(buffer));
 }
 
-void Logger::logfError(const char *format, ...) const
+void Logger::logfError(const char *format, ...) const // NOSONAR
 {
-    char buffer[512];
+    char buffer[512]; // NOSONAR
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    vsnprintf(buffer, sizeof(buffer), format, args); // NOSONAR
     va_end(args);
     logError(String(buffer));
 }
 
 String Logger::getLogsAsJson() const
 {
-  logger.logDebug(String("Free heap before JSON log: ") + String(ESP.getFreeHeap()) + " bytes");
+  logger.logDebug(String("Free heap before JSON log: ") + String(hal->getFreeHeap()) + " bytes");
 
   JsonDocument jsonDoc;
   JsonArray logsArray = jsonDoc["logs"].to<JsonArray>();
@@ -210,13 +224,13 @@ String Logger::getLogsAsJson() const
   
   if (jsonDoc.overflowed()) {
     logWarning("JSON document overflowed - logs may be truncated");
-    return "{\"error\":\"JSON overflow\",\"logs\":[]}";
+    return R"({"error":"JSON overflow","logs":[]})";
   }
 
   String jsonResponse;
   serializeJson(jsonDoc, jsonResponse);
   
-  logger.logDebug(String("JSON log response entries: ") + String(totalEntries) + ", size: " + String(jsonResponse.length()) + " bytes, free heap: " + String(ESP.getFreeHeap()) + " bytes");
+  logger.logDebug(String("JSON log response entries: ") + String(totalEntries) + ", size: " + String(jsonResponse.length()) + " bytes, free heap: " + String(hal->getFreeHeap()) + " bytes");
   return jsonResponse;
 }
 
@@ -225,7 +239,7 @@ void Logger::clearLogs()
   currentIndex = 0;
   totalEntries = 0;
   // Clear the buffer
-  for (int i = 0; i < MAX_LOG_ENTRIES; i++)
+  for (int i = 0; i < MAX_LOG_ENTRIES; i++) // NOSONAR
   {
     logBuffer[i].uuid = "";
     logBuffer[i].timestamp = 0;

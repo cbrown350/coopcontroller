@@ -1,7 +1,8 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
 
-#include "LittleFS.h"
+#include "config.h"
+#include "HAL_ESP32.h"
 #include "Logger.h"
 #include "SettingsManager.h"
 #include "CoopControllerWebServer.h"
@@ -19,34 +20,6 @@
 
 
 
-#define SPIFFS LittleFS
-
-// Fix for CHIP_FAMILY_RAW that may contain "ESP32"
-#ifdef ESP32
-#undef ESP32
-#endif
-
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-
-const char* firmwareVersion = (strcmp(TOSTRING(FIRMWARE_VERSION_RAW), "") == 0) ? "dev" : TOSTRING(FIRMWARE_VERSION_RAW);
-const char* chipFamily      = (strcmp(TOSTRING(CHIP_FAMILY_RAW), "") == 0) ? "unknown" : TOSTRING(CHIP_FAMILY_RAW);
-
-const char* syslogServer = (strcmp(TOSTRING(SYSLOG_SERVER), "") == 0 || strcmp(TOSTRING(SYSLOG_SERVER), "1") == 0) ? "" : TOSTRING(SYSLOG_SERVER);
-const char* syslogPort = (strcmp(TOSTRING(SYSLOG_PORT), "") == 0 || strcmp(TOSTRING(SYSLOG_PORT), "1") == 0) ? "" : TOSTRING(SYSLOG_PORT);
-
-const char* hostName      = (strcmp(TOSTRING(HOST_NAME), "") == 0) ? "coopcontroller" : TOSTRING(HOST_NAME);
-const char* otaPasswd      = (strcmp(TOSTRING(OTA_PASSWD), "") == 0 || strcmp(TOSTRING(OTA_PASSWD), "1") == 0) ? "" : TOSTRING(OTA_PASSWD);
-const char* apPasswd      = (strcmp(TOSTRING(AP_PASSWD), "") == 0 || strcmp(TOSTRING(AP_PASSWD), "1") == 0) ? "" : TOSTRING(AP_PASSWD);
-
-#define SENSOR_UPDATE_INTERVAL 5000    // Update sensors every 5 seconds
-#define PUMP_UPDATE_INTERVAL 1000     // Update pump controller every 1 second
-#define DOOR_UPDATE_INTERVAL 100      // Update door controller every 100ms for faster response
-#define LIGHT_UPDATE_INTERVAL 100     // Update light controller every 100ms for smooth fading
-
-
-// NTP server to request epoch time
-const char* ntpServer = "pool.ntp.org";
 
 CoopControllerWebServer webServer(80);
 
@@ -77,33 +50,28 @@ void IRAM_ATTR watchdogResetHandler() {
     // This is just for any last-minute cleanup if needed
 }
 
+HAL_ESP32 hal{}; // HAL implementation for ESP32
+
 void setup()
 {
+    Serial.begin(SERIAL_BAUD);
+    Logger::getInstance(&hal); // Initialize logger singleton    
+
+    hal.initFilesystem();
+
+    settingsManager.load();
+
+    // Set log level from settings
+    logger.setLogLevel(logger.stringToLogLevel(settingsManager.getLogLevel()));
+
     // put your setup code here, to run once:
     pinMode(TEMP_METER_PIN, INPUT_PULLUP);
     pinMode(TEMP_METER_2_PIN, INPUT_PULLUP);
-    Serial.begin(SERIAL_BAUD);
 
     // Initialize logging system
     logger.logInfo("ESP Coop Controller System starting up...");
     logger.logInfo(String("Firmware version: ") + firmwareVersion);
     logger.logInfo(String("Chip family: ") + chipFamily);
-
-    // Initialize filesystem
-    if (!LittleFS.begin(true)) {  // The 'true' parameter formats the filesystem if it fails to mount
-        logger.logWarning("Failed to mount LittleFS filesystem, formatting...");
-        if (!LittleFS.begin(true)) {
-            logger.logError("Failed to initialize LittleFS even after formatting");
-            // Continue without filesystem - settings will use defaults
-        } else {
-            logger.logInfo("LittleFS filesystem initialized after formatting");
-        }
-    } else {
-        logger.logInfo("LittleFS filesystem initialized");
-    }
-
-    // Load settings early
-    settingsManager.load();
 
     // Initialize coop controller components
     tempSensor.begin();
@@ -120,16 +88,6 @@ void setup()
     
     // Set water meter calibration from settings
     tempSensor.setPulsesPerGallon(settingsManager.getPulsesPerGallon());
-    
-    // Initialize logger level from settings
-    String logLevelStr = settingsManager.getLogLevel();
-    LogLevel level = LogLevel::INFO; // default
-    if (logLevelStr == "VERBOSE") level = LogLevel::VERBOSE;
-    else if (logLevelStr == "DEBUG") level = LogLevel::DEBUG;
-    else if (logLevelStr == "INFO") level = LogLevel::INFO;
-    else if (logLevelStr == "WARNING") level = LogLevel::WARNING;
-    else if (logLevelStr == "ERROR") level = LogLevel::ERROR;
-    logger.setLogLevel(level);
     
     logger.logInfo("Coop controller components initialized");
 

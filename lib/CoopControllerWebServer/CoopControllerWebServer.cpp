@@ -1,4 +1,6 @@
 #include "CoopControllerWebServer.h"
+#include "config.h"
+
 #include <AsyncJson.h>
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
@@ -13,13 +15,6 @@
 #include "WifiController.h"
 
 #define SPIFFS LittleFS
-
-// External references to firmware version from main.cpp
-extern const char *firmwareVersion;
-extern const char *chipFamily;
-
-extern const char* hostName;
-extern const char* otaPasswd;
 
 // External references to coop controller components
 extern SensorManager tempSensor;

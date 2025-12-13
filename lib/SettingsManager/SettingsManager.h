@@ -1,67 +1,69 @@
+#include "config.h"
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
 #ifndef SETTINGS_DATA_H
 #define SETTINGS_DATA_H
 
-struct user_settings
-{
+
+struct user_settings // NOSONAR
+{    
     String ssid;
     String passwd;
-    bool   ap_mode;
-    bool   enabled;
-    bool   has_connected;
+    bool   ap_mode = true;
+    bool   has_connected = false;
     
     // Coop Controller specific settings
-    float  temp_threshold_on_f;     // Temperature threshold to turn ON pump in Fahrenheit (default 34F)
-    float  temp_threshold_off_f;    // Temperature threshold to turn OFF pump in Fahrenheit (default 36F)
-    int    pump_on_time_seconds;    // Pump ON time in seconds (default 30)
-    int    pump_off_time_seconds;   // Pump OFF time in seconds (default 300)
-    bool   pump_auto_mode;          // Enable automatic pump control based on temperature
-    bool   light_auto_mode;         // Enable automatic light control
-    int    light_on_minute;           // Minute to turn on light (0-59)
-    String light_on_mode;           // 'fixed' or 'sunset_offset'
-    int    light_on_sunset_offset_minutes; // Minutes before/after sunset for light on (default: 0)
-    int    light_on_hour;           // Hour to turn on light (24-hour format)
-    int    light_off_hour;          // Hour to turn off light (24-hour format)
-    int    light_brightness_percent; // Maximum brightness percentage (0-100)
-    int    light_transition_duration_minutes; // Fade transition duration in minutes
-    int    water_flow_error_timeout_seconds; // Timeout for water flow error detection in seconds (default 10 = 10 seconds)
-    String log_level;               // Log level: "VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR" (default "INFO")
+    float  temp_threshold_on_f = 34.0;     // Temperature threshold to turn ON pump in Fahrenheit (default 34F)
+    float  temp_threshold_off_f = 36.0;    // Temperature threshold to turn OFF pump in Fahrenheit (default 36F)
+    int    pump_on_time_seconds = 300;    // Pump ON time in seconds (default 300)
+    int    pump_off_time_seconds = 600;   // Pump OFF time in seconds (default 600)
+    bool   pump_auto_mode = true;          // Enable automatic pump control based on temperature
+    bool   light_auto_mode = false;         // Enable automatic light control
+    int    light_on_minute = 0;           // Minute to turn on light (0-59)
+    String light_on_mode = "fixed";           // 'fixed' or 'sunset_offset'
+    int    light_on_sunset_offset_minutes = 0; // Minutes before/after sunset for light on (default: 0)
+    int    light_on_hour = 6;           // Hour to turn on light (24-hour format)
+    int    light_off_hour = 21;          // Hour to turn off light (24-hour format)
+    int    light_brightness_percent = 80; // Maximum brightness percentage (0-100)
+    int    light_transition_duration_minutes = 15; // Fade transition duration in minutes
+    int    water_flow_error_timeout_seconds = 120; // Timeout for water flow error detection in seconds (default 120 seconds)
+    String log_level = DEFAULT_LOGLEVEL;               // Log level: "VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR" (default "INFO")
     
     // Water meter calibration
-    float  pulses_per_gallon;       // Pulses per gallon for water meter calibration (default 450.0)
-    int    water_meter_timeout_seconds; // Timeout in seconds before water meter considered disconnected (default 300)
+    float  pulses_per_gallon = 450.0;       // Pulses per gallon for water meter calibration (default 450.0)
+    int    water_meter_timeout_seconds = 300; // Timeout in seconds before water meter considered disconnected (default 300)
     
     // WiFi connection settings
-    int    wifi_max_retries;        // Maximum number of WiFi connection retries (default 5)
-    int    wifi_retry_delay_seconds;  // Delay between WiFi retry attempts in seconds (default 30)
-    int    wifi_ap_duration_minutes;  // How long to stay in AP mode before retrying (default 10)
-    int    watchdog_timeout_seconds; // Watchdog timeout in seconds (default 30, range 10-120)
-    bool   wifi_led_enabled;        // Enable WiFi status LED (default: true)
+    int    wifi_max_retries = 5;        // Maximum number of WiFi connection retries (default 5)
+    int    wifi_retry_delay_seconds = 30;  // Delay between WiFi retry attempts in seconds (default 30)
+    int    wifi_ap_duration_minutes = 10;  // How long to stay in AP mode before retrying (default 10)
+    int    watchdog_timeout_seconds = 30; // Watchdog timeout in seconds (default 30, range 10-120)
+    bool   wifi_led_enabled = true;        // Enable WiFi status LED (default: true)
     
     // Buzzer settings
-    bool   buzzer_enabled;         // Enable buzzer alerts (default: true)
-    String buzzer_type;            // Buzzer type: "ACTIVE" or "PASSIVE" (default: "ACTIVE")
+    bool   buzzer_enabled = true;         // Enable buzzer alerts (default: true)
+    String buzzer_type = "ACTIVE";            // Buzzer type: "ACTIVE" or "PASSIVE" (default: "ACTIVE")
     
     // Door control settings
-    bool   door_auto_mode;          // Enable automatic door control (default: false)
-    int    door_open_timeout_seconds; // Door open timeout in seconds (default: 30)
-    int    door_close_timeout_seconds; // Door close timeout in seconds (default: 30)
-    int    sunrise_offset_minutes;   // Sunrise offset for door opening (default: 0)
-    int    sunset_offset_minutes;    // Sunset offset for door closing (default: 0)
+    bool   door_auto_mode = false;          // Enable automatic door control (default: false)
+    int    door_open_timeout_seconds = 30; // Door open timeout in seconds (default: 30)
+    int    door_close_timeout_seconds = 30; // Door close timeout in seconds (default: 30)
+    int    sunrise_offset_minutes = 0;   // Sunrise offset for door opening (default: 0)
+    int    sunset_offset_minutes = 0;    // Sunset offset for door closing (default: 0)
     
     // Location settings for sunrise/sunset calculations
-    float  latitude;               // Latitude for sunrise/sunset calculations (default: 40.7128 - NYC)
-    float  longitude;              // Longitude for sunrise/sunset calculations (default: -74.0060 - NYC)
-    int    timezone_offset_hours;   // UTC timezone offset in hours (default: -5 - EST)
+    float  latitude = (float)40.7128;               // Latitude for sunrise/sunset calculations (default: 40.7128 - NYC)
+    float  longitude = (float)-74.0060;              // Longitude for sunrise/sunset calculations (default: -74.0060 - NYC)
+    int    timezone_offset_hours = -5;   // UTC timezone offset in hours (default: -5 - EST)
     
     // Task 3.5k preparation
-    bool   door_auto_close_after_sunset_enabled; // Enable auto-close X minutes after sunset (default: false)
-    int    door_auto_close_after_sunset_minutes;  // Minutes after sunset to auto-close (default: 0)
+    bool   door_auto_close_after_sunset_enabled = false; // Enable auto-close X minutes after sunset (default: false)
+    int    door_auto_close_after_sunset_minutes = 0;  // Minutes after sunset to auto-close (default: 0)
 };
 
-class SettingsManager
+class SettingsManager // NOSONAR
 {
    private:
     user_settings settings;
@@ -83,6 +85,7 @@ class SettingsManager
 
     bool load();
     bool save();
+    void printSettingsDebug() const;
 
     //  (loads if not already loaded)
     const user_settings &getSettings();
@@ -202,7 +205,9 @@ class SettingsManager
     void setDoorAutoCloseAfterSunsetMinutes(int minutes);
 
     void factoryReset();
+    void setFromJsonDoc(const JsonDocument &doc);
     String toJson(bool includePassword = true) const;
+    JsonDocument toJsonDoc(bool includePassword = true) const;
 };
 
 #define settingsManager SettingsManager::getInstance()

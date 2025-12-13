@@ -1,3 +1,4 @@
+#include "config.h"
 #include "WifiController.h"
 #include "Logger.h"
 #include "BuzzerController.h"
@@ -130,7 +131,7 @@ void WifiController::failWifi() {
 
 void WifiController::wifiSetup() {
     if (settingsManager_->isAPMode()) {
-        logger.logInfo("Starting AP mode");
+        logger.logInfo("Starting AP mode for " + String(settingsManager_->getWifiAPDurationMinutes()) + " minutes");
         if (apPasswd_ && strlen(apPasswd_) > 0) {
             WiFi.softAP(hostName_, apPasswd_);
             logger.logDebug("AP password set: " + String(apPasswd_));
@@ -153,6 +154,7 @@ void WifiController::wifiSetup() {
             logger.logWarning("No SSID configured, falling back to AP mode");
             settingsManager_->setAPMode(true);
             settingsManager_->save();
+            settingsManager_->printSettingsDebug();
             delay(1000);
             ESP.restart();
             return;

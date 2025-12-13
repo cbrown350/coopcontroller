@@ -1,7 +1,9 @@
+#include "config.h"
 #include "SettingsManager.h"
 #include "Logger.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+
 
 SettingsManager::SettingsManager() : isLoaded(false), wifiChanged(false), requestRestartAt(0) {
     // Initialize with default values
@@ -15,11 +17,12 @@ SettingsManager &SettingsManager::getInstance() {
 
 String SettingsManager::loadFile() {    
 
-    File file = LittleFS.open("/user_settings.json", "r");
+    File file = LittleFS.open(SETTINGS_FILE, "r");
     if (!file) {
-        logger.logInfo("Settings file not found, using defaults");
+        logger.logWarning("Settings file not found, using defaults");
         // Set default values
         settings = user_settings{};
+        printSettingsDebug();
         isLoaded = true;
         return "";
     }
@@ -49,144 +52,41 @@ bool SettingsManager::load() {
         return false;
     }
 
-    // Load WiFi settings
-    settings.ssid = doc["ssid"] | "";
-    settings.passwd = doc["passwd"] | "";
-    settings.ap_mode = doc["ap_mode"] | false;
-    settings.enabled = doc["enabled"] | true;
-    settings.has_connected = doc["has_connected"] | false;
-    
-    // Load Coop Controller settings
-    settings.temp_threshold_on_f = doc["temp_threshold_on_f"] | 34.0;
-    settings.temp_threshold_off_f = doc["temp_threshold_off_f"] | 36.0;
-    settings.pump_on_time_seconds = doc["pump_on_time_seconds"] | 300;
-    settings.pump_off_time_seconds = doc["pump_off_time_seconds"] | 600;
-    settings.pump_auto_mode = doc["pump_auto_mode"] | true;
-    settings.light_auto_mode = doc["light_auto_mode"] | false;
-    settings.light_on_hour = doc["light_on_hour"] | 6;
-    settings.light_on_minute = doc["light_on_minute"] | 0;
-    settings.light_on_mode = doc["light_on_mode"] | "fixed";
-    settings.light_on_sunset_offset_minutes = doc["light_on_sunset_offset_minutes"] | 0;
-    settings.light_off_hour = doc["light_off_hour"] | 21;
-    settings.light_brightness_percent = doc["light_brightness_percent"] | 80;
-    settings.light_transition_duration_minutes = doc["light_transition_duration_minutes"] | 15;
-    settings.water_flow_error_timeout_seconds = doc["water_flow_error_timeout_seconds"] | 120;
-    settings.log_level = doc["log_level"] | "INFO";
-    
-    // Load water meter calibration
-    settings.pulses_per_gallon = doc["pulses_per_gallon"] | 450.0;
-    settings.water_meter_timeout_seconds = doc["water_meter_timeout_seconds"] | 300;
-    
-    // Load WiFi connection settings
-    settings.wifi_max_retries = doc["wifi_max_retries"] | 5;
-    settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | 30;
-    settings.wifi_ap_duration_minutes = doc["wifi_ap_duration_minutes"] | 10;
-    settings.watchdog_timeout_seconds = doc["watchdog_timeout_seconds"] | 30;
-    settings.wifi_led_enabled = doc["wifi_led_enabled"] | true;
-    
-    // Load buzzer settings
-    settings.buzzer_enabled = doc["buzzer_enabled"] | true;
-    settings.buzzer_type = doc["buzzer_type"] | "ACTIVE";
-    
-    // Load door control settings
-    settings.door_auto_mode = doc["door_auto_mode"] | false;
-    settings.door_open_timeout_seconds = doc["door_open_timeout_seconds"] | 30;
-    settings.door_close_timeout_seconds = doc["door_close_timeout_seconds"] | 30;
-    settings.sunrise_offset_minutes = doc["sunrise_offset_minutes"] | 0;
-    settings.sunset_offset_minutes = doc["sunset_offset_minutes"] | 0;
-    
-    // Load location settings
-    settings.latitude = doc["latitude"] | 40.7128;
-    settings.longitude = doc["longitude"] | -74.0060;
-    settings.timezone_offset_hours = doc["timezone_offset_hours"] | -5;
-    
-    // Load door auto close settings
-    settings.door_auto_close_after_sunset_enabled = doc["door_auto_close_after_sunset_enabled"] | false;
-    settings.door_auto_close_after_sunset_minutes = doc["door_auto_close_after_sunset_minutes"] | 0;
+    setFromJsonDoc(doc);
+    printSettingsDebug();
 
     isLoaded = true;
-    logger.logInfo("Settings loaded successfully");
+    logger.logDebug("Settings loaded successfully");
     return true;
 }
 
 bool SettingsManager::save() {
     String content = loadFile(); 
-    // check if wifi settings have changed  
-    if (content.indexOf("\"ssid\": \"" + settings.ssid + "\"") == -1 ||
-        content.indexOf("\"passwd\": \"" + settings.passwd + "\"") == -1) {
+    JsonDocument oldDoc;
+    if (DeserializationError error = deserializeJson(oldDoc, content); !error) {
+        oldDoc["passwd"] = oldDoc["passwd"] | ""; // ensure passwd key exists for comparison
+        if (!settings.ssid.equals((String)oldDoc["ssid"]) ||
+            !settings.passwd.equals((String)oldDoc["passwd"])) {
+            logger.logWarning("WiFi SSID or password changed, AP mode will be disabled");
+            wifiChanged = true;
+            settings.ap_mode = false;
+        }   
+        if (oldDoc["ap_mode"] != settings.ap_mode) {
+            logger.logWarning("WiFi AP mode setting changed");
+            wifiChanged = true;
+        } 
+    } else {
+        logger.logWarning("Could not parse existing settings JSON file, assuming WiFi settings changed");
         wifiChanged = true;
-        settings.ap_mode = false; // disable AP mode if SSID or password changed
-    }   
-    if (content.indexOf("\"ap_mode\": " + String(settings.ap_mode ? "true" : "false")) == -1) {
-        wifiChanged = true;
-    } 
-    
-
-    JsonDocument doc;
-    
-    // WiFi settings
-    doc["ssid"] = settings.ssid;
-    if (settings.passwd.length() > 0) {
-        doc["passwd"] = settings.passwd;
     }
-    doc["ap_mode"] = settings.ap_mode;
-    doc["enabled"] = settings.enabled;
-    doc["has_connected"] = settings.has_connected;
-    
-    // Coop Controller settings
-    doc["temp_threshold_on_f"] = settings.temp_threshold_on_f;
-    doc["temp_threshold_off_f"] = settings.temp_threshold_off_f;
-    doc["pump_on_time_seconds"] = settings.pump_on_time_seconds;
-    doc["pump_off_time_seconds"] = settings.pump_off_time_seconds;
-    doc["pump_auto_mode"] = settings.pump_auto_mode;
-    doc["light_auto_mode"] = settings.light_auto_mode;
-    doc["light_on_hour"] = settings.light_on_hour;
-    doc["light_on_minute"] = settings.light_on_minute;
-    doc["light_on_mode"] = settings.light_on_mode;
-    doc["light_on_sunset_offset_minutes"] = settings.light_on_sunset_offset_minutes;
-    doc["light_off_hour"] = settings.light_off_hour;
-    doc["light_brightness_percent"] = settings.light_brightness_percent;
-    doc["light_transition_duration_minutes"] = settings.light_transition_duration_minutes;
-    doc["water_flow_error_timeout_seconds"] = settings.water_flow_error_timeout_seconds;
-    doc["log_level"] = settings.log_level;
-    
-    // Water meter calibration
-    doc["pulses_per_gallon"] = settings.pulses_per_gallon;
-    doc["water_meter_timeout_seconds"] = settings.water_meter_timeout_seconds;
-    
-    // WiFi connection settings
-    doc["wifi_max_retries"] = settings.wifi_max_retries;
-    doc["wifi_retry_delay_seconds"] = settings.wifi_retry_delay_seconds;
-    doc["wifi_ap_duration_minutes"] = settings.wifi_ap_duration_minutes;
-    doc["watchdog_timeout_seconds"] = settings.watchdog_timeout_seconds;
-    doc["wifi_led_enabled"] = settings.wifi_led_enabled;
-    
-    // Buzzer settings
-    doc["buzzer_enabled"] = settings.buzzer_enabled;
-    doc["buzzer_type"] = settings.buzzer_type;
-    
-    // Door control settings
-    doc["door_auto_mode"] = settings.door_auto_mode;
-    doc["door_open_timeout_seconds"] = settings.door_open_timeout_seconds;
-    doc["door_close_timeout_seconds"] = settings.door_close_timeout_seconds;
-    doc["sunrise_offset_minutes"] = settings.sunrise_offset_minutes;
-    doc["sunset_offset_minutes"] = settings.sunset_offset_minutes;
-    
-    // Location settings
-    doc["latitude"] = settings.latitude;
-    doc["longitude"] = settings.longitude;
-    doc["timezone_offset_hours"] = settings.timezone_offset_hours;
-    
-    // Door auto close settings
-    doc["door_auto_close_after_sunset_enabled"] = settings.door_auto_close_after_sunset_enabled;
-    doc["door_auto_close_after_sunset_minutes"] = settings.door_auto_close_after_sunset_minutes;
 
-    File file = LittleFS.open("/user_settings.json", "w");
+    File file = LittleFS.open(SETTINGS_FILE, "w");
     if (!file) {
         logger.logError("Failed to open settings file for writing");
         return false;
     }
 
+    JsonDocument doc = toJsonDoc(true);
     String output;
     serializeJson(doc, output);
     
@@ -197,7 +97,8 @@ bool SettingsManager::save() {
     }
 
     file.close();
-    logger.logInfo("Settings saved successfully");
+    printSettingsDebug();
+    logger.logDebug("Settings saved successfully");
     return true;
 }
 
@@ -206,6 +107,14 @@ const user_settings &SettingsManager::getSettings() {
         load();
     }
     return settings;
+}
+
+void SettingsManager::printSettingsDebug() const {
+    JsonDocument doc = toJsonDoc(false);
+    logger.logDebug("Current Settings:");
+    for (JsonPair kv : doc.as<JsonObject>()) {
+        logger.logDebug("  " + String(kv.key().c_str()) + ": " + String(kv.value().as<String>()));
+    }
 }
 
 // WiFi getters
@@ -534,61 +443,6 @@ void SettingsManager::factoryReset() {
     // Create default settings
     user_settings newSettings{};
     
-    // WiFi defaults
-    newSettings.ssid = "";
-    newSettings.passwd = "";
-    newSettings.ap_mode = true;
-    newSettings.enabled = true;
-    newSettings.has_connected = false;
-    
-    // Coop Controller defaults
-    newSettings.temp_threshold_on_f = 34.0;
-    newSettings.temp_threshold_off_f = 36.0;
-    newSettings.pump_on_time_seconds = 300;
-    newSettings.pump_off_time_seconds = 600;
-    newSettings.pump_auto_mode = true;
-    newSettings.light_auto_mode = false;
-    newSettings.light_on_hour = 6;
-    newSettings.light_on_minute = 0;
-    newSettings.light_on_mode = "fixed";
-    newSettings.light_on_sunset_offset_minutes = 0;
-    newSettings.light_off_hour = 21;
-    newSettings.light_brightness_percent = 80;
-    newSettings.light_transition_duration_minutes = 15;
-    newSettings.water_flow_error_timeout_seconds = 120;
-    newSettings.log_level = "INFO";
-    
-    // Water meter calibration defaults
-    newSettings.pulses_per_gallon = 450.0;
-    newSettings.water_meter_timeout_seconds = 300;
-    
-    // WiFi connection settings defaults
-    newSettings.wifi_max_retries = 5;
-    newSettings.wifi_retry_delay_seconds = 30;
-    newSettings.wifi_ap_duration_minutes = 10;
-    newSettings.watchdog_timeout_seconds = 30;
-    newSettings.wifi_led_enabled = true;
-    
-    // Buzzer settings defaults
-    newSettings.buzzer_enabled = true;
-    newSettings.buzzer_type = "ACTIVE";
-    
-    // Door control settings defaults
-    newSettings.door_auto_mode = false;
-    newSettings.door_open_timeout_seconds = 30;
-    newSettings.door_close_timeout_seconds = 30;
-    newSettings.sunrise_offset_minutes = 0;
-    newSettings.sunset_offset_minutes = 0;
-    
-    // Location settings defaults
-    newSettings.latitude = 40.7128;  // NYC
-    newSettings.longitude = -74.0060; // NYC
-    newSettings.timezone_offset_hours = -5; // EST
-    
-    // Door auto close defaults
-    newSettings.door_auto_close_after_sunset_enabled = false;
-    newSettings.door_auto_close_after_sunset_minutes = 0;
-    
     // Apply new settings
     settings = newSettings;
     isLoaded = true;
@@ -600,7 +454,69 @@ void SettingsManager::factoryReset() {
     logger.logWarning("Factory reset completed");
 }
 
-String SettingsManager::toJson(bool includePassword) const {
+void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
+
+    user_settings defaultSettings{};
+    
+    // Load WiFi settings
+    settings.ssid = doc["ssid"] | defaultSettings.ssid;
+    settings.passwd = doc["passwd"] | defaultSettings.passwd;
+    settings.ap_mode = doc["ap_mode"] | defaultSettings.ap_mode;
+    settings.has_connected = doc["has_connected"] | defaultSettings.has_connected;
+    
+    // Load Coop Controller settings
+    settings.temp_threshold_on_f = doc["temp_threshold_on_f"] | defaultSettings.temp_threshold_on_f;
+    settings.temp_threshold_off_f = doc["temp_threshold_off_f"] | defaultSettings.temp_threshold_off_f;
+    settings.pump_on_time_seconds = doc["pump_on_time_seconds"] | defaultSettings.pump_on_time_seconds;
+    settings.pump_off_time_seconds = doc["pump_off_time_seconds"] | defaultSettings.pump_off_time_seconds;
+    settings.pump_auto_mode = doc["pump_auto_mode"] | defaultSettings.pump_auto_mode;
+    settings.light_auto_mode = doc["light_auto_mode"] | defaultSettings.light_auto_mode;
+    settings.light_on_hour = doc["light_on_hour"] | defaultSettings.light_on_hour;
+    settings.light_on_minute = doc["light_on_minute"] | defaultSettings.light_on_minute;
+    settings.light_on_mode = doc["light_on_mode"] | defaultSettings.light_on_mode;
+    settings.light_on_sunset_offset_minutes = doc["light_on_sunset_offset_minutes"] | defaultSettings.light_on_sunset_offset_minutes;
+    settings.light_off_hour = doc["light_off_hour"] | defaultSettings.light_off_hour;
+    settings.light_brightness_percent = doc["light_brightness_percent"] | defaultSettings.light_brightness_percent;
+    settings.light_transition_duration_minutes = doc["light_transition_duration_minutes"] | defaultSettings.light_transition_duration_minutes;
+    settings.water_flow_error_timeout_seconds = doc["water_flow_error_timeout_seconds"] | defaultSettings.water_flow_error_timeout_seconds;
+    settings.log_level = doc["log_level"] | defaultSettings.log_level;
+    
+    // Load water meter calibration
+    settings.pulses_per_gallon = doc["pulses_per_gallon"] | defaultSettings.pulses_per_gallon;
+    settings.water_meter_timeout_seconds = doc["water_meter_timeout_seconds"] | defaultSettings.water_meter_timeout_seconds;
+    
+    // Load WiFi connection settings
+    settings.wifi_max_retries = doc["wifi_max_retries"] | defaultSettings.wifi_max_retries;
+    settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | defaultSettings.wifi_retry_delay_seconds;
+    settings.wifi_ap_duration_minutes = doc["wifi_ap_duration_minutes"] | defaultSettings.wifi_ap_duration_minutes;
+    if (settings.wifi_ap_duration_minutes < MIN_AP_TIME) {
+        settings.wifi_ap_duration_minutes = MIN_AP_TIME; 
+    }
+    settings.watchdog_timeout_seconds = doc["watchdog_timeout_seconds"] | defaultSettings.watchdog_timeout_seconds;
+    settings.wifi_led_enabled = doc["wifi_led_enabled"] | defaultSettings.wifi_led_enabled;
+    
+    // Load buzzer settings
+    settings.buzzer_enabled = doc["buzzer_enabled"] | defaultSettings.buzzer_enabled;
+    settings.buzzer_type = doc["buzzer_type"] | defaultSettings.buzzer_type;
+    
+    // Load door control settings
+    settings.door_auto_mode = doc["door_auto_mode"] | defaultSettings.door_auto_mode;
+    settings.door_open_timeout_seconds = doc["door_open_timeout_seconds"] | defaultSettings.door_open_timeout_seconds;
+    settings.door_close_timeout_seconds = doc["door_close_timeout_seconds"] | defaultSettings.door_close_timeout_seconds;
+    settings.sunrise_offset_minutes = doc["sunrise_offset_minutes"] | defaultSettings.sunrise_offset_minutes;
+    settings.sunset_offset_minutes = doc["sunset_offset_minutes"] | defaultSettings.sunset_offset_minutes;
+    
+    // Load location settings
+    settings.latitude = doc["latitude"] | defaultSettings.latitude;
+    settings.longitude = doc["longitude"] | defaultSettings.longitude;
+    settings.timezone_offset_hours = doc["timezone_offset_hours"] | defaultSettings.timezone_offset_hours;
+    
+    // Load door auto close settings
+    settings.door_auto_close_after_sunset_enabled = doc["door_auto_close_after_sunset_enabled"] | defaultSettings.door_auto_close_after_sunset_enabled;
+    settings.door_auto_close_after_sunset_minutes = doc["door_auto_close_after_sunset_minutes"] | defaultSettings.door_auto_close_after_sunset_minutes;
+}
+
+JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     JsonDocument doc;
     
     // WiFi settings
@@ -609,7 +525,6 @@ String SettingsManager::toJson(bool includePassword) const {
         doc["passwd"] = settings.passwd;
     }
     doc["ap_mode"] = settings.ap_mode;
-    doc["enabled"] = settings.enabled;
     doc["has_connected"] = settings.has_connected;
     
     // Coop Controller settings
@@ -659,6 +574,12 @@ String SettingsManager::toJson(bool includePassword) const {
     // Door auto close settings
     doc["door_auto_close_after_sunset_enabled"] = settings.door_auto_close_after_sunset_enabled;
     doc["door_auto_close_after_sunset_minutes"] = settings.door_auto_close_after_sunset_minutes;
+
+    return doc;
+}
+
+String SettingsManager::toJson(bool includePassword) const {
+    JsonDocument doc = toJsonDoc(includePassword);
 
     String output;
     serializeJson(doc, output);

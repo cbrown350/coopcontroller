@@ -1,9 +1,12 @@
-#pragma once
+#ifndef __LOGGER_H__
+#define __LOGGER_H__
 
-#include <Arduino.h>
-#include <ArduinoJson.h>
-#include <UUID.h>
-#include <SimpleSyslog.h>
+#include "IHAL.h"
+
+#include <Arduino.h> // Requires ArduinoFake to mock in tests
+#include <SimpleSyslog.h> // Requires ArduinoFake to mock in tests
+#include <UUID.h> // Requires ArduinoFake to mock in tests
+
 
 enum class LogLevel
 {
@@ -25,8 +28,10 @@ struct LogEntry
 class Logger
 {
 private:
+  static Logger instance;
+  IHAL* hal;
   static const int MAX_LOG_ENTRIES = 150;
-  mutable LogEntry logBuffer[MAX_LOG_ENTRIES];
+  mutable LogEntry logBuffer[MAX_LOG_ENTRIES]; // NOSONAR
   mutable int currentIndex;
   mutable int totalEntries;
   mutable UUID uuidGenerator;
@@ -35,19 +40,21 @@ private:
 
   LogLevel currentLogLevel_;
 
-  Logger();
+  Logger() = default;
   ~Logger();
 
   // Delete copy constructor and assignment operator
   Logger(const Logger &) = delete;
   Logger &operator=(const Logger &) = delete;
 
+  void init();
+
   // private internal helpers
   void logWithLevel(const String &message, LogLevel level) const;
 
 public:
   // Singleton access method
-  static Logger &getInstance();
+  static Logger &getInstance(IHAL* hal = nullptr);
 
   String getLogsAsJson() const;
   void clearLogs();
@@ -57,8 +64,9 @@ public:
   void setLogLevel(LogLevel level);
   LogLevel getLogLevel() const;
   String logLevelToString(LogLevel level) const;
+  LogLevel stringToLogLevel(const String &levelStr, uint depth = 0) const;
 
-  // Public level-specific methods (non-formatted) - const
+  // Public level-specific methods (non-formatted) - const // NOSONAR
   void logVerbose(const String &message) const;
   void logDebug(const String &message) const;
   void logInfo(const String &message) const;
@@ -75,3 +83,6 @@ public:
 
 // Convenience macro for easier access
 #define logger Logger::getInstance()
+
+
+#endif // __LOGGER_H__
