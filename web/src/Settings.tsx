@@ -4,6 +4,8 @@ function Settings() {
   const [ssid, setSsid] = createSignal('')
   const [password, setPassword] = createSignal('')
   const [showPassword, setShowPassword] = createSignal(false)
+  const [clearPassword, setClearPassword] = createSignal(false)
+  const [passwordError, setPasswordError] = createSignal('')
   const [loading, setLoading] = createSignal(true)
   const [loaded, setLoaded] = createSignal(false)
   const [error, setError] = createSignal('')
@@ -156,6 +158,19 @@ function Settings() {
     return true
   }
 
+  const validatePassword = (pwd: string) => {
+    if (pwd.length === 0) {
+      setPasswordError('')
+      return true
+    }
+    if (pwd.length < 5) {
+      setPasswordError('Password must be at least 5 characters long')
+      return false
+    }
+    setPasswordError('')
+    return true
+  }
+
   const handleSave = async () => {
     if (!loaded()) {
       setError('Settings not loaded. Please refresh the page.')
@@ -163,6 +178,11 @@ function Settings() {
     }
 
     if (!validateThresholds()) return
+
+    // Validate password if not clearing it
+    if (!clearPassword() && password().length > 0 && !validatePassword(password())) {
+      return
+    }
 
     try {
       setSaveSuccess(false)
@@ -195,15 +215,15 @@ function Settings() {
         longitude: longitude() ?? -74.0060,
         timezone_offset_hours: timezoneOffsetHours() ?? -5,
         door_auto_close_after_sunset_enabled: doorAutoCloseAfterSunsetEnabled() ?? false,
-        // Auto close after sunset minutes should be a number, not a string when defined
-        door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0, // Default to 0 if not defined
+        door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0,
         log_level: logLevel() ?? 'INFO'
       }
-      if(password().length >= 5) {
+
+      // Handle password: either set new password, clear it, or don't change it
+      if (clearPassword()) {
+        settingsPayload['passwd'] = ''
+      } else if (password().length >= 5) {
         settingsPayload['passwd'] = password()
-      } else if(password().length > 0) {
-        setError('Password must be at least 5 characters long')
-        return
       }
 
       const response = await fetch('/update_settings', {
@@ -380,12 +400,25 @@ function Settings() {
               <fieldset class="fieldset">
                 <legend class="fieldset-legend">Password</legend>
                 <div class="input-group">
-                  <input type={showPassword() ? "text" : "password"} id="password" value={password()} onInput={(e) => setPassword(e.target.value)} placeholder="Enter WiFi password..." class="input" />
+                  <input 
+                    type={showPassword() ? "text" : "password"} 
+                    id="password" 
+                    value={clearPassword() ? '' : password()} 
+                    onInput={(e) => {
+                      const value = e.target.value
+                      setPassword(value)
+                      validatePassword(value)
+                    }} 
+                    placeholder="Enter WiFi password..." 
+                    class={`input ${passwordError() ? 'input-error' : ''}`}
+                    disabled={clearPassword()}
+                  />
                   <button 
                     type="button" 
                     class="btn btn-ghost" 
                     onClick={() => setShowPassword(!showPassword())}
                     title={showPassword() ? "Hide password" : "Show password"}
+                    disabled={clearPassword()}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={showPassword() ? "lucide lucide-eye-off" : "lucide lucide-eye"}>
                       {showPassword() ? (
@@ -403,6 +436,32 @@ function Settings() {
                       )}
                     </svg>
                   </button>
+                </div>
+                <Show when={passwordError()}>
+                  <div class="fieldset-label text-error">{passwordError()}</div>
+                </Show>
+              </fieldset>
+
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Clear Password</legend>
+                <div class="form-control">
+                  <label class="label cursor-pointer">
+                    <span class="label-text">Clear WiFi password (connect to open network)</span>
+                    <input
+                      type="checkbox"
+                      class="toggle toggle-error"
+                      checked={clearPassword()}
+                      onChange={(e) => {
+                        setClearPassword(e.currentTarget.checked)
+                        if (e.currentTarget.checked) {
+                          setPasswordError('')
+                        }
+                      }}
+                    />
+                  </label>
+                  <label class="label">
+                    <span class="label-text-alt">Check to remove WiFi password and connect to an open network</span>
+                  </label>
                 </div>
               </fieldset>
 
