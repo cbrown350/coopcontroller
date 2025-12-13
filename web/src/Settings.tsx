@@ -168,9 +168,8 @@ function Settings() {
       setSaveSuccess(false)
       setError('')
 
-      const settingsPayload = {
+      const settingsPayload: any = {
         ssid: ssid(),
-        passwd: password(),
         temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
         temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
         pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
@@ -197,7 +196,14 @@ function Settings() {
         timezone_offset_hours: timezoneOffsetHours() ?? -5,
         door_auto_close_after_sunset_enabled: doorAutoCloseAfterSunsetEnabled() ?? false,
         // Auto close after sunset minutes should be a number, not a string when defined
-        door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0 // Default to 0 if not defined
+        door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0, // Default to 0 if not defined
+        log_level: logLevel() ?? 'INFO'
+      }
+      if(password().length >= 5) {
+        settingsPayload['passwd'] = password()
+      } else if(password().length > 0) {
+        setError('Password must be at least 5 characters long')
+        return
       }
 
       const response = await fetch('/update_settings', {
