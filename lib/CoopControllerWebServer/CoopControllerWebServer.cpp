@@ -101,21 +101,7 @@ void CoopControllerWebServer::begin()
             }
             if (jsonObj["log_level"].is<String>()) {
                 settingsManager.setLogLevel(jsonObj["log_level"].as<String>());
-                // Update logger's current log level
-                String levelStr = jsonObj["log_level"].as<String>();
-                if (levelStr == "VERBOSE") {
-                    logger.setLogLevel(LogLevel::VERBOSE);
-                } else if (levelStr == "DEBUG") {
-                    logger.setLogLevel(LogLevel::DEBUG);
-                } else if (levelStr == "INFO") {
-                    logger.setLogLevel(LogLevel::INFO);
-                } else if (levelStr == "WARNING") {
-                    logger.setLogLevel(LogLevel::WARNING);
-                } else if (levelStr == "ERROR") {
-                    logger.setLogLevel(LogLevel::ERROR);
-                } else {
-                    logger.setLogLevel(LogLevel::INFO); // Default fallback
-                }
+                logger.setLogLevel(logger.stringToLogLevel(settingsManager.getLogLevel()));
             }
             
             if (jsonObj["watchdog_timeout_seconds"].is<int>()) {
