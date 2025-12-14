@@ -49,7 +49,7 @@ The project uses Platform.io for firmware development and features a modern Soli
 
 **Key References:**
 - ESP32 pin functions defined in [`platformio.ini`](platformio.ini:45)
-- Pin layout reference: [`esp32_devkitC_v4_pinlayout.png`](esp32_devkitC_v4_pinlayout.png)
+- Pin layout reference: [`docs/esp32_devkitC_v4_pinlayout.png`](docs/esp32_devkitC_v4_pinlayout.png)
 - Setup instructions in [`README.md`](README.md:1)
 
 ---
@@ -290,7 +290,8 @@ coop_controller/
 ├── platformio.ini              # PlatformIO configuration
 ├── README.md                   # User documentation
 ├── Agents.md                   # This file - AI assistant context
-└── esp32_devkitC_v4_pinlayout.png  # Hardware reference
+└── docs/
+    └── esp32_devkitC_v4_pinlayout.png  # Hardware reference
 ```
 
 ### File Organization Principles
@@ -359,7 +360,7 @@ coop_controller/
 - **Note:** Power requirements vary based on connected peripherals
 
 ### Wiring Reference
-See [`esp32_devkitC_v4_pinlayout.png`](esp32_devkitC_v4_pinlayout.png) for detailed pin layout and capabilities.
+See [`docs/esp32_devkitC_v4_pinlayout.png`](docs/esp32_devkitC_v4_pinlayout.png) for detailed pin layout and capabilities.
 
 ---
 
@@ -1075,7 +1076,7 @@ upload_flags = --auth=<password>
 
 **ESP32:**
 - Official Documentation: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/
-- Pin reference: [`esp32_devkitC_v4_pinlayout.png`](esp32_devkitC_v4_pinlayout.png)
+- Pin reference: [`docs/esp32_devkitC_v4_pinlayout.png`](docs/esp32_devkitC_v4_pinlayout.png)
 
 **SolidJS:**
 - Documentation: https://www.solidjs.com/docs/latest
