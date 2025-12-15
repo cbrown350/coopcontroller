@@ -16,7 +16,7 @@ ESP32-based automation for chicken coop management: temperature monitoring, free
 
 1. Flash firmware and filesystem (web tool or PlatformIO Upload Filesystem Image).
 2. Connect to the temporary WiFi AP `CoopController` (password `coopycontroller`).
-3. Open [http://192.168.4.1](http://192.168.4.1) to load the UI, enter your WiFi SSID/password, and save settings.
+3. Open [http://192.168.4.1](http://192.168.4.1) or [http://coopcontroller.local](http://coopcontroller.local) to load the UI, enter your WiFi SSID/password, and save settings.
 4. After restart, access the device at [http://coopcontroller.local](http://coopcontroller.local) on your network.
 
 ## Web UI Development (SolidJS)
