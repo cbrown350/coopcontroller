@@ -14,60 +14,6 @@ import json
 
 Import("env")  # type: ignore # PlatformIO environment
 
-
-# def replace_cpp_properties_paths(source=None, target=None, env=None, **kwargs):
-#     """
-#     Post-processing callback to fix IntelliSense paths for unit-test-desktop.
-    
-#     Replaces /src with /test/desktop in both includePath and browse.path arrays.
-    
-#     Args:
-#         source: Build source (unused, required by PlatformIO callback signature)
-#         target: Build target (unused, required by PlatformIO callback signature)
-#         env: PlatformIO environment (passed by SCons as keyword argument)
-#         **kwargs: Additional keyword arguments from SCons
-#     """
-#     # Use global env if not provided as argument
-#     if env is None:
-#         from SCons.Script import Import  # type: ignore
-#         Import("env")  # type: ignore
-#         env_obj = env  # type: ignore
-#     else:
-#         env_obj = env
-    
-#     project_dir = env_obj.get("PROJECT_DIR")
-#     cpp_props_file = os.path.join(project_dir, ".vscode", "c_cpp_properties.json")
-    
-#     if not os.path.exists(cpp_props_file):
-#         print(f"Warning: c_cpp_properties.json not found at {cpp_props_file}")
-#         return
-    
-#     try:
-#         # Read the JSON file (with comments support)
-#         with open(cpp_props_file, 'r', encoding='utf-8') as f:
-#             content = f.read()
-        
-#         # Normalize project directory path to use forward slashes
-#         project_dir_normalized = project_dir.replace('\\', '/')
-#         src_path = f"{project_dir_normalized}/src"
-#         test_desktop_path = f"{project_dir_normalized}/test/desktop"
-        
-#         # Simple string replacement approach (handles JSON with comments)
-#         if src_path in content:
-#             modified_content = content.replace(src_path, test_desktop_path)
-            
-#             # Write back the modified content
-#             with open(cpp_props_file, 'w', encoding='utf-8') as f:
-#                 f.write(modified_content)
-            
-#             print(f"✓ Fixed IntelliSense paths: replaced '{src_path}' with '{test_desktop_path}'")
-#         else:
-#             print("ℹ No path replacement needed (src path not found)")
-            
-#     except Exception as e:
-#         print(f"Error fixing c_cpp_properties.json: {e}")
-
-
 def add_desktop_cpp_properties_paths(source=None, target=None, env=None, **kwargs): # NOSONAR
     """
     Ensure the VS Code c_cpp_properties.json includes the desktop unit test path
@@ -158,17 +104,4 @@ try:
     add_desktop_cpp_properties_paths(env=env)  # type: ignore
 except Exception as _e:
     pass
-
-# Register broad post-actions so it also runs after typical build targets
-# try:
-#     # After main program build (covers `pio run`)
-#     env.AddPostAction("buildprog", fix_cpp_properties_paths)  # type: ignore
-#     # After compilation database generation (covers `pio run -t compiledb`)
-#     env.AddPostAction("compiledb", fix_cpp_properties_paths)  # type: ignore
-#     # Fallback: after specific output program, when applicable
-#     env.AddPostAction("$BUILD_DIR/${PROGNAME}$PROGSUFFIX", fix_cpp_properties_paths)  # type: ignore
-#     # Custom alias to run manually if needed
-#     env.AlwaysBuild(env.Alias("fix_intellisense", None, fix_cpp_properties_paths))  # type: ignore
-# except Exception:
-#     pass
 
