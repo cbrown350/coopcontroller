@@ -6,8 +6,6 @@
 #include <ArduinoJson.h>
 #include <time.h>
 
-// External instances
-extern SunriseSunsetCalculator sunriseSunset;
 
 LightController::LightController() :
     currentState(LightState::OFF),
@@ -32,10 +30,11 @@ LightController::LightController() :
     totalFadeInTime(0),
     totalFadeOutTime(0),
     totalCycles(0)
-{
-}
+{}
 
-void LightController::begin() {
+void LightController::begin(SunriseSunsetCalculator* _sunriseSunset) {
+    this->sunriseSunset = _sunriseSunset;
+
     logger.logInfo("Initializing Light Controller");
     
     // Load settings
@@ -303,7 +302,7 @@ void LightController::resetStatistics() {
     logger.logInfo("Light statistics reset");
 }
 
-void LightController::toJson(JsonObject& json) const {
+void LightController::toJson(JsonObject& json) const { // NOSONAR - json is written
     json["state"] = getStateString();
     json["auto_mode"] = autoMode;
     json["current_brightness"] = currentBrightness;
@@ -342,7 +341,7 @@ String LightController::getNextScheduledAction() const {
     // Calculate next on time
     int onTimeMinutes;
     if (onMode == "sunset_offset") {
-        int sunsetMinutes = sunriseSunset.getSunsetMinutes();
+        int sunsetMinutes = sunriseSunset->getSunsetMinutes();
         onTimeMinutes = sunsetMinutes + onSunsetOffsetMinutes;
         
         // Normalize to 0-1439 (24 hours * 60 minutes)
@@ -394,7 +393,8 @@ void LightController::setState(LightState newState) {
         stateStartTime = millis();
         
         // Create state strings for logging
-        String oldStateStr, newStateStr;
+        String oldStateStr;
+        String newStateStr;
         switch (oldState) {
             case LightState::OFF: oldStateStr = "OFF"; break;
             case LightState::ON: oldStateStr = "ON"; break;
@@ -421,7 +421,7 @@ void LightController::setState(LightState newState) {
     }
 }
 
-void LightController::updatePWM() {
+void LightController::updatePWM() { // NOSONAR - modifies light state
     int pwmValue = (currentBrightness * 255) / 100; // Scale to 0-255
     ledcWrite(PWM_CHANNEL, pwmValue);
 }
@@ -451,16 +451,16 @@ void LightController::updateFade() {
     }
     
     // Calculate progress (0.0 to 1.0)
-    float progress = (float)elapsed / fadeDuration;
+    double progress = static_cast<double>(elapsed) / static_cast<double>(fadeDuration);
     
     // Use sine wave for smooth, natural transitions
-    float sineProgress = sin(progress * PI / 2.0);  // Quarter sine wave (0 to π/2)
+    double sineProgress = sin(progress * PI / 2.0);  // Quarter sine wave (0 to π/2)
     
     // Calculate brightness based on fade direction
     if (currentState == LightState::FADING_IN) {
-        currentBrightness = fadeStartBrightness + (fadeTargetBrightness - fadeStartBrightness) * sineProgress;
+        currentBrightness = static_cast<int>(fadeStartBrightness + (fadeTargetBrightness - fadeStartBrightness) * sineProgress);
     } else {
-        currentBrightness = fadeStartBrightness - (fadeStartBrightness - fadeTargetBrightness) * sineProgress;
+        currentBrightness = static_cast<int>(fadeStartBrightness - (fadeStartBrightness - fadeTargetBrightness) * sineProgress);
     }
     
     updatePWM();
@@ -497,7 +497,7 @@ bool LightController::shouldTurnOnBySchedule() const {
     // Calculate on time based on mode
     int onTimeMinutes;
     if (onMode == "sunset_offset") {
-        int sunsetMinutes = sunriseSunset.getSunsetMinutes();
+        int sunsetMinutes = sunriseSunset->getSunsetMinutes();
         onTimeMinutes = sunsetMinutes + onSunsetOffsetMinutes;
         
         // Normalize to 0-1439 (24 hours * 60 minutes)
@@ -532,6 +532,6 @@ bool LightController::shouldTurnOffBySchedule() const {
 
 int LightController::calculateSineWaveBrightness(float progress) const {
     // Use sine wave for smooth transitions
-    float sineValue = sin(progress * PI / 2.0);
+    auto sineValue = static_cast<float>(sin(progress * PI / 2.0));
     return (int)(sineValue * 100);
 }

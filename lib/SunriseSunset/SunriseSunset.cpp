@@ -1,6 +1,8 @@
 #include "SunriseSunset.h"
+#include <Arduino.h>
 #include "Logger.h"
 #include <time.h>
+#include <string>
 #include <SolarCalculator.h>
 
 SunriseSunsetCalculator::SunriseSunsetCalculator() {
@@ -17,7 +19,8 @@ void SunriseSunsetCalculator::begin(double lat, double lon, int utcOffset) {
   longitude_ = lon;
   utcOffset_ = utcOffset;
   lastCalculation_ = 0; // Force calculation on first update
-  logger.logInfo(String("SunriseSunsetCalculator initialized: lat=") + String(lat, 4) + String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
+  logger.logInfo(String("SunriseSunsetCalculator initialized: lat=") + String(lat, 4) + 
+        String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
 }
 
 void SunriseSunsetCalculator::update() {
@@ -37,7 +40,9 @@ void SunriseSunsetCalculator::forceUpdate() {
   }
   
   // Calculate sunrise/sunset for today using SolarCalculator library functions
-  double transit, sunrise, sunset;
+  double transit;
+  double sunrise;
+  double sunset;
   
   // Use the library function to calculate sunrise/sunset (returns UTC time)
   calcSunriseSunset(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
@@ -55,10 +60,10 @@ void SunriseSunsetCalculator::forceUpdate() {
   if (sunsetLocal >= 24) sunsetLocal -= 24;
   
   // Convert from hours to minutes since midnight
-  int sunriseHour = (int)sunriseLocal;
-  int sunriseMinute = (int)((sunriseLocal - sunriseHour) * 60);
-  int sunsetHour = (int)sunsetLocal;
-  int sunsetMinute = (int)((sunsetLocal - sunsetHour) * 60);
+  auto sunriseHour = (int)sunriseLocal;
+  auto sunriseMinute = (int)((sunriseLocal - sunriseHour) * 60);
+  auto sunsetHour = (int)sunsetLocal;
+  auto sunsetMinute = (int)((sunsetLocal - sunsetHour) * 60);
   
   if (sunriseHour >= 0 && sunriseMinute >= 0) {
     sunriseMinutes_ = sunriseHour * 60 + sunriseMinute;
@@ -76,7 +81,12 @@ void SunriseSunsetCalculator::forceUpdate() {
   
   lastCalculation_ = time(nullptr);
   
-  logger.logInfo(String("Sunrise/sunset calculated for ") + String(timeinfo.tm_year + 1900) + String("-") + String(timeinfo.tm_mon + 1) + String("-") + String(timeinfo.tm_mday) + String(": Sunrise ") + getSunriseTime() + String(" (") + String(sunriseHour) + String(":") + String(sunriseMinute) + String(" local), Sunset ") + getSunsetTime() + String(" (") + String(sunsetHour) + String(":") + String(sunsetMinute) + String(" local) [UTC offset: ") + String(utcOffset_) + String("]"));
+  logger.logInfo(String("Sunrise/sunset calculated for ") + String(timeinfo.tm_year + 1900) + 
+    String("-") + String(timeinfo.tm_mon + 1) + String("-") + String(timeinfo.tm_mday) + 
+    String(": Sunrise ") + getSunriseTime() + String(" (") + String(sunriseHour) + String(":") + 
+    String(sunriseMinute) + String(" local), Sunset ") + getSunsetTime() + String(" (") + 
+    String(sunsetHour) + String(":") + String(sunsetMinute) + String(" local) [UTC offset: ") + 
+    String(utcOffset_) + String("]"));
 }
 
 int SunriseSunsetCalculator::getSunriseMinutes() const {
@@ -96,9 +106,9 @@ String SunriseSunsetCalculator::getSunriseTime() const {
   hour = (hour > 12) ? hour - 12 : hour;
   hour = (hour == 0) ? 12 : hour; // Convert 0 to 12
   
-  char buffer[16];
-  sprintf(buffer, "%02d:%02d %s", hour, minute, period.c_str());
-  return String(buffer);
+  std::string hourStr = (hour < 10) ? "0" + std::to_string(hour) : std::to_string(hour);
+  std::string minStr = (minute < 10) ? "0" + std::to_string(minute) : std::to_string(minute);
+  return String((hourStr + ":" + minStr + " " + period.c_str()).c_str());
 }
 
 String SunriseSunsetCalculator::getSunsetTime() const {
@@ -110,9 +120,9 @@ String SunriseSunsetCalculator::getSunsetTime() const {
   hour = (hour > 12) ? hour - 12 : hour;
   hour = (hour == 0) ? 12 : hour; // Convert 0 to 12
   
-  char buffer[16];
-  sprintf(buffer, "%02d:%02d %s", hour, minute, period.c_str());
-  return String(buffer);
+  std::string hourStr = (hour < 10) ? "0" + std::to_string(hour) : std::to_string(hour);
+  std::string minStr = (minute < 10) ? "0" + std::to_string(minute) : std::to_string(minute);
+  return String((hourStr + ":" + minStr + " " + period.c_str()).c_str());
 }
 
 bool SunriseSunsetCalculator::shouldCalculate() const {

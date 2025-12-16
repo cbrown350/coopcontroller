@@ -8,7 +8,7 @@
 class SimpleSyslog {
 public:
     // Updated constructor to match Logger's usage (5 args)
-    SimpleSyslog(const char* server, const char* appName, const char* deviceHostname, int port, int packetSize) {} // NOSONAR
+    SimpleSyslog(const char* hostname, const char* app, const char* server, uint16_t port = 514, uint16_t max_packet_size = 128) {} // NOSONAR
     void printf(int facility, int severity, const char* format, ...) const { // NOSONAR
         ::printf("MockSyslog[%d,%d]: ", facility, severity);
         va_list args;

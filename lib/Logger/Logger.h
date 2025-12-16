@@ -47,14 +47,13 @@ private:
   Logger(const Logger &) = delete;
   Logger &operator=(const Logger &) = delete;
 
-  void init();
-
   // private internal helpers
   void logWithLevel(const String &message, LogLevel level) const;
 
 public:
+  void begin(IHAL* ihal);
   // Singleton access method
-  static Logger &getInstance(IHAL* hal = nullptr);
+  static Logger &getInstance();
 
   String getLogsAsJson() const;
   void clearLogs();
@@ -64,7 +63,7 @@ public:
   void setLogLevel(LogLevel level);
   LogLevel getLogLevel() const;
   String logLevelToString(LogLevel level) const;
-  LogLevel stringToLogLevel(const String &levelStr, uint depth = 0) const;
+  LogLevel stringToLogLevel(const String &levelStr, unsigned int depth = 0) const;
 
   // Public level-specific methods (non-formatted) - const // NOSONAR
   void logVerbose(const String &message) const;

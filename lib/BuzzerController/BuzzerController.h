@@ -1,8 +1,8 @@
 #ifndef __BUZZER_CONTROLLER_H__
 #define __BUZZER_CONTROLLER_H__
 
-#include <Arduino.h>
 #include <ArduinoJson.h>
+#include <stdint.h>
 
 // Alert types for different system conditions
 enum class AlertType : uint8_t {
@@ -33,10 +33,9 @@ struct AlertPattern {
 
 class BuzzerController {
 public:
-    BuzzerController(int pin = BUZZER_B_PIN);
+    BuzzerController() = default;
     
-public:
-    void begin();
+    void begin(uint8_t pin);
     void update();
     
     // Alert triggering methods
@@ -58,32 +57,32 @@ public:
     
     // Settings integration
     void loadFromSettings();
-    void saveToSettings();
+    void saveToSettings() const;
     String getAlertTypeString(AlertType type) const;
     
     // JSON serialization
     void toJson(JsonObject& json) const;
 
 private:
-    int _pin;
-    bool _enabled;
-    BuzzerType _buzzerType;
+    uint8_t _pin;
+    bool _enabled = true;
+    BuzzerType _buzzerType = BuzzerType::ACTIVE;
     
     // Alert state
-    bool _hasActiveAlert;
-    AlertType _currentAlertType;
+    bool _hasActiveAlert = false;
+    AlertType _currentAlertType = AlertType::SYSTEM_ERROR;
     unsigned long _silenceUntil;
     unsigned long _lastAlertTime;
     
     // Pattern execution state
     AlertPattern _currentPattern;
-    int _currentCycle;
-    int _currentBeep;
+    unsigned int _currentCycle;
+    unsigned int _currentBeep;
     unsigned long _lastStateChange;
     bool _isBeeping;
     
     // Default patterns for each alert type
-    static const AlertPattern DEFAULT_PATTERNS[];
+    static const AlertPattern DEFAULT_PATTERNS[]; // NOSONAR - intentional array
     
     // Private methods
     void executePattern();
@@ -91,10 +90,8 @@ private:
     void stopBeep();
     void nextPatternStep();
     bool isSilenced() const;
-    void logAlert(AlertType type, const char* action);
+    void logAlert(AlertType type, const char* action) const;
 };
 
-// Convenience macro for easier access
-#define buzzerController buzzerController
 
 #endif // __BUZZER_CONTROLLER_H__

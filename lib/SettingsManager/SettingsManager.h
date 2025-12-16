@@ -1,11 +1,10 @@
+#ifndef SETTINGS_DATA_H
+#define SETTINGS_DATA_H
+
 #include "config.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-
-#ifndef SETTINGS_DATA_H
-#define SETTINGS_DATA_H
-
 
 struct user_settings // NOSONAR
 {    

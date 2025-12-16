@@ -2,6 +2,7 @@
 #include "SettingsManager.h"
 #include "Logger.h"
 #include <LittleFS.h>
+#include <Arduino.h>
 #include <ArduinoJson.h>
 
 
@@ -11,7 +12,7 @@ SettingsManager::SettingsManager() : isLoaded(false), wifiChanged(false), reques
 }
 
 SettingsManager &SettingsManager::getInstance() {
-    static SettingsManager instance;
+    static SettingsManager instance; // NOSONAR - maintain instance here
     return instance;
 }
 
@@ -42,10 +43,9 @@ bool SettingsManager::load() {
         return false; // already logged in loadFile
     }
 
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, content);
+    JsonDocument doc;   
     
-    if (error) {
+    if (DeserializationError error = deserializeJson(doc, content); error) {
         logger.logError("Settings JSON parsing error, using defaults");
         settings = user_settings{};
         isLoaded = true;
@@ -276,20 +276,17 @@ int SettingsManager::getDoorAutoCloseAfterSunsetMinutes() const {
 
 // WiFi setters
 void SettingsManager::setSSID(const String &ssid) {
-    // if (settings.ssid != ssid)
-    //     wifiChanged = true;
+    // wifiChanged updated elsewhere
     settings.ssid = ssid;
 }
 
 void SettingsManager::setPassword(const String &password) {
-    // if (settings.passwd != password)
-    //     wifiChanged = true;
+    // wifiChanged updated elsewhere
     settings.passwd = password;
 }
 
 void SettingsManager::setAPMode(bool apMode) {
-    // if (settings.ap_mode != apMode)
-    //     wifiChanged = true;
+    // wifiChanged updated elsewhere
     settings.ap_mode = apMode;
 }
 
@@ -521,7 +518,7 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     
     // WiFi settings
     doc["ssid"] = settings.ssid;
-    if (includePassword && settings.passwd.length() > 0) {
+    if (includePassword && !settings.passwd.isEmpty()) {
         doc["passwd"] = settings.passwd;
     }
     doc["ap_mode"] = settings.ap_mode;

@@ -2,9 +2,10 @@
 #include "SettingsManager.h"
 #include "Logger.h"
 #include "esp32-hal-ledc.h"
+#include <stdint.h>
 
 // Default alert patterns for each alert type
-const AlertPattern BuzzerController::DEFAULT_PATTERNS[] = {
+const AlertPattern BuzzerController::DEFAULT_PATTERNS[] = { // NOSONAR - intentional array
     // PUMP_ERROR: 3 long beeps, repeat every 10 seconds, max 30 cycles
     {1000, 500, 3, 10000, 30},
     
@@ -30,24 +31,8 @@ const AlertPattern BuzzerController::DEFAULT_PATTERNS[] = {
     {500, 0, 1, 0, 1}
 };
 
-BuzzerController::BuzzerController(int pin)
-    : _pin(pin)
-    , _enabled(true)
-    , _buzzerType(BuzzerType::ACTIVE)
-    , _hasActiveAlert(false)
-    , _currentAlertType(AlertType::SYSTEM_ERROR)
-    , _silenceUntil(0)
-    , _lastAlertTime(0)
-    , _currentCycle(0)
-    , _currentBeep(0)
-    , _lastStateChange(0)
-    , _isBeeping(false)
-{
-}
-
-
-
-void BuzzerController::begin() {
+void BuzzerController::begin(uint8_t pin) {
+    _pin = pin;
     pinMode(_pin, OUTPUT);
     digitalWrite(_pin, HIGH); // Active LOW - turn off initially
     
@@ -214,8 +199,10 @@ void BuzzerController::loadFromSettings() {
     }
 }
 
-void BuzzerController::saveToSettings() {
-    // For now, do nothing. In the future, save to settings
+void BuzzerController::saveToSettings() const {
+    settingsManager.setBuzzerEnabled(_enabled);
+    settingsManager.setBuzzerType(_buzzerType == BuzzerType::ACTIVE ? "ACTIVE" : "PASSIVE");
+    settingsManager.save();
 }
 
 String BuzzerController::getAlertTypeString(AlertType type) const {
@@ -232,7 +219,7 @@ String BuzzerController::getAlertTypeString(AlertType type) const {
     }
 }
 
-void BuzzerController::toJson(JsonObject& json) const {
+void BuzzerController::toJson(JsonObject& json) const { // NOSONAR - json is being written
     json["enabled"] = _enabled;
     json["buzzer_type"] = _buzzerType == BuzzerType::ACTIVE ? "ACTIVE" : "PASSIVE";
     json["has_active_alert"] = _hasActiveAlert;
@@ -284,7 +271,7 @@ void BuzzerController::executePattern() {
                                String(" (max: ") + String(_currentPattern.max_cycles) + ")");
                 
                 // If this was the last beep and no pattern pause, we're done
-                if (_currentPattern.pattern_pause_ms == 0) {
+                if (_currentPattern.pattern_pause_ms == 0) { // NOSONAR - nesting ok
                     _hasActiveAlert = false;
                     logger.logDebug("Buzzer pattern - no pattern pause, clearing alert");
                     logAlert(_currentAlertType, "pattern completed");
@@ -322,6 +309,6 @@ bool BuzzerController::isSilenced() const {
     return _silenceUntil > 0 && millis() < _silenceUntil;
 }
 
-void BuzzerController::logAlert(AlertType type, const char* action) {
+void BuzzerController::logAlert(AlertType type, const char* action) const {
     logger.logInfo(String("Buzzer alert: ") + getAlertTypeString(type) + String(" - ") + action);
 }

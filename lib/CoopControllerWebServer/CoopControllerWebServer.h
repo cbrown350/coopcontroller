@@ -1,12 +1,16 @@
 #ifndef WEB_SERVER_H
 #define WEB_SERVER_H
 
-#include <Arduino.h>
-#include <ArduinoJson.h>
-#include <AsyncTCP.h>
+#include <stdint.h>
 #include <ESPAsyncWebServer.h>
-#include <LittleFS.h>
 
+#include "SensorManager.h"
+#include "PumpController.h"
+#include "BuzzerController.h"
+#include "DoorController.h"
+#include "LightController.h"
+#include "SunriseSunset.h"
+#include "WifiController.h"
 #include "SettingsManager.h"
 
 // Define SPIFFS as LittleFS
@@ -18,9 +22,15 @@ class CoopControllerWebServer
     AsyncWebServer server;
 
    public:
-    CoopControllerWebServer(int port = 80);
-    void begin();
-    void loop();
+    explicit CoopControllerWebServer(uint16_t port = 80);
+    void begin(SensorManager& tempSensor,
+            PumpController& pumpController,
+            BuzzerController& buzzerController,
+            DoorController& doorController,
+            LightController& lightController,
+            const WifiController& wifiController,
+            SunriseSunsetCalculator& sunriseSunset);
+    void loop() const;
 };
 
 #endif  // WEB_SERVER_H

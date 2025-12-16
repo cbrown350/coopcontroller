@@ -1,6 +1,8 @@
 #ifndef LIGHTCONTROLLER_H
 #define LIGHTCONTROLLER_H
 
+#include "SunriseSunset.h"
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
@@ -13,8 +15,10 @@ enum class LightState {
     FAULT
 };
 
-class LightController {
+class LightController { // NOSONAR - complexity ok
 private:
+    SunriseSunsetCalculator* sunriseSunset;
+
     // State variables
     LightState currentState;
     unsigned long stateStartTime;
@@ -68,7 +72,7 @@ public:
     LightController();
     
     // Initialization
-    void begin();
+    void begin(SunriseSunsetCalculator* sunriseSunset);
     
     // Main update loop - call frequently (recommended 100ms)
     void update();

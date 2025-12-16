@@ -2,18 +2,24 @@
 #include "WifiController.h"
 #include "Logger.h"
 #include "BuzzerController.h"
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ESPmDNS.h>
 #include "esp_task_wdt.h"
 #include "mDNS.h"
+#include <stdint.h>
 
 // Define constants (from main.cpp)
 #define WIFI_CHECK_INTERVAL 30000     // Check WiFi every 30 seconds
 #define WIFI_RECONNECT_TIMEOUT 10000  // Wait 10 seconds for reconnection
 
-WifiController::WifiController(SettingsManager* settings, BuzzerController* buzzer, const char* hostName, const char* apPasswd)
-    : settingsManager_(settings), buzzerController_(buzzer), hostName_(hostName), apPasswd_(apPasswd) {
-}
 
-void WifiController::begin() {
+void WifiController::begin(SettingsManager* settings, BuzzerController* buzzer, const char* _hostName, const char* _apPasswd) {
+    settingsManager_ = settings;
+    buzzerController_ = buzzer;
+    hostName_ = _hostName;
+    apPasswd_ = _apPasswd;
+
     // Initialize WiFi LED if enabled
     if (settingsManager_->getWifiLedEnabled()) {
         pinMode(WIFI_LED_B_PIN, OUTPUT);
@@ -25,10 +31,9 @@ void WifiController::begin() {
 }
 
 void WifiController::update() {
-    unsigned long currentTime = millis();
-    
+    unsigned long currentTime = millis();    
     // Check WiFi connection periodically
-    if (currentTime - lastWifiCheck >= WIFI_CHECK_INTERVAL) {
+    if (currentTime - lastWifiCheck >= WIFI_CHECK_INTERVAL) { // NOSONAR - clearer declared above
         lastWifiCheck = currentTime;
         checkWifiConnection();
     }
@@ -49,8 +54,8 @@ void WifiController::update() {
 
 WifiStatus WifiController::getStatus() const {
     WifiStatus status;
-    status.state = isInAPMode_ ? WIFI_AP_MODE : 
-                   (WiFi.status() == WL_CONNECTED ? WIFI_CONNECTED : WIFI_DISCONNECTED);
+    status.state = isInAPMode_ ? WifiState::WIFI_AP_MODE : 
+        (WiFi.status() == WL_CONNECTED ? WifiState::WIFI_CONNECTED : WifiState::WIFI_DISCONNECTED); // NOSONAR - nested ok
     status.ssid = WiFi.SSID();
     status.ip = WiFi.localIP().toString();
     status.hasConnected = settingsManager_->getHasConnected();
@@ -93,7 +98,7 @@ void WifiController::startAPMode() {
     ESP.restart();
 }
 
-void WifiController::disconnect() {
+void WifiController::disconnect() { // NOSONAR - modifies state
     WiFi.disconnect();
 }
 
@@ -129,14 +134,14 @@ void WifiController::failWifi() {
     }
 }
 
-void WifiController::wifiSetup() {
+void WifiController::wifiSetup() { // NOSONAR - complexity ok
     if (settingsManager_->isAPMode()) {
         logger.logInfo("Starting AP mode for " + String(settingsManager_->getWifiAPDurationMinutes()) + " minutes");
         if (apPasswd_ && strlen(apPasswd_) > 0) {
             WiFi.softAP(hostName_, apPasswd_);
             logger.logDebug("AP password set: " + String(apPasswd_));
         } else {
-            WiFi.softAP(hostName_, NULL);
+            WiFi.softAP(hostName_, nullptr);
         }
         WiFi.softAPsetHostname(hostName_); 
         logger.logInfo("AP mode started, IP address: " + WiFi.softAPIP().toString());
@@ -150,7 +155,7 @@ void WifiController::wifiSetup() {
         String ssid = settingsManager_->getSSID();
         String password = settingsManager_->getPassword();
         
-        if (ssid.length() == 0) {
+        if (ssid.isEmpty()) {
             logger.logWarning("No SSID configured, falling back to AP mode");
             settingsManager_->setAPMode(true);
             settingsManager_->save();
@@ -161,7 +166,7 @@ void WifiController::wifiSetup() {
         }
         
         if (hostName_ && strlen(hostName_) > 0) {
-            WiFi.setHostname(hostName_); // Need to set hostname in all places for mDNS to work
+            WiFiClass::setHostname(hostName_); // Need to set hostname in all places for mDNS to work
             logger.logDebug("Hostname set to: " + String(hostName_));
         } 
         WiFi.persistent(false); // Fix for issues with reconnection, credentials are stored in settingsManager
@@ -180,7 +185,8 @@ void WifiController::wifiSetup() {
             wifiRetryCount++;  
 
             // Add some debugging
-            logger.logDebug("WiFi status: " + String(WiFi.status()) + ", attempt " + String(wifiRetryCount) + "/" + String(maxRetries));
+            logger.logDebug("WiFi status: " + String(WiFiClass::status()) + ", attempt " + 
+                    String(wifiRetryCount) + "/" + String(maxRetries));
         }
 
         logger.logDebug(""); // New line after dots
@@ -191,7 +197,7 @@ void WifiController::wifiSetup() {
             
             if (hostName_ && strlen(hostName_) > 0) {
                 int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !MDNS.begin(hostName_)) {
+                while(mDNSRetries > 0 && !MDNS.begin(hostName_)) { // NOSONAR - nesting ok
                     logger.logDebug("Starting mDNS...");
                     delay(1000);
                     mDNSRetries--;
@@ -217,11 +223,11 @@ void WifiController::wifiSetup() {
     }
 }
 
-void WifiController::checkWifiConnection() {
+void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
     // Check if we're in AP mode and need to retry WiFi connection
     if (isInAPMode_) {
         unsigned long apDuration = settingsManager_->getWifiAPDurationMinutes() * 60000; // Convert to milliseconds
-        if (millis() - wifiAPModeStart >= apDuration && !settingsManager_->getSSID().isEmpty()){
+        if (millis() - wifiAPModeStart >= apDuration && !settingsManager_->getSSID().isEmpty()){ // NOSONAR - clearer declared above
           logger.logInfo("AP mode duration expired, attempting WiFi connection");
           settingsManager_->setAPMode(false);
           settingsManager_->save();
@@ -246,7 +252,7 @@ void WifiController::checkWifiConnection() {
             String ssid = settingsManager_->getSSID();
             String password = settingsManager_->getPassword();
             
-            if (ssid.length() > 0) {
+            if (!ssid.isEmpty()) {
                 WiFi.begin(ssid.c_str(), password.c_str());
                 wifiReconnectStart = millis();
                 isReconnecting = true;
@@ -283,7 +289,7 @@ void WifiController::checkWifiConnection() {
             
             if (hostName_ && strlen(hostName_) > 0) {
                 int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !MDNS.begin(hostName_)) {
+                while(mDNSRetries > 0 && !MDNS.begin(hostName_)) { // NOSONAR - nesting ok
                     logger.logDebug("Starting mDNS...");
                     delay(1000);
                     mDNSRetries--;
@@ -308,7 +314,7 @@ void WifiController::updateWifiLed() {
 
     unsigned long currentMillis = millis();
 
-    if (WiFi.status() == WL_CONNECTED) {
+    if (WiFiClass::status() == WL_CONNECTED) {
         // Heartbeat pattern: 50ms ON, 1950ms OFF
         unsigned long interval = (!ledState) ? 50 : 1950;
         if (currentMillis - lastLedToggle >= interval) {

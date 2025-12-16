@@ -8,21 +8,19 @@
 #include <cassert>
 
 #include <stdarg.h>
+#include <stdint.h>
 
 
-Logger &Logger::getInstance(IHAL* hal)
+Logger &Logger::getInstance()
 {
   static Logger instance; // NOSONAR - must construct Logger here instead of inline since constructed UUID uses hal in constructor
-  if(hal != nullptr) {
-    instance.hal = hal;
-    instance.init();
-  }
-  assert(instance.hal != nullptr && "IHAL pointer must be provided on first getInstance() call");
   return instance;
 }
 
-void Logger::init()
+void Logger::begin(IHAL* ihal)
 {
+  this->hal = ihal;
+  
   currentIndex = 0;
   totalEntries = 0;
   uuidGenerator.generate();
@@ -50,6 +48,8 @@ Logger::~Logger()
 
 void Logger::logWithLevel(const String &message, LogLevel level) const
 {
+    assert(hal != nullptr && "IHAL pointer must be provided in logger.begin(hal) call");
+
     // Check if this level should be logged
     if (static_cast<int>(level) < static_cast<int>(currentLogLevel_)) {
         return; // Filter out messages below current log level
@@ -98,7 +98,7 @@ String Logger::logLevelToString(LogLevel level) const
     }
 }
 
-LogLevel Logger::stringToLogLevel(const String &levelStr, uint depth) const
+LogLevel Logger::stringToLogLevel(const String &levelStr, unsigned int depth) const
 {
     if (levelStr == "VERBOSE") return LogLevel::VERBOSE;
     if (levelStr == "DEBUG") return LogLevel::DEBUG;

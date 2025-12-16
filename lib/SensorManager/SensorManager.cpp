@@ -1,7 +1,10 @@
 #include "SensorManager.h"
+#include "Arduino.h"
 #include "Logger.h"
 #include "SettingsManager.h"
 #include <FunctionalInterrupt.h>
+#include <memory>
+#include <stdint.h>
 
 
 void IRAM_ATTR SensorManager::sensor1PulseISR() {
@@ -23,54 +26,60 @@ SensorManager::SensorManager()
         sensor1{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0, 0},
         sensor2{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0, 0},
         pulsesPerGallon(450.0f)
-  {}
+{}
 
-SensorManager::~SensorManager() {}
-
-void SensorManager::begin() {
+void SensorManager::begin(uint8_t sensor_pin1, uint8_t sensor_pin2) {
+    this->sensorPin1 = sensor_pin1;
+    this->sensorPin2 = sensor_pin2;
     logger.logInfo("Initializing temperature sensors...");
+
+    // put your setup code here, to run once:
+    pinMode(sensorPin1, INPUT_PULLUP);
+    pinMode(sensorPin2, INPUT_PULLUP);
+
     
-    logger.logDebug(String("Pin configuration - TEMP_METER_PIN: ") + String(TEMP_METER_PIN) + ", TEMP_METER_2_PIN: " + String(TEMP_METER_2_PIN));
+    logger.logDebug(String("Pin configuration - sensor pin 1: ") + String(sensorPin1) + ", sensor pin 2: " + String(sensorPin2));
     
     // Initialize OneWire instances
-    oneWire1 = new OneWire(TEMP_METER_PIN);
-    oneWire2 = new OneWire(TEMP_METER_2_PIN);
+    oneWire1 = std::make_unique<OneWire>(sensorPin1);
+    oneWire2 = std::make_unique<OneWire>(sensorPin2);
     
     // Initialize DallasTemperature instances
-    dallasTemp1 = new DallasTemperature(oneWire1);
-    dallasTemp2 = new DallasTemperature(oneWire2);
+    dallasTemp1 = std::make_unique<DallasTemperature>(oneWire1.get());
+    dallasTemp2 = std::make_unique<DallasTemperature>(oneWire2.get());
+    
     
     // Detect sensor types for each pin
-    detectSensorType(TEMP_METER_PIN, sensor1);
-    detectSensorType(TEMP_METER_2_PIN, sensor2);
+    detectSensorType(sensorPin1, sensor1);
+    detectSensorType(sensorPin2, sensor2);
     
     // Set up interrupts for water meteer sensors ONLY if no Dallas sensor found
     if (sensor1.type == SensorType::WATER_METER) {
         // Configure pin for water meter input first
-        pinMode(TEMP_METER_PIN, INPUT_PULLUP);
+        pinMode(sensorPin1, INPUT_PULLUP);
         delay(10); // Small delay to let pin stabilize
         
         // Only attach interrupt if we're sure it's a water meter
-        attachInterrupt(digitalPinToInterrupt(TEMP_METER_PIN), std::bind(&SensorManager::sensor1PulseISR, this), FALLING);
-        logger.logInfo(String("Sensor 1 (Pin ") + String(TEMP_METER_PIN) + String("): Water meter interrupt attached (FALLING mode)"));
-        logger.logDebug(String("Sensor 1 interrupt attached to pin ") + String(TEMP_METER_PIN));
+        attachInterrupt(digitalPinToInterrupt(sensorPin1), std::bind(&SensorManager::sensor1PulseISR, this), FALLING);
+        logger.logInfo(String("Sensor 1 (Pin ") + String(sensorPin1) + String("): Water meter interrupt attached (FALLING mode)"));
+        logger.logDebug(String("Sensor 1 interrupt attached to pin ") + String(sensorPin1));
     }
     
     if (sensor2.type == SensorType::WATER_METER) {
         // Configure pin for water meter input first
-        pinMode(TEMP_METER_2_PIN, INPUT_PULLUP);
+        pinMode(sensorPin2, INPUT_PULLUP);
         delay(10); // Small delay to let pin stabilize
         
         // Attach interrupt for water meter pulse detection
-        attachInterrupt(digitalPinToInterrupt(TEMP_METER_2_PIN), std::bind(&SensorManager::sensor2PulseISR, this), FALLING);
-        logger.logInfo(String("Sensor 2 (Pin ") + String(TEMP_METER_2_PIN) + String("): Water meter interrupt attached (FALLING mode)"));
+        attachInterrupt(digitalPinToInterrupt(sensorPin2), std::bind(&SensorManager::sensor2PulseISR, this), FALLING);
+        logger.logInfo(String("Sensor 2 (Pin ") + String(sensorPin2) + String("): Water meter interrupt attached (FALLING mode)"));
     }
 }
 
 void SensorManager::update() {
     // Update sensor 1
     if (sensor1.type == SensorType::DALLAS_TEMP) {
-        readDallasTemperature(dallasTemp1, sensor1);
+        readDallasTemperature(dallasTemp1.get(), sensor1);
     } else if (sensor1.type == SensorType::WATER_METER) {
         logWaterMeterPulse(sensor1);
         calculateFlowRate(sensor1);
@@ -78,7 +87,7 @@ void SensorManager::update() {
     
     // Update sensor 2
     if (sensor2.type == SensorType::DALLAS_TEMP) {
-        readDallasTemperature(dallasTemp2, sensor2);
+        readDallasTemperature(dallasTemp2.get(), sensor2);
     } else if (sensor2.type == SensorType::WATER_METER) {
         logWaterMeterPulse(sensor2);
         calculateFlowRate(sensor2);
@@ -94,11 +103,9 @@ void SensorManager::logWaterMeterPulse(const SensorData& sensor) const {
     }
 }
 
-void SensorManager::detectSensorType(int pin, SensorData& sensor) {
+void SensorManager::detectSensorType(uint8_t pin, SensorData& sensor) { // NOSONAR - not const due to change to sensor
     // Try to detect Dallas temperature sensor first
-    DallasTemperature* dallas = (pin == TEMP_METER_PIN) ? dallasTemp1 : dallasTemp2;
-    
-    if (dallas) {
+    if (DallasTemperature* dallas = (pin == sensorPin1) ? dallasTemp1.get() : dallasTemp2.get()) {
         dallas->begin();
         int deviceCount = dallas->getDeviceCount();
         
@@ -106,7 +113,8 @@ void SensorManager::detectSensorType(int pin, SensorData& sensor) {
             sensor.type = SensorType::DALLAS_TEMP;
             sensor.is_connected = true;
             sensor.was_detected = true;
-            logger.logInfo(String("Sensor on pin ") + String(pin) + String(": Detected Dallas temperature sensor (") + String(deviceCount) + String(" devices)"));
+            logger.logInfo(String("Sensor on pin ") + String(pin) + String(": Detected Dallas temperature sensor (") + 
+                            String(deviceCount) + String(" devices)"));
             return;
         }
     }
@@ -120,7 +128,7 @@ void SensorManager::detectSensorType(int pin, SensorData& sensor) {
     logger.logInfo(String("Sensor on pin ") + String(pin) + String(": No Dallas sensor found, configured as water meter"));
 }
 
-void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData& sensor) {
+void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData& sensor) { // NOSONAR - not const due to change to sensor
     if (!dallas || sensor.type != SensorType::DALLAS_TEMP) {
         return;
     }
@@ -144,7 +152,7 @@ void SensorManager::readDallasTemperature(DallasTemperature* dallas, SensorData&
     } else {
         sensor.is_connected = false;
         sensor.temperature_f = NAN;
-        logger.logWarning(String("WARNING: Dallas temperature sensor disconnected on pin ") + String((dallas == dallasTemp1) ? TEMP_METER_PIN : TEMP_METER_2_PIN));
+        logger.logWarning(String("WARNING: Dallas temperature sensor disconnected on pin ") + (dallas == dallasTemp1.get() ? "Sensor 1" : "Sensor 2"));
     }
 }
 
@@ -168,8 +176,8 @@ void SensorManager::calculateFlowRate(SensorData& sensor) const {
         // Calculate flow rate in gallons per minute
         // pulses / pulsesPerGallon gives gallons in the interval
         // Multiply by (60000.0 / timeDiff) to get gallons per minute
-        float gallonsInInterval = pulses / pulsesPerGallon;
-        sensor.flow_rate = gallonsInInterval * (60000.0f / timeDiff);
+        float gallonsInInterval = static_cast<float>(pulses) / pulsesPerGallon;
+        sensor.flow_rate = gallonsInInterval * (60000.0f / static_cast<float>(timeDiff));
         
         // Reset pulse count for next interval
         sensor.pulse_count.store(0);
@@ -194,15 +202,9 @@ void SensorManager::resetPulseCount(int sensor) {
 }
 
 // Water meter calibration
-void SensorManager::setPulsesPerGallon(float pulsesPerGallon) {
-    this->pulsesPerGallon = pulsesPerGallon;
+void SensorManager::setPulsesPerGallon(float pulses_per_gallon) {
+    this->pulsesPerGallon = pulses_per_gallon;
     logger.logInfo(String("Water meter calibration updated: ") + String(pulsesPerGallon, 1) + " pulses per gallon");
-}
-
-bool SensorManager::hasWaterFlowError(int sensor) const {
-    // Implementation for flow error detection
-    // This could check if pump is running but no flow detected
-    return false;  // Placeholder - implement based on requirements
 }
 
 float SensorManager::celsiusToFahrenheit(float celsius) const {
@@ -215,30 +217,30 @@ bool SensorManager::isTemperatureBelowThreshold() const {
     
     // Check if any temperature sensor is below the ON threshold
     bool anySensorBelowOnThreshold = false;
-    if (sensor1.type == SensorType::DALLAS_TEMP && sensor1.is_connected) {
-        if (sensor1.temperature_f < onThreshold) {
+    if (sensor1.type == SensorType::DALLAS_TEMP && 
+        sensor1.is_connected && 
+        sensor1.temperature_f < onThreshold) {
             anySensorBelowOnThreshold = true;
-        }
     }
     
-    if (sensor2.type == SensorType::DALLAS_TEMP && sensor2.is_connected) {
-        if (sensor2.temperature_f < onThreshold) {
+    if (sensor2.type == SensorType::DALLAS_TEMP && 
+        sensor2.is_connected && 
+        sensor2.temperature_f < onThreshold) {
             anySensorBelowOnThreshold = true;
-        }
     }
     
     // Check if any temperature sensor is above the OFF threshold
     bool anySensorAboveOffThreshold = false;
-    if (sensor1.type == SensorType::DALLAS_TEMP && sensor1.is_connected) {
-        if (sensor1.temperature_f > offThreshold) {
+        if (sensor1.type == SensorType::DALLAS_TEMP && 
+            sensor1.is_connected && 
+            sensor1.temperature_f > offThreshold) {
             anySensorAboveOffThreshold = true;
-        }
     }
     
-    if (sensor2.type == SensorType::DALLAS_TEMP && sensor2.is_connected) {
-        if (sensor2.temperature_f > offThreshold) {
+    if (sensor2.type == SensorType::DALLAS_TEMP && 
+        sensor2.is_connected && 
+        sensor2.temperature_f > offThreshold) {
             anySensorAboveOffThreshold = true;
-        }
     }
     
     // Return true if any sensor is below ON threshold AND no sensor is above OFF threshold
@@ -270,7 +272,7 @@ String SensorManager::getSensorStatusString(const SensorData& sensor) const {
     
     // For Dallas sensors and other types
     if (!sensor.is_connected) {
-        switch (sensor.type) {
+        switch (sensor.type) { // NOSONAR - may add more sensor types later
             case SensorType::DALLAS_TEMP:
                 return "Dallas Temperature Sensor - Disconnected";
             default:
@@ -278,7 +280,7 @@ String SensorManager::getSensorStatusString(const SensorData& sensor) const {
         }
     }
     
-    switch (sensor.type) {
+    switch (sensor.type) { // NOSONAR - may add more sensor types later
         case SensorType::DALLAS_TEMP:
             if (isnan(sensor.temperature_f)) {
                 return "Dallas Temperature Sensor - Reading Failed";

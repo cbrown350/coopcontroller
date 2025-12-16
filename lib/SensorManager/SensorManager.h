@@ -6,6 +6,7 @@
 #include <DallasTemperature.h>
 #include <atomic>
 #include <string>
+#include <memory>
 
 // Sensor types for each pin
 enum class SensorType {
@@ -15,7 +16,7 @@ enum class SensorType {
 };
 
 // Sensor data structure
-struct SensorData {
+struct SensorData {  // NOSONAR - shouldn't warn about destructor since it's defined below
     SensorType type;
     float temperature_f;
     bool is_connected;
@@ -27,7 +28,7 @@ struct SensorData {
     unsigned long last_flow_calculation_time;  // Track last calculation time per sensor
     
     // Constructor
-    explicit SensorData(SensorType t = SensorType::NONE,
+    explicit SensorData(SensorType t = SensorType::NONE,    // NOSONAR
                float temp = 0.0f,
                bool connected = false,
                bool detected = false,
@@ -77,6 +78,8 @@ struct SensorData {
         // move is same as copy for these trivials/atomics
     }
 
+    ~SensorData() = default;
+
     SensorData& operator=(const SensorData& other) {
         if (this == &other) return *this;
         type = other.type;
@@ -95,10 +98,12 @@ struct SensorData {
 class SensorManager {
 private:
     // OneWire and DallasTemperature instances
-    OneWire* oneWire1;
-    OneWire* oneWire2;
-    DallasTemperature* dallasTemp1;
-    DallasTemperature* dallasTemp2;
+    uint8_t sensorPin1;
+    uint8_t sensorPin2;
+    std::unique_ptr<OneWire> oneWire1;
+    std::unique_ptr<OneWire> oneWire2;
+    std::unique_ptr<DallasTemperature> dallasTemp1;
+    std::unique_ptr<DallasTemperature> dallasTemp2;
     
     // Sensor data for each pin
     SensorData  sensor1;
@@ -111,17 +116,17 @@ private:
     // Private methods
     void sensor1PulseISR();
     void sensor2PulseISR();
-    void detectSensorType(int pin, SensorData& sensor);
+    void detectSensorType(uint8_t pin, SensorData& sensor);
     void readDallasTemperature(DallasTemperature* dallas, SensorData& sensor);
     void logWaterMeterPulse(const SensorData& sensor) const;
     void calculateFlowRate(SensorData& sensor) const;
     
 public:
     SensorManager();
-    ~SensorManager();
+    ~SensorManager() = default;
     
     // Initialization
-    void begin();
+    void begin(uint8_t sensorPin1, uint8_t sensorPin2 = 0);
     
     // Main update function - call this in loop()
     void update();
@@ -182,7 +187,6 @@ public:
     
     // Status methods
     String getSensorStatusString(const SensorData& sensor) const;
-    bool hasWaterFlowError(int sensor) const;
     
     // Water meter specific
     bool hasActiveWaterMeter() const;

@@ -1,9 +1,14 @@
 #include "CoopControllerWebServer.h"
 #include "config.h"
 
+#include <stdint.h>
+#include <Arduino.h>
+#include <AsyncTCP.h>
+#include <ArduinoJson.h>
 #include <AsyncJson.h>
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
+#include <LittleFS.h>
 
 #include "Logger.h"
 #include "SensorManager.h"
@@ -16,20 +21,16 @@
 
 #define SPIFFS LittleFS
 
-// External references to coop controller components
-extern SensorManager tempSensor;
-extern PumpController pumpController;
-extern BuzzerController buzzerController;
-extern DoorController doorController;
-extern LightController lightController;
-extern WifiController wifiController;
 
-// External reference to sunrise/sunset calculator
-extern SunriseSunsetCalculator sunriseSunset;
+CoopControllerWebServer::CoopControllerWebServer(uint16_t port) : server(port) {}
 
-CoopControllerWebServer::CoopControllerWebServer(int port) : server(port) {}
-
-void CoopControllerWebServer::begin()
+void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - complexity ok
+                                    PumpController& pumpController,
+                                    BuzzerController& buzzerController,
+                                    DoorController& doorController,
+                                    LightController& lightController,
+                                    const WifiController& wifiController,
+                                    SunriseSunsetCalculator& sunriseSunset)
 {
     server.begin();
 
@@ -39,13 +40,13 @@ void CoopControllerWebServer::begin()
               {
                   String jsonResponse = settingsManager.toJson(false);
                   // add hostName 
-                  jsonResponse.replace("}", ",\"hostname\":\"" + String(hostName) + "\"}");
+                  jsonResponse.replace("}", R"(,"hostname":")" + String(hostName) + R"("})");
                   request->send(200, "application/json", jsonResponse);
               });
 
     server.addHandler(new AsyncCallbackJsonWebHandler(
         "/update_settings",
-        [](AsyncWebServerRequest *request, JsonVariant &json)
+        [&lightController, &tempSensor, &buzzerController, &sunriseSunset](AsyncWebServerRequest *request, JsonVariant &json) // NOSONAR
         {
             JsonObject jsonObj = json.as<JsonObject>();
             
@@ -241,13 +242,16 @@ void CoopControllerWebServer::begin()
 
     // Sensor status endpoint
     server.on("/sensor_status", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&tempSensor, &pumpController, &buzzerController, &doorController,  // NOSONAR - complexity ok
+                &lightController, &sunriseSunset](AsyncWebServerRequest *request)
               {
                   JsonDocument jsonDoc;
                   
                   // Temperature sensor data
                   JsonObject sensor1 = jsonDoc["sensor1"].to<JsonObject>();
-                  sensor1["type"] = tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
+                  sensor1["type"] = tempSensor.getSensor1Type() == 
+                    SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : 
+                        (tempSensor.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN"); // NOSONAR - complexity ok
                   sensor1["connected"] = tempSensor.isSensor1Detected() && 
                                       (tempSensor.getSensor1Type() == SensorType::WATER_METER ? 
                                        tempSensor.isActivelyConnected(tempSensor.getSensor1Data()) : 
@@ -264,7 +268,8 @@ void CoopControllerWebServer::begin()
                   sensor1["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor1Data());
                   
                   JsonObject sensor2 = jsonDoc["sensor2"].to<JsonObject>();
-                  sensor2["type"] = tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
+                  sensor2["type"] = tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : 
+                            (tempSensor.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");  // NOSONAR - complexity ok
                   sensor2["connected"] = tempSensor.isSensor2Detected() && 
                                       (tempSensor.getSensor2Type() == SensorType::WATER_METER ? 
                                        tempSensor.isActivelyConnected(tempSensor.getSensor2Data()) : 
@@ -284,8 +289,8 @@ void CoopControllerWebServer::begin()
                   JsonObject pump = jsonDoc["pump"].to<JsonObject>();
                   pump["state"] = pumpController.getStateString();
                   pump["is_active"] = pumpController.isPumpOn();
-                  float pumpTemp = pumpController.getCurrentTemperature();
-                  if (isnan(pumpTemp)) {
+                  
+                  if (float pumpTemp = pumpController.getCurrentTemperature(); isnan(pumpTemp)) {
                       pump["temperature_f"] = nullptr;
                   } else {
                       pump["temperature_f"] = pumpTemp;
@@ -338,42 +343,42 @@ void CoopControllerWebServer::begin()
 
     // Pump control endpoints
     server.on("/pump/on", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&pumpController](AsyncWebServerRequest *request)
               {
                   pumpController.turnOn();
                   request->send(200, "text/plain", "Pump turned on");
               });
 
     server.on("/pump/off", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&pumpController](AsyncWebServerRequest *request)
               {
                   pumpController.turnOff();
                   request->send(200, "text/plain", "Pump turned off");
               });
 
     server.on("/pump/auto", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&pumpController](AsyncWebServerRequest *request)
               {
                   pumpController.setAutoMode(true);
                   request->send(200, "text/plain", "Pump set to auto mode");
               });
 
     server.on("/pump/force_cycle", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&pumpController](AsyncWebServerRequest *request)
               {
                   pumpController.forceCycle();
                   request->send(200, "text/plain", "Pump cycle forced");
               });
 
     server.on("/pump/reset_stats", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&pumpController](AsyncWebServerRequest *request)
               {
                   pumpController.resetStatistics();
                   request->send(200, "text/plain", "Pump statistics reset");
               });
 
     server.on("/pump/clear_error", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&pumpController](AsyncWebServerRequest *request)
               {
                   pumpController.clearFlowError();
                   request->send(200, "text/plain", "Pump flow error cleared");
@@ -381,14 +386,14 @@ void CoopControllerWebServer::begin()
 
         // Water meter reset endpoints
     server.on("/water/reset/1", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&tempSensor](AsyncWebServerRequest *request)
               {
                   tempSensor.resetPulseCount(1);
                   request->send(200, "text/plain", "Water meter 1 reset");
               });
 
     server.on("/water/reset/2", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&tempSensor](AsyncWebServerRequest *request)
               {
                   tempSensor.resetPulseCount(2);
                   request->send(200, "text/plain", "Water meter 2 reset");
@@ -396,20 +401,20 @@ void CoopControllerWebServer::begin()
 
     // Buzzer control endpoints
     server.on("/buzzer/silence", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+              [&buzzerController](AsyncWebServerRequest *request)
               {
                   buzzerController.silenceAlerts();
                   request->send(200, "text/plain", "Buzzer alerts silenced");
               });
 
     server.on("/buzzer/test", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&buzzerController](AsyncWebServerRequest *request)
               {
                   buzzerController.testAlert();
                   request->send(200, "text/plain", "Buzzer test alert triggered");
               });
     server.on("/buzzer/clear", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+              [&buzzerController](AsyncWebServerRequest *request)
               {
                   // Clear the currently active alert (could be TEST_ALERT or PUMP_ERROR)
                   if (buzzerController.hasActiveAlert()) {
@@ -423,28 +428,28 @@ void CoopControllerWebServer::begin()
 
     // Door control endpoints
     server.on("/door/open", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&doorController](AsyncWebServerRequest *request)
               {
                   doorController.open();
                   request->send(200, "text/plain", "Door opening");
               });
 
     server.on("/door/close", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&doorController](AsyncWebServerRequest *request)
               {
                   doorController.close();
                   request->send(200, "text/plain", "Door closing");
               });
 
     server.on("/door/stop", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&doorController](AsyncWebServerRequest *request)
               {
                   doorController.stop();
                   request->send(200, "text/plain", "Door stopped");
               });
 
     server.on("/door/set_auto", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+              [&doorController](AsyncWebServerRequest *request)
               {
                   if (!request->hasParam("auto", true)) {
                       request->send(400, "text/plain", "Missing auto parameter");
@@ -458,14 +463,14 @@ void CoopControllerWebServer::begin()
               });
 
     server.on("/door/clear_fault", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+              [&doorController](AsyncWebServerRequest *request)
               {
                   doorController.clearFault();
                   request->send(200, "text/plain", "Door fault cleared");
               });
 
     server.on("/door/reset_stats", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&doorController](AsyncWebServerRequest *request)
               {
                   doorController.resetStatistics();
                   request->send(200, "text/plain", "Door statistics reset");
@@ -473,35 +478,35 @@ void CoopControllerWebServer::begin()
 
     // Light control endpoints
     server.on("/light/on", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&lightController](AsyncWebServerRequest *request)
               {
                   lightController.turnOn();
                   request->send(200, "text/plain", "Light turned on");
               });
 
     server.on("/light/off", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&lightController](AsyncWebServerRequest *request)
               {
                   lightController.turnOff();
                   request->send(200, "text/plain", "Light turned off");
               });
 
     server.on("/light/fade_in", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&lightController](AsyncWebServerRequest *request)
               {
                   lightController.fadeIn();
                   request->send(200, "text/plain", "Light fading in");
               });
 
     server.on("/light/fade_out", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&lightController](AsyncWebServerRequest *request)
               {
                   lightController.fadeOut();
                   request->send(200, "text/plain", "Light fading out");
               });
 
     server.on("/light/set_brightness", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+              [&lightController](AsyncWebServerRequest *request)
               {
                   if (!request->hasParam("brightness", true)) {
                       request->send(400, "text/plain", "Missing brightness parameter");
@@ -519,7 +524,7 @@ void CoopControllerWebServer::begin()
               });
 
     server.on("/light/set_auto", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+              [&lightController](AsyncWebServerRequest *request)
               {
                   if (!request->hasParam("auto", true)) {
                       request->send(400, "text/plain", "Missing auto parameter");
@@ -535,14 +540,14 @@ void CoopControllerWebServer::begin()
               });
 
     server.on("/light/reset_stats", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&lightController](AsyncWebServerRequest *request)
               {
                   lightController.resetStatistics();
                   request->send(200, "text/plain", "Light statistics reset");
               });
 
     server.on("/light/test_mode", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+              [&lightController](AsyncWebServerRequest *request)
               {
                   if (!request->hasParam("enabled", true)) {
                       request->send(400, "text/plain", "Missing enabled parameter");
@@ -567,7 +572,7 @@ void CoopControllerWebServer::begin()
 
    // Sun times endpoint
    server.on("/sun/times", HTTP_GET,
-             [](AsyncWebServerRequest *request)
+             [&sunriseSunset](AsyncWebServerRequest *request) // NOSONAR - complexity ok
              {
                  JsonDocument doc;
                  
@@ -578,9 +583,10 @@ void CoopControllerWebServer::begin()
                  String sunrisePeriod = (sunriseHour >= 12) ? "PM" : "AM";
                  sunriseHour = (sunriseHour > 12) ? sunriseHour - 12 : sunriseHour;
                  sunriseHour = (sunriseHour == 0) ? 12 : sunriseHour;
-                 char sunriseBuffer[16];
-                 sprintf(sunriseBuffer, "%d:%02d %s", sunriseHour, sunriseMinute, sunrisePeriod.c_str());
-                 doc["sunrise"] = String(sunriseBuffer);
+                 String sunriseFormatted = String(sunriseHour) + ":" + 
+                                       (sunriseMinute < 10 ? "0" : "") + 
+                                       String(sunriseMinute) + " " + sunrisePeriod;
+                doc["sunrise"] = sunriseFormatted;
                  
                  // Format sunset time without leading zero
                  int sunsetMin = sunriseSunset.getSunsetMinutes();
@@ -589,9 +595,10 @@ void CoopControllerWebServer::begin()
                  String sunsetPeriod = (sunsetHour >= 12) ? "PM" : "AM";
                  sunsetHour = (sunsetHour > 12) ? sunsetHour - 12 : sunsetHour;
                  sunsetHour = (sunsetHour == 0) ? 12 : sunsetHour;
-                 char sunsetBuffer[16];
-                 sprintf(sunsetBuffer, "%d:%02d %s", sunsetHour, sunsetMinute, sunsetPeriod.c_str());
-                 doc["sunset"] = String(sunsetBuffer);
+                 String sunsetFormatted = String(sunsetHour) + ":" + 
+                                      (sunsetMinute < 10 ? "0" : "") + 
+                                      String(sunsetMinute) + " " + sunsetPeriod;
+                doc["sunset"] = sunsetFormatted;
                  
                  doc["sunrise_minutes"] = sunriseSunset.getSunriseMinutes();
                  doc["sunset_minutes"] = sunriseSunset.getSunsetMinutes();
@@ -606,7 +613,7 @@ void CoopControllerWebServer::begin()
 
     // System status endpoint
     server.on("/system_status", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+              [&wifiController](AsyncWebServerRequest *request) // NOSONAR - complexity ok
               {
                   JsonDocument jsonDoc;
                   
@@ -677,10 +684,9 @@ void CoopControllerWebServer::begin()
                   if (!request->hasParam("confirm", true)) {
                       request->send(400, "text/plain", "Missing confirmation parameter");
                       return;
-                  }
+                  }                  
                   
-                  String confirm = request->getParam("confirm", true)->value();
-                  if (confirm != "RESET") {
+                  if (String confirm = request->getParam("confirm", true)->value(); confirm != "RESET") {
                       request->send(400, "text/plain", "Invalid confirmation value");
                       return;
                   }
@@ -705,9 +711,8 @@ void CoopControllerWebServer::begin()
                       request->send(400, "text/plain", "Missing confirmation parameter");
                       return;
                   }
-                  
-                  String confirm = request->getParam("confirm", true)->value();
-                  if (confirm != "REBOOT") {
+                                    
+                  if (String confirm = request->getParam("confirm", true)->value(); confirm != "REBOOT") {
                       request->send(400, "text/plain", "Invalid confirmation value");
                       return;
                   }
@@ -732,13 +737,13 @@ void CoopControllerWebServer::begin()
     // Restore settings endpoint
     server.addHandler(new AsyncCallbackJsonWebHandler(
       "/settings/restore",
-      [](AsyncWebServerRequest *request, JsonVariant &json)
+      [&tempSensor, &buzzerController](AsyncWebServerRequest *request, const JsonVariant &json) // NOSONAR - complexity ok
       {
         JsonObject jsonObj = json.as<JsonObject>();
         
         // Basic validation - check for required fields
         if (jsonObj.isNull()) {
-          request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON format\"}");
+          request->send(400, "application/json", R"({"success":false,"error":"Invalid JSON format"})");
           return;
         }
         
@@ -833,7 +838,7 @@ void CoopControllerWebServer::begin()
         settingsManager.save();
         
         jsonObj.clear();
-        request->send(200, "application/json", "{\"success\":true,\"message\":\"Settings restored successfully\"}");
+        request->send(200, "application/json", R"({"success":true,"message":"Settings restored successfully"})");
       }));
       
     // SPA route rewrites (avoid FS open errors for client-side routes)
@@ -851,7 +856,7 @@ void CoopControllerWebServer::begin()
     });
 }
 
-void CoopControllerWebServer::loop()
+void CoopControllerWebServer::loop() const
 {
     ArduinoOTA.handle();
     ElegantOTA.loop();

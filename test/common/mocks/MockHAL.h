@@ -2,6 +2,8 @@
 #define __MOCKHAL_H__
 
 #include "IHAL.h"
+
+#include <stdint.h>
 #include <cstdarg>
 #include <cstdio>
 
@@ -23,6 +25,11 @@ public:
 
     void SerialPrint(const char* message) override {
         printf("%s", message);
+    }
+
+    bool begin() override {
+        printf("MockHAL initialized\n");
+        return true;
     }
 
     unsigned long getTime() override {

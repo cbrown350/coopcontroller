@@ -2,13 +2,11 @@
 #define __WIFI_CONTROLLER_H__
 
 #include <Arduino.h>
-#include <WiFi.h>
-#include <ESPmDNS.h>
 #include "SettingsManager.h"
 #include "BuzzerController.h"
 
 // WiFi connection states
-enum WifiState {
+enum class WifiState {
     WIFI_DISCONNECTED = 0,
     WIFI_CONNECTING,
     WIFI_CONNECTED,
@@ -17,7 +15,7 @@ enum WifiState {
 
 // WiFi status structure
 struct WifiStatus {
-    WifiState state = WIFI_DISCONNECTED;
+    WifiState state = WifiState::WIFI_DISCONNECTED;
     String ssid = "";
     String ip = "";
     bool hasConnected = false;
@@ -55,10 +53,10 @@ private:
     
 public:
     // Constructor
-    WifiController(SettingsManager* settings, BuzzerController* buzzer, const char* hostName, const char* apPasswd);
+    WifiController() = default;
     
     // Initialization
-    void begin();
+    void begin(SettingsManager* settings, BuzzerController* buzzer, const char* hostName, const char* apPasswd);
     
     // Main update function - call this in loop()
     void update();

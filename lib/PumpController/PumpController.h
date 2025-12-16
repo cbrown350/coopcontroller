@@ -3,9 +3,10 @@
 
 #include <Arduino.h>
 #include "SensorManager.h"
+#include <stdint.h>
 
 // Pump states
-enum PumpState {
+enum class PumpState {
     PUMP_OFF = 0,
     PUMP_ON,
     PUMP_AUTO,
@@ -14,7 +15,7 @@ enum PumpState {
 
 // Pump status structure
 struct PumpStatus {
-    PumpState state = PUMP_AUTO;
+    PumpState state = PumpState::PUMP_AUTO;
     bool is_active;
     unsigned long last_switch_time;
     unsigned long current_cycle_start;
@@ -30,7 +31,7 @@ struct PumpStatus {
 
 class PumpController {
 private:
-    int pumpPin;
+    uint8_t pumpPin;
     PumpStatus status;
     
     // Sensor references
@@ -52,17 +53,13 @@ private:
     void setPumpState(bool isOn);
     void updateStatistics();
     void handleAutoMode(unsigned long currentTime);
-    bool checkFlowError();
+    bool checkFlowError() const;
     
 public:
-    // Constructor with single sensor (backward compatibility)
-    PumpController(SensorManager* sensor, int pin = OUT_PUMP_PIN);
-    
-    // Constructor with separate sensors for temperature and flow
-    PumpController(SensorManager* primarySensor, SensorManager* flowSensor, int pin = OUT_PUMP_PIN);
+    PumpController() = default;
     
     // Initialization
-    void begin();
+    void begin(SensorManager* primarySensor, SensorManager* flowSensor, uint8_t pin);
     
     // Main update function - call this in loop()
     void update();

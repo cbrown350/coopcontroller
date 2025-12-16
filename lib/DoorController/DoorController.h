@@ -1,6 +1,9 @@
 #ifndef DOORCONTROLLER_H
 #define DOORCONTROLLER_H
 
+#include "BuzzerController.h"
+#include "SunriseSunset.h"
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
@@ -22,8 +25,11 @@ enum class DoorPosition {
     PARTIAL
 };
 
-class DoorController {
+class DoorController { // NOSONAR - complexity ok
 private:
+    BuzzerController* buzzerController;
+    SunriseSunsetCalculator* sunriseSunset;
+
     // State variables
     DoorState currentState;
     DoorPosition currentPosition;
@@ -62,8 +68,8 @@ private:
     void checkSchedule();
     bool shouldOpenBySchedule() const;
     bool shouldCloseBySchedule() const;
-    time_t getTodaySunrise();
-    time_t getTodaySunset();    
+    time_t getTodaySunrise() const;
+    time_t getTodaySunset() const;    
     
     // ISR-safe methods called from interrupt context
     void handleHallOpenISR();
@@ -73,7 +79,7 @@ public:
     DoorController();
     
     // Initialization
-    void begin();
+    void begin(BuzzerController* buzzerController, SunriseSunsetCalculator* sunriseSunset);
     
     // Main update loop - call frequently (100ms recommended)
     void update();
@@ -126,7 +132,7 @@ public:
     bool isHardwareFault() const;
     
     // Position memory
-    void savePosition();
+    void notifyPosition() const;
     void restorePosition();
 };
 

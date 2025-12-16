@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <time.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <cstddef>
 
@@ -29,7 +30,11 @@ void HAL_ESP32::SerialPrint(const char* message)
     Serial.print(message);
 }
 
-bool HAL_ESP32::initFilesystem(){
+bool HAL_ESP32::begin() {
+    return initFilesystem();
+}
+
+bool HAL_ESP32::initFilesystem() { // NOSONAR - not const, initializes filesystem
     
     // Initialize filesystem first so settings can be loaded
     if (!LittleFS.begin(true)) {  // The 'true' parameter formats the filesystem if it fails to mount
