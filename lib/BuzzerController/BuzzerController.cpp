@@ -1,7 +1,11 @@
 #include "BuzzerController.h"
-#include "SettingsManager.h"
+
+#include "IHAL.h"
 #include "Logger.h"
-#include "esp32-hal-ledc.h"
+#include "SettingsManager.h"
+
+#include <Arduino.h>
+
 #include <stdint.h>
 
 // Default alert patterns for each alert type
@@ -31,7 +35,8 @@ const AlertPattern BuzzerController::DEFAULT_PATTERNS[] = { // NOSONAR - intenti
     {500, 0, 1, 0, 1}
 };
 
-void BuzzerController::begin(uint8_t pin) {
+void BuzzerController::begin(IHAL* hal, uint8_t pin) {
+    _hal = hal;
     _pin = pin;
     pinMode(_pin, OUTPUT);
     digitalWrite(_pin, HIGH); // Active LOW - turn off initially

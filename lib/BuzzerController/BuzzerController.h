@@ -1,7 +1,10 @@
 #ifndef __BUZZER_CONTROLLER_H__
 #define __BUZZER_CONTROLLER_H__
 
+#include "IHAL.h"
+
 #include <ArduinoJson.h>
+
 #include <stdint.h>
 
 // Alert types for different system conditions
@@ -35,7 +38,7 @@ class BuzzerController {
 public:
     BuzzerController() = default;
     
-    void begin(uint8_t pin);
+    void begin(IHAL* hal, uint8_t pin);
     void update();
     
     // Alert triggering methods
@@ -64,6 +67,7 @@ public:
     void toJson(JsonObject& json) const;
 
 private:
+    IHAL* _hal;
     uint8_t _pin;
     bool _enabled = true;
     BuzzerType _buzzerType = BuzzerType::ACTIVE;

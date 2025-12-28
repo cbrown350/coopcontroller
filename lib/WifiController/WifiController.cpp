@@ -14,7 +14,8 @@
 #define WIFI_RECONNECT_TIMEOUT 10000  // Wait 10 seconds for reconnection
 
 
-void WifiController::begin(SettingsManager* settings, BuzzerController* buzzer, const char* _hostName, const char* _apPasswd) {
+void WifiController::begin(IHAL* hal, SettingsManager* settings, BuzzerController* buzzer, const char* _hostName, const char* _apPasswd) {
+    _hal = hal;
     settingsManager_ = settings;
     buzzerController_ = buzzer;
     hostName_ = _hostName;
@@ -185,7 +186,7 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             wifiRetryCount++;  
 
             // Add some debugging
-            logger.logDebug("WiFi status: " + String(WiFiClass::status()) + ", attempt " + 
+            logger.logDebug("WiFi status: " + String(WiFi.status()) + ", attempt " + 
                     String(wifiRetryCount) + "/" + String(maxRetries));
         }
 
@@ -314,7 +315,7 @@ void WifiController::updateWifiLed() {
 
     unsigned long currentMillis = millis();
 
-    if (WiFiClass::status() == WL_CONNECTED) {
+    if (WiFi.status() == WL_CONNECTED) {
         // Heartbeat pattern: 50ms ON, 1950ms OFF
         unsigned long interval = (!ledState) ? 50 : 1950;
         if (currentMillis - lastLedToggle >= interval) {

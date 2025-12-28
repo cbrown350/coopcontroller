@@ -1,14 +1,23 @@
 #include "config.h"
+#include "IHAL.h"
 #include "SettingsManager.h"
 #include "Logger.h"
-#include <LittleFS.h>
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <LittleFS.h>
+
+#include <cassert>
 
 
 SettingsManager::SettingsManager() : isLoaded(false), wifiChanged(false), requestRestartAt(0) {
     // Initialize with default values
     settings = user_settings{};
+}
+
+void SettingsManager::begin(IHAL* hal)
+{
+  _hal = hal;
 }
 
 SettingsManager &SettingsManager::getInstance() {
@@ -17,6 +26,7 @@ SettingsManager &SettingsManager::getInstance() {
 }
 
 String SettingsManager::loadFile() {    
+    assert(_hal != nullptr && "IHAL pointer must be provided in SettingsManager::begin(&hal) call");
 
     File file = LittleFS.open(SETTINGS_FILE, "r");
     if (!file) {

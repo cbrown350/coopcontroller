@@ -1,13 +1,17 @@
 #include "HAL_ESP32.h"
+
+#include <cstddef>
+#include <stdarg.h>
+#include <stdint.h>
+#include <time.h>
+
 #include "Logger.h"
-#include <LittleFS.h>
 
 #include <Arduino.h>
+#include <LittleFS.h>
 #include <WiFi.h>
-#include <time.h>
-#include <stdint.h>
-#include <stdarg.h>
-#include <cstddef>
+
+#include "esp32-hal-ledc.h"
 
 
 void HAL_ESP32::SerialPrintf(const char* format, ...) // NOSONAR

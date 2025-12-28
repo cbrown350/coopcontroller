@@ -17,9 +17,9 @@ Logger &Logger::getInstance()
   return instance;
 }
 
-void Logger::begin(IHAL* ihal)
+void Logger::begin(IHAL* _hal)
 {
-  this->hal = ihal;
+  hal = _hal;
   
   currentIndex = 0;
   totalEntries = 0;
@@ -48,7 +48,7 @@ Logger::~Logger()
 
 void Logger::logWithLevel(const String &message, LogLevel level) const
 {
-    assert(hal != nullptr && "IHAL pointer must be provided in logger.begin(hal) call");
+    assert(hal != nullptr && "IHAL pointer must be provided in Logger::begin(&hal) call");
 
     // Check if this level should be logged
     if (static_cast<int>(level) < static_cast<int>(currentLogLevel_)) {

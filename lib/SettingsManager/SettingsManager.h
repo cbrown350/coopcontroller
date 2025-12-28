@@ -3,6 +3,8 @@
 
 #include "config.h"
 
+#include "IHAL.h"
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
@@ -65,6 +67,7 @@ struct user_settings // NOSONAR
 class SettingsManager // NOSONAR
 {
    private:
+    IHAL*         _hal;
     user_settings settings;
     bool          isLoaded;
     bool          wifiChanged;
@@ -77,6 +80,7 @@ class SettingsManager // NOSONAR
     String loadFile();
 
    public:
+    void begin(IHAL* hal);
     static SettingsManager &getInstance();
 
     // After saving wifi settings, requests restart, TODO: maybe use an event instead of this

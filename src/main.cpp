@@ -37,6 +37,7 @@ void setup() // NOSONAR - complexity ok
     SunriseSunsetCalculator sunriseSunset;
     WifiController wifiController;
 
+    settingsManager.begin(&hal);
     settingsManager.load();
 
     // Set log level from settings
@@ -72,8 +73,8 @@ void setup() // NOSONAR - complexity ok
     // Initialize coop controller components
     sensorManager.begin(TEMP_METER_PIN, TEMP_METER_2_PIN);
     pumpController.begin(&sensorManager, &sensorManager, OUT_PUMP_PIN);
-    buzzerController.begin(BUZZER_B_PIN);
-    wifiController.begin(&settingsManager, &buzzerController, hostName, apPasswd);
+    buzzerController.begin(&hal, BUZZER_B_PIN);
+    wifiController.begin(&hal, &settingsManager, &buzzerController, hostName, apPasswd);
     doorController.begin(&buzzerController, &sunriseSunset);
     lightController.begin(&sunriseSunset);
     

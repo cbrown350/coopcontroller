@@ -1,6 +1,7 @@
 #ifndef __WIFI_CONTROLLER_H__
 #define __WIFI_CONTROLLER_H__
 
+#include "IHAL.h"
 #include <Arduino.h>
 #include "SettingsManager.h"
 #include "BuzzerController.h"
@@ -26,6 +27,7 @@ struct WifiStatus {
 
 class WifiController {
 private:
+    IHAL* _hal;
     SettingsManager* settingsManager_;
     BuzzerController* buzzerController_;
     
@@ -56,7 +58,7 @@ public:
     WifiController() = default;
     
     // Initialization
-    void begin(SettingsManager* settings, BuzzerController* buzzer, const char* hostName, const char* apPasswd);
+    void begin(IHAL* hal, SettingsManager* settings, BuzzerController* buzzer, const char* hostName, const char* apPasswd);
     
     // Main update function - call this in loop()
     void update();
