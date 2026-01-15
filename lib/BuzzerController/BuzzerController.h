@@ -1,8 +1,6 @@
 #ifndef __BUZZER_CONTROLLER_H__
 #define __BUZZER_CONTROLLER_H__
 
-#include "IHAL.h"
-
 #include <ArduinoJson.h>
 
 #include <stdint.h>
@@ -27,18 +25,18 @@ enum class BuzzerType : uint8_t {
 
 // Alert pattern structure
 struct AlertPattern {
-    int beep_duration_ms;      // Duration of each beep in milliseconds
-    int pause_duration_ms;     // Duration between beeps in milliseconds
-    int repeat_count;          // Number of beeps in pattern
-    int pattern_pause_ms;      // Pause between pattern repetitions
-    int max_cycles;            // Maximum number of pattern cycles (0 = infinite)
+    unsigned int beep_duration_ms;      // Duration of each beep in milliseconds
+    unsigned int pause_duration_ms;     // Duration between beeps in milliseconds
+    unsigned int repeat_count;          // Number of beeps in pattern
+    unsigned int pattern_pause_ms;      // Pause between pattern repetitions
+    unsigned int max_cycles;            // Maximum number of pattern cycles (0 = infinite)
 };
 
 class BuzzerController {
 public:
     BuzzerController() = default;
     
-    void begin(IHAL* hal, uint8_t pin);
+    void begin(uint8_t pin);
     void update();
     
     // Alert triggering methods
@@ -67,7 +65,6 @@ public:
     void toJson(JsonObject& json) const;
 
 private:
-    IHAL* _hal;
     uint8_t _pin;
     bool _enabled = true;
     BuzzerType _buzzerType = BuzzerType::ACTIVE;

@@ -1,6 +1,5 @@
 #include "BuzzerController.h"
 
-#include "IHAL.h"
 #include "Logger.h"
 #include "SettingsManager.h"
 
@@ -35,8 +34,7 @@ const AlertPattern BuzzerController::DEFAULT_PATTERNS[] = { // NOSONAR - intenti
     {500, 0, 1, 0, 1}
 };
 
-void BuzzerController::begin(IHAL* hal, uint8_t pin) {
-    _hal = hal;
+void BuzzerController::begin(uint8_t pin) {
     _pin = pin;
     pinMode(_pin, OUTPUT);
     digitalWrite(_pin, HIGH); // Active LOW - turn off initially

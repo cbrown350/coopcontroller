@@ -2,8 +2,8 @@
 #define WEB_SERVER_H
 
 #include <stdint.h>
-#include <ESPAsyncWebServer.h>
 
+#include "IHAL.h"
 #include "SensorManager.h"
 #include "PumpController.h"
 #include "BuzzerController.h"
@@ -13,16 +13,14 @@
 #include "WifiController.h"
 #include "SettingsManager.h"
 
-// Define SPIFFS as LittleFS
-#define SPIFFS LittleFS
-
 class CoopControllerWebServer
 {
-   private:
-    AsyncWebServer server;
+    private:
+        IHAL* hal;
+        uint16_t port;
 
    public:
-    explicit CoopControllerWebServer(uint16_t port = 80);
+    explicit CoopControllerWebServer(IHAL* hal, uint16_t port = 80);
     void begin(SensorManager& tempSensor,
             PumpController& pumpController,
             BuzzerController& buzzerController,

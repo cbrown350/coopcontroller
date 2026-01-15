@@ -2,6 +2,7 @@
 #define LIGHTCONTROLLER_H
 
 #include "SunriseSunset.h"
+#include "IHAL.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -17,6 +18,7 @@ enum class LightState {
 
 class LightController { // NOSONAR - complexity ok
 private:
+    IHAL* hal;
     SunriseSunsetCalculator* sunriseSunset;
 
     // State variables
@@ -72,7 +74,7 @@ public:
     LightController();
     
     // Initialization
-    void begin(SunriseSunsetCalculator* sunriseSunset);
+    void begin(IHAL* _hal, SunriseSunsetCalculator* sunriseSunset);
     
     // Main update loop - call frequently (recommended 100ms)
     void update();

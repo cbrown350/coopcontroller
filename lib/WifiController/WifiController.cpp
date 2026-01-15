@@ -3,10 +3,7 @@
 #include "Logger.h"
 #include "BuzzerController.h"
 #include <Arduino.h>
-#include <WiFi.h>
-#include <ESPmDNS.h>
 #include "esp_task_wdt.h"
-#include "mDNS.h"
 #include <stdint.h>
 
 // Define constants (from main.cpp)
@@ -56,9 +53,9 @@ void WifiController::update() {
 WifiStatus WifiController::getStatus() const {
     WifiStatus status;
     status.state = isInAPMode_ ? WifiState::WIFI_AP_MODE : 
-        (WiFi.status() == WL_CONNECTED ? WifiState::WIFI_CONNECTED : WifiState::WIFI_DISCONNECTED); // NOSONAR - nested ok
-    status.ssid = WiFi.SSID();
-    status.ip = WiFi.localIP().toString();
+        (_hal->wifiIsConnected() ? WifiState::WIFI_CONNECTED : WifiState::WIFI_DISCONNECTED); // NOSONAR - nested ok
+    status.ssid = _hal->wifiGetSSID();
+    status.ip = _hal->wifiGetLocalIP();
     status.hasConnected = settingsManager_->getHasConnected();
     status.isReconnecting = isReconnecting;
     status.retryCount = wifiRetryCount;
@@ -67,7 +64,7 @@ WifiStatus WifiController::getStatus() const {
 }
 
 bool WifiController::isConnected() const {
-    return WiFi.isConnected();
+    return _hal->wifiIsConnected();
 }
 
 bool WifiController::isInAPMode() const {
@@ -75,15 +72,15 @@ bool WifiController::isInAPMode() const {
 }
 
 String WifiController::getIPAddress() const {
-    return WiFi.localIP().toString();
+    return _hal->wifiGetLocalIP();
 }
 
 String WifiController::getSSID() const {
-    return WiFi.SSID();
+    return _hal->wifiGetSSID();
 }
 
 int WifiController::getRSSI() const {
-    return WiFi.RSSI();
+    return _hal->wifiGetRSSI();
 }
 
 void WifiController::connectToWiFi() {
@@ -96,11 +93,11 @@ void WifiController::startAPMode() {
     settingsManager_->setAPMode(true);
     settingsManager_->save();
     delay(1000);
-    ESP.restart();
+    _hal->restart();
 }
 
 void WifiController::disconnect() { // NOSONAR - modifies state
-    WiFi.disconnect();
+    _hal->wifiDisconnect();
 }
 
 void WifiController::enableLed(bool enabled) {
@@ -128,7 +125,7 @@ void WifiController::failWifi() {
         }
 
         delay(1000);  // Give time for serial output
-        ESP.restart();
+        _hal->restart();
     } else {
         logger.logInfo("WiFi connection failed, retrying in 30 seconds");
         // Don't restart, just continue trying to reconnect in checkWifiConnection()
@@ -139,13 +136,13 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
     if (settingsManager_->isAPMode()) {
         logger.logInfo("Starting AP mode for " + String(settingsManager_->getWifiAPDurationMinutes()) + " minutes");
         if (apPasswd_ && strlen(apPasswd_) > 0) {
-            WiFi.softAP(hostName_, apPasswd_);
+            _hal->wifiBeginAP(hostName_, apPasswd_);
             logger.logDebug("AP password set: " + String(apPasswd_));
         } else {
-            WiFi.softAP(hostName_, nullptr);
+            _hal->wifiBeginAP(hostName_, nullptr);
         }
-        WiFi.softAPsetHostname(hostName_); 
-        logger.logInfo("AP mode started, IP address: " + WiFi.softAPIP().toString());
+        // Note: WiFi.softAPsetHostname() not available in HAL - using hostname from wifiBeginAP
+        logger.logInfo("AP mode started, IP address: " + _hal->wifiGetAPIP());
         isInAPMode_ = true;
         wifiAPModeStart = millis();
         
@@ -162,23 +159,27 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             settingsManager_->save();
             settingsManager_->printSettingsDebug();
             delay(1000);
-            ESP.restart();
+            _hal->restart();
             return;
         }
         
+        // Note: WiFiClass::setHostname() not available in HAL - hostname handled in wifiBegin
         if (hostName_ && strlen(hostName_) > 0) {
-            WiFiClass::setHostname(hostName_); // Need to set hostname in all places for mDNS to work
+            _hal->wifiSetHostname(hostName_); // Need to set hostname in all places for mDNS to work
             logger.logDebug("Hostname set to: " + String(hostName_));
-        } 
-        WiFi.persistent(false); // Fix for issues with reconnection, credentials are stored in settingsManager
+        }
+        
+        // Disable auto-reconnect and persistent storage - credentials managed by settingsManager
+        _hal->wifiSetAutoReconnect(false); // Disable auto-reconnect, we handle it manually
+        
         logger.logInfo("Connecting to WiFi: " + ssid);
-        WiFi.begin(ssid.c_str(), password.c_str());
+        _hal->wifiBegin(ssid.c_str(), password.c_str());
         
         int maxRetries = settingsManager_->getWifiMaxRetries();
         int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
 
         wifiRetryCount = 0;
-        while (!WiFi.isConnected() && wifiRetryCount < maxRetries) {            
+        while (!_hal->wifiIsConnected() && wifiRetryCount < maxRetries) {            
             esp_task_wdt_reset();  
 
             logger.logDebug(".");
@@ -186,19 +187,22 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             wifiRetryCount++;  
 
             // Add some debugging
-            logger.logDebug("WiFi status: " + String(WiFi.status()) + ", attempt " + 
+            logger.logDebug("WiFi status: " + String(_hal->wifiGetStatus()) + ", attempt " + 
                     String(wifiRetryCount) + "/" + String(maxRetries));
         }
 
         logger.logDebug(""); // New line after dots
         
-        if (WiFi.isConnected()) {
-            logger.logInfo("WiFi Connected, IP address: " + WiFi.localIP().toString());
+        if (_hal->wifiIsConnected()) {
+            logger.logInfo("WiFi Connected, IP address: " + _hal->wifiGetLocalIP());
+            logger.logInfo("SSID: " + ssid);
+            logger.logInfo("BSSID: " + _hal->wifiGetBSSID());
+            logger.logInfo("MAC Address: " + _hal->wifiGetMacAddress());
             isInAPMode_ = false;
             
             if (hostName_ && strlen(hostName_) > 0) {
                 int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !MDNS.begin(hostName_)) { // NOSONAR - nesting ok
+                while(mDNSRetries > 0 && !_hal->mdnsBegin(hostName_)) { // NOSONAR - nesting ok
                     logger.logDebug("Starting mDNS...");
                     delay(1000);
                     mDNSRetries--;
@@ -233,7 +237,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
           settingsManager_->setAPMode(false);
           settingsManager_->save();
           delay(1000);
-          ESP.restart();
+          _hal->restart();
         }
         return;
     }
@@ -244,7 +248,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
     }
 
     // Check if WiFi is connected
-    if (!WiFi.isConnected()) {
+    if (!_hal->wifiIsConnected()) {
         if (!isReconnecting) {
             logger.logWarning("WiFi disconnected, attempting to reconnect...");
             if (buzzerController_) {
@@ -254,7 +258,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             String password = settingsManager_->getPassword();
             
             if (!ssid.isEmpty()) {
-                WiFi.begin(ssid.c_str(), password.c_str());
+                _hal->wifiBegin(ssid.c_str(), password.c_str());
                 wifiReconnectStart = millis();
                 isReconnecting = true;
                 wifiRetryCount = 0;
@@ -274,7 +278,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
                 settingsManager_->setAPMode(true);
                 settingsManager_->save();
                 delay(1000);
-                ESP.restart();
+                _hal->restart();
             }
         }
     } else {
@@ -290,7 +294,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             
             if (hostName_ && strlen(hostName_) > 0) {
                 int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !MDNS.begin(hostName_)) { // NOSONAR - nesting ok
+                while(mDNSRetries > 0 && !_hal->mdnsBegin(hostName_)) { // NOSONAR - nesting ok
                     logger.logDebug("Starting mDNS...");
                     delay(1000);
                     mDNSRetries--;
@@ -315,7 +319,7 @@ void WifiController::updateWifiLed() {
 
     unsigned long currentMillis = millis();
 
-    if (WiFi.status() == WL_CONNECTED) {
+    if (_hal->wifiGetStatus() == WL_CONNECTED) {
         // Heartbeat pattern: 50ms ON, 1950ms OFF
         unsigned long interval = (!ledState) ? 50 : 1950;
         if (currentMillis - lastLedToggle >= interval) {

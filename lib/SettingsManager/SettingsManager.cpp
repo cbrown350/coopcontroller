@@ -5,12 +5,11 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <LittleFS.h>
 
 #include <cassert>
 
 
-SettingsManager::SettingsManager() : isLoaded(false), wifiChanged(false), requestRestartAt(0) {
+SettingsManager::SettingsManager() : _hal(nullptr), isLoaded(false), wifiChanged(false), requestRestartAt(0) {
     // Initialize with default values
     settings = user_settings{};
 }
@@ -18,6 +17,9 @@ SettingsManager::SettingsManager() : isLoaded(false), wifiChanged(false), reques
 void SettingsManager::begin(IHAL* hal)
 {
   _hal = hal;
+  if(!_hal->fsBegin()) {
+      logger.logError("Failed to initialize filesystem in SettingsManager::begin");
+  } 
 }
 
 SettingsManager &SettingsManager::getInstance() {
@@ -28,7 +30,7 @@ SettingsManager &SettingsManager::getInstance() {
 String SettingsManager::loadFile() {    
     assert(_hal != nullptr && "IHAL pointer must be provided in SettingsManager::begin(&hal) call");
 
-    File file = LittleFS.open(SETTINGS_FILE, "r");
+    auto file = _hal->fsOpen(SETTINGS_FILE, "r");
     if (!file) {
         logger.logWarning("Settings file not found, using defaults");
         // Set default values
@@ -38,8 +40,20 @@ String SettingsManager::loadFile() {
         return "";
     }
 
-    String content = file.readString();
-    file.close();
+    // Get file size
+    size_t fileSize = _hal->fsSize(file);
+    
+    // Read file content into buffer
+    String content = "";
+    if (fileSize > 0) {
+        uint8_t* buffer = new uint8_t[fileSize + 1];
+        size_t bytesRead = _hal->fsRead(file, buffer, fileSize);
+        buffer[bytesRead] = '\0'; // Null-terminate
+        content = String((char*)buffer);
+        delete[] buffer;
+    }
+    
+    _hal->fsClose(file);
     return content;
 }
 
@@ -49,7 +63,7 @@ bool SettingsManager::load() {
     }
 
     String content = loadFile();
-    if (content.isEmpty()) {
+    if (content.length() == 0) {
         return false; // already logged in loadFile
     }
 
@@ -90,7 +104,7 @@ bool SettingsManager::save() {
         wifiChanged = true;
     }
 
-    File file = LittleFS.open(SETTINGS_FILE, "w");
+    auto file = _hal->fsOpen(SETTINGS_FILE, "w");
     if (!file) {
         logger.logError("Failed to open settings file for writing");
         return false;
@@ -100,13 +114,14 @@ bool SettingsManager::save() {
     String output;
     serializeJson(doc, output);
     
-    if (file.print(output) != output.length()) {
+    size_t bytesWritten = _hal->fsWrite(file, (const uint8_t*)output.c_str(), output.length());
+    if (bytesWritten != output.length()) {
         logger.logError("Failed to write settings to file");
-        file.close();
+        _hal->fsClose(file);
         return false;
     }
 
-    file.close();
+    _hal->fsClose(file);
     printSettingsDebug();
     logger.logDebug("Settings saved successfully");
     return true;
@@ -367,7 +382,7 @@ void SettingsManager::setWaterMeterTimeoutSeconds(int seconds) {
     settings.water_meter_timeout_seconds = seconds;
 }
 
-// WiFi connection settings setters
+// WiFi connection settings setters - request restart for these
 void SettingsManager::setWifiMaxRetries(int retries) {
     settings.wifi_max_retries = retries;
 }
@@ -528,7 +543,7 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     
     // WiFi settings
     doc["ssid"] = settings.ssid;
-    if (includePassword && !settings.passwd.isEmpty()) {
+    if (includePassword && settings.passwd.length() != 0) {
         doc["passwd"] = settings.passwd;
     }
     doc["ap_mode"] = settings.ap_mode;

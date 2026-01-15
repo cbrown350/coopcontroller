@@ -1,9 +1,44 @@
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
+#include "ArduinoFake.h"
+
+#include "MockHAL.h"
+#include "Logger.h"
 #include "BuzzerController.h"
+
+using namespace fakeit;
 
 class BuzzerControllerTest : public ::testing::Test {
 protected:
+    MockHAL* mockHal;
     BuzzerController buzzer;
+
+    void SetUp() override {
+        mockHal = new MockHAL();
+
+        // Must set up logging, which uses micros, for it to work in buzzer tests
+        When(Method(ArduinoFake(), micros)).AlwaysReturn(1000000);
+        Logger::getInstance().begin(mockHal);
+        Logger::getInstance().clearLogs();
+        Logger::getInstance().setLogLevel(LogLevel::VERBOSE);
+
+        // Mock ArduinoFake functions used by BuzzerController
+        When(Method(ArduinoFake(), millis)).AlwaysReturn(1000000);
+        When(Method(ArduinoFake(), pinMode)).AlwaysReturn();
+        When(Method(ArduinoFake(), digitalWrite)).AlwaysReturn();
+        When(Method(ArduinoFake(), tone)).AlwaysReturn();
+        When(Method(ArduinoFake(), noTone)).AlwaysReturn();
+
+        // Set up buzzer
+        buzzer.begin(5); // Using pin 5 for testing
+        buzzer.setEnabled(true);
+    }
+
+    void TearDown() override {
+        // Clean up mock
+        delete mockHal;
+        mockHal = nullptr;
+    }
 };
 
 TEST_F(BuzzerControllerTest, DisabledAlertDoesNotActivate) {

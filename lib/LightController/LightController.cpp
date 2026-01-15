@@ -2,12 +2,15 @@
 #include "SettingsManager.h"
 #include "Logger.h"
 #include "SunriseSunset.h"
+#include "IHAL.h"
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <time.h>
 
 
 LightController::LightController() :
+    hal(nullptr),
     currentState(LightState::OFF),
     stateStartTime(0),
     autoMode(false),
@@ -32,9 +35,10 @@ LightController::LightController() :
     totalCycles(0)
 {}
 
-void LightController::begin(SunriseSunsetCalculator* _sunriseSunset) {
+void LightController::begin(IHAL* _hal, SunriseSunsetCalculator* _sunriseSunset) {
     this->sunriseSunset = _sunriseSunset;
-
+    this->hal = _hal;
+    
     logger.logInfo("Initializing Light Controller");
     
     // Load settings
@@ -50,8 +54,8 @@ void LightController::begin(SunriseSunsetCalculator* _sunriseSunset) {
     // Initialize PWM
     logger.logInfo(String("PWM: Channel=") + String(PWM_CHANNEL) + String(", Freq=") + String(PWM_FREQ) + "Hz, Resolution=" + String(PWM_RESOLUTION) + "-bit, Pin=" + String(OUT_LIGHT_PIN));
     
-    ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-    ledcAttachPin(OUT_LIGHT_PIN, PWM_CHANNEL);
+    hal->pwmSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+    hal->pwmAttachPin(OUT_LIGHT_PIN, PWM_CHANNEL);
     
     // Initialize to OFF state
     updatePWM();
@@ -423,7 +427,7 @@ void LightController::setState(LightState newState) {
 
 void LightController::updatePWM() { // NOSONAR - modifies light state
     int pwmValue = (currentBrightness * 255) / 100; // Scale to 0-255
-    ledcWrite(PWM_CHANNEL, pwmValue);
+    hal->pwmWrite(PWM_CHANNEL, pwmValue);
 }
 
 void LightController::updateFade() {
