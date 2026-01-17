@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <ESPmDNS.h>
 #include "time.h"
 #include <stdint.h>
 #include <esp_task_wdt.h>
