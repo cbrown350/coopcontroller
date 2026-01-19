@@ -25,13 +25,14 @@ SensorManager::SensorManager()
         // Initialize sensor data in the initializer list to avoid assignment issues
         sensor1{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0, 0},
         sensor2{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0, 0},
-        pulsesPerGallon(450.0f)
+        pulsesPerGallon(settingsManager.getPulsesPerGallon())
 {}
 
 void SensorManager::begin(uint8_t sensor_pin1, uint8_t sensor_pin2) {
     this->sensorPin1 = sensor_pin1;
     this->sensorPin2 = sensor_pin2;
     logger.logInfo("Initializing temperature sensors...");
+    logger.logInfo(String("Water meter calibration: ") + String(pulsesPerGallon, 1) + " pulses per gallon");
 
     // put your setup code here, to run once:
     pinMode(sensorPin1, INPUT_PULLUP);
