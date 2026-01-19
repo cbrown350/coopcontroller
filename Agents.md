@@ -822,6 +822,20 @@ Features organized by priority and implementation status.
 - Clear WiFi credentials and enter AP mode
 - Essential for troubleshooting and device transfer
 
+#### API Authentication for Critical Endpoints
+- Add authentication to protect critical REST API endpoints
+- Prevent unauthorized access to system controls and settings
+- Protect endpoints that modify system state (pump controls, settings updates, etc.)
+- Implement configurable authentication credentials (username/password)
+- Use Basic Auth or token-based authentication
+- Allow read-only access for status endpoints without authentication
+- Web UI should automatically handle authentication
+- Store authentication credentials securely in settings
+- Optional: Enable/disable authentication for local network access
+- **Security Risk:** Currently all REST API endpoints are publicly accessible on the local network
+- Critical for protecting system from unauthorized control
+- Should be implemented before exposing system to external networks
+
 ### High Priority - Safety & Reliability
 
 #### WiFi Status LED
