@@ -222,6 +222,20 @@ int SettingsManager::getWaterMeterTimeoutSeconds() const {
     return settings.water_meter_timeout_seconds;
 }
 
+// Water meter per-pulse calculation getter
+bool SettingsManager::getWaterMeterPerPulseCalculationEnabled() const {
+    return settings.water_meter_per_pulse_calculation_enabled;
+}
+
+// Pump off flow monitoring getters
+bool SettingsManager::getPumpOffFlowMonitoringEnabled() const {
+    return settings.pump_off_flow_monitoring_enabled;
+}
+
+int SettingsManager::getPumpOffFlowGracePeriodSeconds() const {
+    return settings.pump_off_flow_grace_period_seconds;
+}
+
 // WiFi connection settings getters
 int SettingsManager::getWifiMaxRetries() {
     return getSettings().wifi_max_retries;
@@ -382,6 +396,20 @@ void SettingsManager::setWaterMeterTimeoutSeconds(int seconds) {
     settings.water_meter_timeout_seconds = seconds;
 }
 
+// Water meter per-pulse calculation setter
+void SettingsManager::setWaterMeterPerPulseCalculationEnabled(bool enabled) {
+    settings.water_meter_per_pulse_calculation_enabled = enabled;
+}
+
+// Pump off flow monitoring setters
+void SettingsManager::setPumpOffFlowMonitoringEnabled(bool enabled) {
+    settings.pump_off_flow_monitoring_enabled = enabled;
+}
+
+void SettingsManager::setPumpOffFlowGracePeriodSeconds(int seconds) {
+    settings.pump_off_flow_grace_period_seconds = seconds;
+}
+
 // WiFi connection settings setters - request restart for these
 void SettingsManager::setWifiMaxRetries(int retries) {
     settings.wifi_max_retries = retries;
@@ -506,6 +534,9 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     // Load water meter calibration
     settings.pulses_per_gallon = doc["pulses_per_gallon"] | defaultSettings.pulses_per_gallon;
     settings.water_meter_timeout_seconds = doc["water_meter_timeout_seconds"] | defaultSettings.water_meter_timeout_seconds;
+    settings.water_meter_per_pulse_calculation_enabled = doc["water_meter_per_pulse_calculation_enabled"] | defaultSettings.water_meter_per_pulse_calculation_enabled;
+    settings.pump_off_flow_monitoring_enabled = doc["pump_off_flow_monitoring_enabled"] | defaultSettings.pump_off_flow_monitoring_enabled;
+    settings.pump_off_flow_grace_period_seconds = doc["pump_off_flow_grace_period_seconds"] | defaultSettings.pump_off_flow_grace_period_seconds;
     
     // Load WiFi connection settings
     settings.wifi_max_retries = doc["wifi_max_retries"] | defaultSettings.wifi_max_retries;
@@ -569,6 +600,9 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     // Water meter calibration
     doc["pulses_per_gallon"] = settings.pulses_per_gallon;
     doc["water_meter_timeout_seconds"] = settings.water_meter_timeout_seconds;
+    doc["water_meter_per_pulse_calculation_enabled"] = settings.water_meter_per_pulse_calculation_enabled;
+    doc["pump_off_flow_monitoring_enabled"] = settings.pump_off_flow_monitoring_enabled;
+    doc["pump_off_flow_grace_period_seconds"] = settings.pump_off_flow_grace_period_seconds;
     
     // WiFi connection settings
     doc["wifi_max_retries"] = settings.wifi_max_retries;

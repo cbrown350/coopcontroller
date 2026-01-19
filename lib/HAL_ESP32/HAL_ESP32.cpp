@@ -10,6 +10,7 @@
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
 #include <esp_system.h>  // For esp_reset_reason()
+#include <esp_task_wdt.h>  // For esp_task_wdt_reset()
 #include <esp32-hal-ledc.h> // For LEDC functions
 
 /**
@@ -94,6 +95,10 @@ const char* HAL_ESP32::getChipModel() {
 
 uint8_t HAL_ESP32::getResetReason() {
   return static_cast<uint8_t>(esp_reset_reason());
+}
+
+void HAL_ESP32::taskWdtReset() {
+  esp_task_wdt_reset();
 }
 
 // ========================================================================

@@ -4,7 +4,7 @@ export type LogLevel = "VERBOSE" | "DEBUG" | "INFO" | "WARNING" | "ERROR";
 export interface SensorData {
   type: SensorType;
   connected: boolean;
-  temperature_f: number;
+  temperature_f: number | null;
   flow_rate: number;
   pulse_count: number;
   last_pulse_time: number;
@@ -24,6 +24,7 @@ export interface PumpStatus {
   total_on_time: number;
   total_off_time: number;
   total_cycles: number;
+  pump_off_flow_detected?: boolean;
 }
 
 export interface SystemSettings {
@@ -99,4 +100,7 @@ export interface Settings {
   wifi_led_enabled?: boolean;
   buzzer_enabled?: boolean;
   buzzer_type?: string;
+  water_meter_per_pulse_calculation_enabled?: boolean;
+  pump_off_flow_monitoring_enabled?: boolean;
+  pump_off_flow_grace_period_seconds?: number;
 }

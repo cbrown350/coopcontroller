@@ -34,6 +34,13 @@ void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSens
     errorStartTime = 0;
     waitingForRetry = false;
 
+    // Initialize pump off flow monitoring
+    pump_off_flow_monitoring_enabled = settingsManager.getPumpOffFlowMonitoringEnabled();
+    pump_off_flow_grace_period_seconds = settingsManager.getPumpOffFlowGracePeriodSeconds();
+    pump_turned_off_time = 0;
+    pump_off_flow_detected = false;
+    status.pump_off_flow_detected = false;
+
     pinMode(pumpPin, OUTPUT);
     digitalWrite(pumpPin, LOW);
     
@@ -103,6 +110,9 @@ void PumpController::update() {
             }
             break;
     }
+    
+    // Check for pump off flow monitoring
+    checkPumpOffFlow(currentTime);
     
     lastUpdateTime = currentTime;
 }
@@ -263,12 +273,17 @@ void PumpController::setPumpState(bool isOn) {
             status.current_cycle_start = millis();
             logger.logInfo("Pump turned ON");
             logger.logDebug("Pump turned ON - cycle started");
+            // Clear pump off flow detection when pump turns on
+            pump_off_flow_detected = false;
+            status.pump_off_flow_detected = false;
         } else {
             if (status.current_cycle_start > 0) {
                 status.current_cycle_duration = millis() - status.current_cycle_start;
             }
             logger.logInfo("Pump turned OFF");
             logger.logfDebug("Pump turned OFF - cycle duration: %lu ms", (unsigned long)status.current_cycle_duration);
+            // Record when pump turned off for flow monitoring
+            pump_turned_off_time = millis();
         }
     }
 }
@@ -382,6 +397,7 @@ String PumpController::getStatusJson() const {
     json += R"("total_on_time":)" + String(status.total_on_time / 1000) + ",";
     json += R"("total_off_time":)" + String(status.total_off_time / 1000) + ",";
     json += R"("total_cycles":)" + String(status.total_cycles);
+    json += R"("pump_off_flow_detected":)" + String(status.pump_off_flow_detected ? "true" : "false");
     json += "}";
     return json;
 }
@@ -399,4 +415,65 @@ void PumpController::clearFlowError() {
     errorStartTime = 0;
     waitingForRetry = false;
     logger.logInfo("Flow error cleared");
+}
+
+void PumpController::clearPumpOffFlowDetected() {
+    pump_off_flow_detected = false;
+    status.pump_off_flow_detected = false;
+    logger.logInfo("Pump off flow detection cleared");
+}
+
+void PumpController::checkPumpOffFlow(unsigned long currentTime) {
+    // Only check if monitoring is enabled
+    if (!pump_off_flow_monitoring_enabled) {
+        return;
+    }
+    
+    // Only check when pump is OFF
+    if (status.is_active) {
+        return;
+    }
+    
+    // Check if grace period has elapsed
+    if (pump_turned_off_time == 0) {
+        return; // Pump hasn't turned off yet
+    }
+    
+    unsigned long gracePeriodMs = (unsigned long)pump_off_flow_grace_period_seconds * 1000UL;
+    
+    // Handle millis() rollover
+    unsigned long timeSinceOff = 0;
+    if (currentTime >= pump_turned_off_time) {
+        timeSinceOff = currentTime - pump_turned_off_time;
+    } else {
+        // Rollover occurred
+        timeSinceOff = (ULONG_MAX - pump_turned_off_time) + currentTime;
+    }
+    
+    // Only check after grace period has elapsed
+    if (timeSinceOff < gracePeriodMs) {
+        return; // Still in grace period
+    }
+    
+    // Check for flow from flow sensor
+    if (flowSensor_) {
+        float flowRate = 0.0f;
+        
+        // Check sensor 1 flow rate
+        if (flowSensor_->getSensor1Type() == SensorType::WATER_METER) {
+            flowRate = flowSensor_->getFlowRate1();
+        }
+        
+        // Check sensor 2 flow rate if sensor 1 is not a water meter
+        if (flowSensor_->getSensor2Type() == SensorType::WATER_METER && flowRate == 0.0f) {
+            flowRate = flowSensor_->getFlowRate2();
+        }
+        
+        // If flow detected and not already flagged
+        if (flowRate > 0.0f && !pump_off_flow_detected) {
+            pump_off_flow_detected = true;
+            status.pump_off_flow_detected = true;
+            logger.logWarning("WARNING: Water flow detected while pump is OFF - Possible stuck relay or valve leak");
+        }
+    }
 }

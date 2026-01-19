@@ -212,6 +212,27 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       settingsManager.setDoorAutoCloseAfterSunsetMinutes(jsonObj["door_auto_close_after_sunset_minutes"].as<int>());
                   }
                   
+                  if (jsonObj["water_meter_per_pulse_calculation_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["water_meter_per_pulse_calculation_enabled"].as<bool>();
+                      settingsManager.setWaterMeterPerPulseCalculationEnabled(enabled);
+                      String calcMsg = "Per-pulse flow calculation: " + String(enabled ? "enabled" : "disabled");
+                      logger.logInfo(calcMsg.c_str());
+                  }
+                  
+                  if (jsonObj["pump_off_flow_monitoring_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["pump_off_flow_monitoring_enabled"].as<bool>();
+                      settingsManager.setPumpOffFlowMonitoringEnabled(enabled);
+                      String monitorMsg = "Pump OFF flow monitoring: " + String(enabled ? "enabled" : "disabled");
+                      logger.logInfo(monitorMsg.c_str());
+                  }
+                  
+                  if (jsonObj["pump_off_flow_grace_period_seconds"].is<int>()) {
+                      int gracePeriod = jsonObj["pump_off_flow_grace_period_seconds"].as<int>();
+                      settingsManager.setPumpOffFlowGracePeriodSeconds(gracePeriod);
+                      String graceMsg = "Pump OFF flow grace period: " + String(gracePeriod) + " seconds";
+                      logger.logInfo(graceMsg.c_str());
+                  }
+                  
                   // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
                   
                   settingsManager.save();
@@ -281,6 +302,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   pump["total_off_time"] = pumpController.getTotalOffTime() / 1000;
                   pump["total_cycles"] = pumpController.getTotalCycles();
                   pump["time_until_retry"] = pumpController.getTimeUntilRetry() / 1000;
+                  pump["pump_off_flow_detected"] = pumpController.getPumpOffFlowDetected();
                   
                   // System status
                   JsonObject system = jsonDoc["system"].to<JsonObject>();
@@ -294,6 +316,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   system["watchdog_timeout_seconds"] = settingsManager.getWatchdogTimeoutSeconds();
                   system["water_meter_timeout_seconds"] = settingsManager.getWaterMeterTimeoutSeconds();
                   system["water_flow_error_timeout_seconds"] = settingsManager.getWaterFlowErrorTimeoutSeconds();
+                  system["pump_off_flow_monitoring_enabled"] = settingsManager.getPumpOffFlowMonitoringEnabled();
+                  system["pump_off_flow_grace_period_seconds"] = settingsManager.getPumpOffFlowGracePeriodSeconds();
                   
                    // Buzzer status
                    JsonObject buzzer = jsonDoc["buzzer"].to<JsonObject>();
@@ -362,6 +386,14 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
               {
                   pumpController.clearFlowError();
                   response->send(200, "text/plain", "Pump flow error cleared");
+              });
+
+    hal->webServerOn("/pump/clear_off_flow_detected", HAL_WebRequestMethod::HTTP_GET,
+              [&pumpController](IWebRequest *request, IWebResponse *response)
+              {
+                  pumpController.clearPumpOffFlowDetected();
+                  response->send(200, "text/plain", "Pump off flow detection cleared");
+                  logger.logInfo("Pump off flow detection cleared via web request");
               });
 
         // Water meter reset endpoints
@@ -785,6 +817,12 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   }
                   if (jsonObj["sunset_offset_minutes"].is<int>()) {
                     settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
+                  }
+                  if (jsonObj["water_meter_per_pulse_calculation_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["water_meter_per_pulse_calculation_enabled"].as<bool>();
+                      settingsManager.setWaterMeterPerPulseCalculationEnabled(enabled);
+                      String calcMsg = "Per-pulse flow calculation: " + String(enabled ? "enabled" : "disabled");
+                      logger.logInfo(calcMsg.c_str());
                   }
                   
                   // Save settings to persistent storage

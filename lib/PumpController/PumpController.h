@@ -27,6 +27,7 @@ struct PumpStatus {
     unsigned long total_on_time;
     unsigned long total_off_time;
     unsigned long total_cycles;
+    bool pump_off_flow_detected; // Flow detected when pump should be off
 };
 
 class PumpController {
@@ -49,11 +50,18 @@ private:
     unsigned long errorStartTime; // When error state started
     bool waitingForRetry; // Flag to indicate we're waiting to retry after error
     
+    // Pump off flow monitoring
+    bool pump_off_flow_monitoring_enabled; // Enable pump OFF flow monitoring
+    int pump_off_flow_grace_period_seconds; // Grace period after pump turns off before monitoring starts
+    unsigned long pump_turned_off_time; // Track when pump last turned off
+    bool pump_off_flow_detected; // Flag for flow detected when pump should be off
+    
     // Private methods
     void setPumpState(bool isOn);
     void updateStatistics();
     void handleAutoMode(unsigned long currentTime);
     bool checkFlowError() const;
+    void checkPumpOffFlow(unsigned long currentTime); // Check for flow when pump is OFF
     
 public:
     PumpController() = default;
@@ -76,6 +84,7 @@ public:
     PumpState getState() const { return status.state; }
     float getCurrentTemperature() const { return status.temperature_f; }
     bool hasFlowError() const { return status.flow_error; }
+    bool getPumpOffFlowDetected() const { return status.pump_off_flow_detected; }
     
     unsigned long getCurrentRunStartTime() const;
     
@@ -94,6 +103,7 @@ public:
     // Reset methods
     void resetStatistics();
     void clearFlowError();
+    void clearPumpOffFlowDetected(); // Clear pump off flow detection flag
 };
 
 #endif // __PUMP_CONTROLLER_H__

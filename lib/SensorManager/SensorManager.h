@@ -25,6 +25,7 @@ struct SensorData {  // NOSONAR - shouldn't warn about destructor since it's def
     std::atomic<unsigned long> pulse_count;
     float flow_rate;  // Calculated flow rate for water meter
     std::atomic<unsigned long> last_pulse_time;
+    std::atomic<unsigned long> previous_pulse_time;  // For per-pulse calculation
     unsigned long last_flow_calculation_time;  // Track last calculation time per sensor
     
     // Constructor
@@ -120,6 +121,7 @@ private:
     void readDallasTemperature(DallasTemperature* dallas, SensorData& sensor);
     void logWaterMeterPulse(const SensorData& sensor) const;
     void calculateFlowRate(SensorData& sensor) const;
+    void calculatePerPulseFlowRate(SensorData& sensor) const;
     
 public:
     SensorManager();

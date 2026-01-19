@@ -295,6 +295,11 @@ public:
         return 12; // Mock reset reason (ESP_RST_POWERON)
     }
 
+    void taskWdtReset() override {
+        // Mock implementation - no-op for desktop testing
+        // In real ESP32, this would reset the watchdog timer
+    }
+
     // ========================================================================
     // WIFI MANAGEMENT
     // ========================================================================

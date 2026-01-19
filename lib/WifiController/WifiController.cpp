@@ -3,7 +3,6 @@
 #include "Logger.h"
 #include "BuzzerController.h"
 #include <Arduino.h>
-#include "esp_task_wdt.h"
 #include <stdint.h>
 
 // Define constants (from main.cpp)
@@ -180,7 +179,7 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
 
         wifiRetryCount = 0;
         while (!_hal->wifiIsConnected() && wifiRetryCount < maxRetries) {            
-            esp_task_wdt_reset();  
+            _hal->taskWdtReset();  
 
             logger.logDebug(".");
             delay(retryDelay * 1000);

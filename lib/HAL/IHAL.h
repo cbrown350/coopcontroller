@@ -235,6 +235,14 @@ public:
    */
   virtual uint8_t getResetReason() = 0;
 
+  /**
+   * @brief Reset the task watchdog timer
+   * 
+   * This function resets the watchdog timer for the current task to prevent
+   * watchdog timeout. Should be called periodically from long-running operations.
+   */
+  virtual void taskWdtReset() = 0;
+
   // ========================================================================
   // WIFI MANAGEMENT
   // ========================================================================

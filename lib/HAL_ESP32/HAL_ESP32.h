@@ -57,6 +57,8 @@ public:
   const char* getChipModel() override;
   uint8_t getResetReason() override;
 
+  void taskWdtReset() override;
+
   // ========================================================================
   // WIFI MANAGEMENT
   // ========================================================================

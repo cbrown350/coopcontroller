@@ -62,6 +62,13 @@ struct user_settings // NOSONAR
     // Task 3.5k preparation
     bool   door_auto_close_after_sunset_enabled = false; // Enable auto-close X minutes after sunset (default: false)
     int    door_auto_close_after_sunset_minutes = 0;  // Minutes after sunset to auto-close (default: 0)
+    
+    // Water meter per-pulse calculation
+    bool   water_meter_per_pulse_calculation_enabled = false; // Enable per-pulse flow calculation (default: false)
+    
+    // Pump off flow monitoring
+    bool   pump_off_flow_monitoring_enabled = false; // Enable pump OFF flow monitoring (default: false)
+    int    pump_off_flow_grace_period_seconds = 30; // Grace period after pump turns off before monitoring starts (default: 30 seconds)
 };
 
 class SettingsManager // NOSONAR
@@ -124,6 +131,13 @@ class SettingsManager // NOSONAR
     
     // Water meter timeout getter
     int    getWaterMeterTimeoutSeconds() const;
+    
+    // Water meter per-pulse calculation getter
+    bool   getWaterMeterPerPulseCalculationEnabled() const;
+    
+    // Pump off flow monitoring getters
+    bool   getPumpOffFlowMonitoringEnabled() const;
+    int    getPumpOffFlowGracePeriodSeconds() const;
     
     // WiFi connection settings getters
     int    getWifiMaxRetries();
@@ -206,6 +220,13 @@ class SettingsManager // NOSONAR
     // Task 3.5k preparation setters
     void setDoorAutoCloseAfterSunsetEnabled(bool enabled);
     void setDoorAutoCloseAfterSunsetMinutes(int minutes);
+    
+    // Water meter per-pulse calculation setter
+    void setWaterMeterPerPulseCalculationEnabled(bool enabled);
+    
+    // Pump off flow monitoring setters
+    void setPumpOffFlowMonitoringEnabled(bool enabled);
+    void setPumpOffFlowGracePeriodSeconds(int seconds);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);

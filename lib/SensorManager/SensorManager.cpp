@@ -8,13 +8,57 @@
 
 
 void IRAM_ATTR SensorManager::sensor1PulseISR() {
+    unsigned long currentTime = millis();
+    unsigned long prevPulseTime = sensor1.previous_pulse_time.load();
+    
+    // Calculate per-pulse flow rate if enabled and we have a previous pulse
+    if (settingsManager.getWaterMeterPerPulseCalculationEnabled() && prevPulseTime != 0) {
+        // Handle millis() rollover
+        unsigned long timeDiff;
+        if (currentTime >= prevPulseTime) {
+            timeDiff = currentTime - prevPulseTime;
+        } else {
+            timeDiff = (ULONG_MAX - prevPulseTime) + currentTime;
+        }
+        
+        // Noise filtering: ignore very short pulses (< 10ms)
+        if (timeDiff >= 10) {
+            // Calculate instantaneous flow rate: GPM = (pulses_per_gallon * 60000) / time_between_pulses_ms
+            float pulsesPerGallon = settingsManager.getPulsesPerGallon();
+            sensor1.flow_rate = (pulsesPerGallon * 60000.0f) / static_cast<float>(timeDiff);
+        }
+    }
+    
     sensor1.pulse_count++;
-    sensor1.last_pulse_time = millis();
+    sensor1.previous_pulse_time.store(currentTime);
+    sensor1.last_pulse_time = currentTime;
 }
 
 void IRAM_ATTR SensorManager::sensor2PulseISR() {
+    unsigned long currentTime = millis();
+    unsigned long prevPulseTime = sensor2.previous_pulse_time.load();
+    
+    // Calculate per-pulse flow rate if enabled and we have a previous pulse
+    if (settingsManager.getWaterMeterPerPulseCalculationEnabled() && prevPulseTime != 0) {
+        // Handle millis() rollover
+        unsigned long timeDiff;
+        if (currentTime >= prevPulseTime) {
+            timeDiff = currentTime - prevPulseTime;
+        } else {
+            timeDiff = (ULONG_MAX - prevPulseTime) + currentTime;
+        }
+        
+        // Noise filtering: ignore very short pulses (< 10ms)
+        if (timeDiff >= 10) {
+            // Calculate instantaneous flow rate: GPM = (pulses_per_gallon * 60000) / time_between_pulses_ms
+            float pulsesPerGallon = settingsManager.getPulsesPerGallon();
+            sensor2.flow_rate = (pulsesPerGallon * 60000.0f) / static_cast<float>(timeDiff);
+        }
+    }
+    
     sensor2.pulse_count++;
-    sensor2.last_pulse_time = millis();
+    sensor2.previous_pulse_time.store(currentTime);
+    sensor2.last_pulse_time = currentTime;
 }
 
 SensorManager::SensorManager()
@@ -83,7 +127,30 @@ void SensorManager::update() {
         readDallasTemperature(dallasTemp1.get(), sensor1);
     } else if (sensor1.type == SensorType::WATER_METER) {
         logWaterMeterPulse(sensor1);
-        calculateFlowRate(sensor1);
+        
+        // Use per-pulse calculation if enabled, otherwise use interval-based calculation
+        if (settingsManager.getWaterMeterPerPulseCalculationEnabled()) {
+            // Check for no-flow timeout (5 seconds)
+            unsigned long currentTime = millis();
+            unsigned long lastPulseTime = sensor1.last_pulse_time.load();
+            
+            if (lastPulseTime != 0) {
+                // Handle millis() rollover
+                unsigned long timeSinceLastPulse;
+                if (currentTime >= lastPulseTime) {
+                    timeSinceLastPulse = currentTime - lastPulseTime;
+                } else {
+                    timeSinceLastPulse = (ULONG_MAX - lastPulseTime) + currentTime;
+                }
+                
+                // Set flow rate to 0 if no pulse for 5 seconds
+                if (timeSinceLastPulse > 5000) {
+                    sensor1.flow_rate = 0.0f;
+                }
+            }
+        } else {
+            calculateFlowRate(sensor1);
+        }
     }
     
     // Update sensor 2
@@ -91,7 +158,30 @@ void SensorManager::update() {
         readDallasTemperature(dallasTemp2.get(), sensor2);
     } else if (sensor2.type == SensorType::WATER_METER) {
         logWaterMeterPulse(sensor2);
-        calculateFlowRate(sensor2);
+        
+        // Use per-pulse calculation if enabled, otherwise use interval-based calculation
+        if (settingsManager.getWaterMeterPerPulseCalculationEnabled()) {
+            // Check for no-flow timeout (5 seconds)
+            unsigned long currentTime = millis();
+            unsigned long lastPulseTime = sensor2.last_pulse_time.load();
+            
+            if (lastPulseTime != 0) {
+                // Handle millis() rollover
+                unsigned long timeSinceLastPulse;
+                if (currentTime >= lastPulseTime) {
+                    timeSinceLastPulse = currentTime - lastPulseTime;
+                } else {
+                    timeSinceLastPulse = (ULONG_MAX - lastPulseTime) + currentTime;
+                }
+                
+                // Set flow rate to 0 if no pulse for 5 seconds
+                if (timeSinceLastPulse > 5000) {
+                    sensor2.flow_rate = 0.0f;
+                }
+            }
+        } else {
+            calculateFlowRate(sensor2);
+        }
     }
 }
 

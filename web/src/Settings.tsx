@@ -37,6 +37,13 @@ function Settings() {
   // Water meter calibration
   const [pulsesPerGallon, setPulsesPerGallon] = createSignal<number | null>(null)
   
+  // Per-pulse flow calculation
+  const [waterMeterPerPulseCalculationEnabled, setWaterMeterPerPulseCalculationEnabled] = createSignal<boolean | null>(null)
+  
+  // Pump off flow monitoring
+  const [pumpOffFlowMonitoringEnabled, setPumpOffFlowMonitoringEnabled] = createSignal<boolean | null>(null)
+  const [pumpOffFlowGracePeriodSeconds, setPumpOffFlowGracePeriodSeconds] = createSignal<number | null>(null)
+  
   // Water meter timeout
   const [waterMeterTimeoutSeconds, setWaterMeterTimeoutSeconds] = createSignal<number | null>(null)
 
@@ -105,6 +112,9 @@ function Settings() {
       setLightTransitionDurationMinutes(settings.light_transition_duration_minutes ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
       setWaterMeterTimeoutSeconds(settings.water_meter_timeout_seconds ?? null)
+      setWaterMeterPerPulseCalculationEnabled(settings.water_meter_per_pulse_calculation_enabled ?? false)
+      setPumpOffFlowMonitoringEnabled(settings.pump_off_flow_monitoring_enabled ?? false)
+      setPumpOffFlowGracePeriodSeconds(settings.pump_off_flow_grace_period_seconds ?? 30)
       setLogLevel(settings.log_level ?? 'INFO')
       setPulsesPerGallon(settings.pulses_per_gallon ?? null)
       setWifiLedEnabled(settings.wifi_led_enabled ?? true)
@@ -203,6 +213,9 @@ function Settings() {
         light_brightness_percent: lightBrightnessPercent() ?? 100,
         light_transition_duration_minutes: lightTransitionDurationMinutes() ?? 5,
         pulses_per_gallon: pulsesPerGallon() ?? 450.0,
+        water_meter_per_pulse_calculation_enabled: waterMeterPerPulseCalculationEnabled() ?? false,
+        pump_off_flow_monitoring_enabled: pumpOffFlowMonitoringEnabled() ?? false,
+        pump_off_flow_grace_period_seconds: pumpOffFlowGracePeriodSeconds() ?? 30,
         wifi_led_enabled: wifiLedEnabled() ?? true,
         buzzer_enabled: buzzerEnabled() ?? true,
         buzzer_type: buzzerType() ?? 'ACTIVE',
@@ -533,6 +546,57 @@ function Settings() {
               <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
             </Show>
             <div class="fieldset-label">Time since last pulse before water meter considered disconnected (default: 300 seconds)</div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Per-Pulse Flow Calculation</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Per-Pulse Flow Calculation</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={waterMeterPerPulseCalculationEnabled() ?? false}
+                  onChange={(e) => setWaterMeterPerPulseCalculationEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Calculate flow rate instantly after each pulse instead of 60-second interval. More responsive to flow changes.
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Pump OFF Flow Monitoring</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Pump OFF Flow Monitoring</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-warning"
+                  checked={pumpOffFlowMonitoringEnabled() ?? false}
+                  onChange={(e) => setPumpOffFlowMonitoringEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Monitor for water flow when pump is OFF to detect hardware faults (stuck relay, valve leak).
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Pump OFF Grace Period (seconds)</legend>
+            <Show when={loaded()}>
+              <input type="number" id="pump_off_flow_grace_period_seconds" value={pumpOffFlowGracePeriodSeconds()!} onInput={(e) => setPumpOffFlowGracePeriodSeconds(parseInt(e.target.value))} placeholder="30" step="1" min="5" max="300" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">Grace period after pump turns off before monitoring starts (default: 30 seconds)</div>
           </fieldset>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
