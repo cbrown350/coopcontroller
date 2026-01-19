@@ -801,15 +801,16 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     hal->webServerAddRewrite("/about", "/index.htm");
     
     // Serve static files from LittleFS - LittleFS kept for AsyncWebServer serveStatic() only
+    // Web assets are served from /www/ subdirectory to protect sensitive files in root
     if(!hal->fsBegin()) {
         logger.logError("Failed to initialize filesystem for web server static file serving");
     }
-    hal->webServerServeStatic("/assets/", "/assets/");
-    hal->webServerServeStatic("/", "/");
+    hal->webServerServeStatic("/assets/", "/www/assets/");
+    hal->webServerServeStatic("/", "/www/");
     
     // default to index.htm for not found pages (SPA support)
     hal->webServerOnNotFound([](IWebRequest *, IWebResponse *response){
-        response->sendFile("/index.htm", "text/html");
+        response->sendFile("/www/index.htm", "text/html");
     });
     
         

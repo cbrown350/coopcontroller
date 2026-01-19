@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon devServer.js",
-    "build": "tsc -b && vite build && shx rm -rf ../data/assets ../data/index.htm ../data/index.htm.gz  && shx cp -r dist/* ../data/ && shx cp -f logo.webp favicon.ico ../data/ && mv ../data/index.html ../data/index.htm && node scripts/gzip-files.cjs",
+    "build": "tsc -b && vite build && shx rm -rf ../data/www ../data/index.htm ../data/index.htm.gz && shx mkdir -p ../data/www && shx cp -r dist/* ../data/www/ && shx cp -f logo.webp favicon.ico ../data/www/ && mv ../data/www/index.html ../data/www/index.htm && node scripts/gzip-files.cjs",
     "preview": "vite preview"
   },
   "dependencies": {
