@@ -420,48 +420,15 @@ void HAL_ESP32::webServerOn(const char* uri, HAL_WebRequestMethod method, WebSer
       methodStr = "GET";
       break;
   }
-  
-  // if(httpMethod == HTTP_POST) {
-  //   Serial.printf("[HAL_ESP32] Warning: Handling POST requests may not support full body access due to AsyncWebServer limitations.\n");
-    
-  // //  server_->on(uri, httpMethod, [handler, uri](AsyncWebServerRequest *request) {}, nullptr,
-  // //   // onBody
-  // //   [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-  // //     // data points to the current chunk, len is its size
-  // //     Serial.print("Chunk len: ");
-  // //     Serial.println(len);
-  // //     for (size_t i = 0; i < len; i++) {
-  // //       Serial.write(data[i]);
-  // //     }
-  // //     Serial.println();
 
-  // //     if (index + len == total) {  // last chunk
-  // //       request->send(200, "text/plain", "Body received\n");
-  // //     }
-  // //   });
-  //   server_->addHandler(new AsyncCallbackJsonWebHandler(uri,
-  //     [handler, uri](AsyncWebServerRequest *request, JsonVariant &json) { // NOSONAR
-  //       if (json.isNull()) {
-  //         Serial.printf("[HAL_ESP32] webServerOn: %s received invalid JSON\n", uri);
-  //         request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
-  //         return;
-  //       }
-  //       ESP32WebRequestWrapper wrappedRequest(request);
-  //       ESP32WebResponseWrapper wrappedResponse(request);
-  //       wrappedRequest.setJsonBody(json);
-  //       // Handler signature now takes both request and response
-  //       handler(&wrappedRequest, &wrappedResponse);
-  //     }));
-  // } else {
-    // Register handler with AsyncWebServer, wrapping with IWebRequest interface
-    server_->on(uri, httpMethod, [handler, uri](AsyncWebServerRequest *request, JsonVariant &json) {
-      ESP32WebRequestWrapper wrappedRequest(request);
-      ESP32WebResponseWrapper wrappedResponse(request);
-      wrappedRequest.setJsonBody(json);
-      // Handler signature now takes both request and response
-      handler(&wrappedRequest, &wrappedResponse);
-    });
-  // }
+  server_->on(uri, httpMethod, [handler, uri](AsyncWebServerRequest *request, JsonVariant &json) {
+    ESP32WebRequestWrapper wrappedRequest(request);
+    ESP32WebResponseWrapper wrappedResponse(request);
+    wrappedRequest.setJsonBody(json);
+    // Handler signature now takes both request and response
+    handler(&wrappedRequest, &wrappedResponse);
+  });
+
   Serial.printf("[HAL_ESP32] %s webServerOn: %s\n", methodStr.c_str(), uri);
 }
 

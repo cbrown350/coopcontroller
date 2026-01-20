@@ -831,25 +831,13 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   response->send(200, "application/json", R"({"success":true,"message":"Settings restored successfully"})");
               });
     
-    // SPA route rewrites (avoid FS open errors for client-side routes)
+    // SPA URL rewriting - redirect client-side routes to root before static file serving
+    // This prevents filesystem errors when navigating to SPA routes like /update, /settings, /logs    
     hal->webServerAddRewrite("/status", "/index.htm");
     hal->webServerAddRewrite("/settings", "/index.htm");
     hal->webServerAddRewrite("/log", "/index.htm");
     hal->webServerAddRewrite("/updates", "/index.htm");
     hal->webServerAddRewrite("/about", "/index.htm");
-    
-    // Serve static files from LittleFS - LittleFS kept for AsyncWebServer serveStatic() only
-    // Web assets are served from /www/ subdirectory to protect sensitive files in root
-    if(!hal->fsBegin()) {
-        logger.logError("Failed to initialize filesystem for web server static file serving");
-    }
-    hal->webServerServeStatic("/assets/", "/www/assets/");
-    hal->webServerServeStatic("/", "/www/");
-    
-    // default to index.htm for not found pages (SPA support)
-    hal->webServerOnNotFound([](IWebRequest *, IWebResponse *response){
-        response->sendFile("/www/index.htm", "text/html");
-    });
     
         
     // Setup ArduinoOTA - Note: ArduinoOTA is ESP32-specific, not part of HAL
@@ -893,9 +881,45 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
             }
         }
     });
+
     // TODO: username/password for ElegantOTA?
     // ElegantOTA.begin(server_);
     hal->webServerAddElegantOTA();
+    
+
+    // Static and not found placed last to catch all unmatched routes
+
+    // Serve static files from LittleFS - LittleFS kept for AsyncWebServer serveStatic() only
+    // Web assets are served from /www/ subdirectory to protect sensitive files in root
+    if(!hal->fsBegin()) {
+        logger.logError("Failed to initialize filesystem for web server static file serving");
+    }
+    hal->webServerServeStatic("/assets/", "/www/assets/");
+    hal->webServerServeStatic("/", "/www/");
+
+    // SPA catch-all handler - serves index.htm for client-side routes
+    // This prevents filesystem errors when navigating to SPA routes like /update, /settings, /logs
+    hal->webServerOnNotFound([](IWebRequest *request, IWebResponse *response) {
+        String uri = request->url();
+
+        Serial.println("Handling SPA route for URI: " + uri);
+
+        // Check if this is an API endpoint - return 404 for unknown API routes
+        if (uri.startsWith("/get_") || uri.startsWith("/get_") || uri.startsWith("/pump/") || uri.startsWith("/water/") ||
+            uri.startsWith("/update_settings") || uri.equals("/logs") || uri.equals("/version") ||
+            uri.equals("/update") || uri.startsWith("/buzzer/") || uri.startsWith("/door/") ||
+            uri.startsWith("/light/") || uri.equals("/sun/times") ||
+            uri.equals("/system_status") || uri.equals("/factory_reset") ||
+            uri.equals("/reboot") || uri.startsWith("/settings/")) {
+            response->send(404, "text/plain", "Not Found");
+            return;
+        }
+
+        // For all other requests (client-side routes), serve index.htm
+        // This allows SolidJS router to handle the route on the client side
+        // Note: request->url() returns only the path (e.g., "/update"), not the full URL
+        response->sendFile("/www/index.htm", "text/html");
+    });
 }
 void CoopControllerWebServer::loop() const
 {

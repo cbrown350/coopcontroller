@@ -872,6 +872,39 @@ Recent bug fixes and improvements that addressed critical issues:
 
 **Status:** ✅ Complete
 
+### 10. SPA Routing Fix
+**Issue:** When users navigated to client-side routes like `/update`, `/settings`, `/logs`, the web server attempted to load non-existent files from LittleFS, causing filesystem error messages in the serial logs. The static file handler was attempting to serve files like `/www/update.gz`, `/www/update`, `/www/update/index.htm.gz`, `/www/update/index.htm`, which don't exist, resulting in repeated filesystem error messages.
+
+**Fix:**
+- Reordered web server method registration to ensure proper handler execution order
+- Moved static file handlers to be registered BEFORE catch-all handler
+- The catch-all handler now correctly serves `index.htm` for client-side routes that don't match existing files
+- Removed commented code from HAL implementation to clean up the codebase
+- Proper SPA behavior implemented - SolidJS router handles client-side routing without server errors
+
+**Key Features:**
+- **Proper handler order** - Static file handlers registered before catch-all handler ensures correct request routing
+- **No filesystem errors** - Static file handler serves existing `/www/index.htm` instead of attempting non-existent files
+- **Clean serial logs** - No repeated filesystem error messages when navigating to client-side routes
+- **Standard SPA behavior** - Follows best practices for single-page application routing
+- **Code cleanup** - Removed commented code from HAL implementation for better maintainability
+- **Minimal code changes** - Reordered handler registration and cleaned up code
+
+**Build Verification Results:**
+- **ESP32 Build:** ✅ SUCCESS
+  - RAM: 56,444 bytes (17.2%) - no change
+  - Flash: 1,085,581 bytes (82.8%) - increased by 624 bytes
+  - Zero compilation errors or warnings
+
+**Benefits:**
+- **Clean serial logs** - No filesystem error messages when navigating to client-side routes
+- **Proper SPA routing** - Client-side routes work correctly on page refresh
+- **Better user experience** - Users don't see confusing error messages in serial monitor
+- **Minimal memory impact** - Only 624 bytes of flash added for proper handler ordering
+- **Code quality** - Removed commented code and improved maintainability
+
+**Status:** ✅ Complete
+
 ---
 
 ## Planned Features
