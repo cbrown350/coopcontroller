@@ -1,0 +1,25 @@
+CompileFlags:
+  Add:
+    - -DARDUINO_ARCH_ESP32
+    - -DESP32
+    - -D__XTENSA__=1
+    - -DCONFIG_NEWLIB_STDIN_LINE_ENDING_CR
+    - -DNEWLIB_STDOUT_LINE_ENDING_CRLF
+    - -D_POSIX
+    - -Wno-unknown-argument
+
+  Remove:
+    - -fno-tree-switch-conversion
+    - -mtext-section-literals
+    - -mlongcalls
+    - -fstrict-volatile-bitfields
+    - -fconcepts
+
+Diagnostics:
+  Suppress:
+    - pp_including_mainfile_in_preamble
+    - ppcast_function_type
+    - drv_unsupported_opt_for_target
+    - drv_unknown_argument
+    - drv_unknown_argument_with_suggestion
+  UnusedIncludes: None
