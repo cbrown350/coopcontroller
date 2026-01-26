@@ -13,7 +13,7 @@ MockHAL* hal;
 void setUp(void) {
     // setup
     hal = new MockHAL();
-    hal->wifiConnected = false;
+    // WiFi status is managed by MockHAL methods, not direct member access
     Logger::getInstance().begin(hal);
 }
 

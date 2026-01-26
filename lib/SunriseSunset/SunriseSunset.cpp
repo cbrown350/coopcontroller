@@ -14,13 +14,22 @@ SunriseSunsetCalculator::SunriseSunsetCalculator() {
   sunsetMinutes_ = 1080;  // Default: 6:00 PM
 }
 
-void SunriseSunsetCalculator::begin(double lat, double lon, int utcOffset) {
+void SunriseSunsetCalculator::begin(IHAL* hal, double lat, double lon, int utcOffset) {
+  hal_ = hal;
   latitude_ = lat;
   longitude_ = lon;
   utcOffset_ = utcOffset;
   lastCalculation_ = 0; // Force calculation on first update
-  logger.logInfo(String("SunriseSunsetCalculator initialized: lat=") + String(lat, 4) + 
-        String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
+  logger.logInfo(String("SunriseSunsetCalculator initialized: lat=") + String(lat, 4) +
+         String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
+}
+
+void SunriseSunsetCalculator::setCoordinates(double lat, double lon, int utcOffset) {
+  latitude_ = lat;
+  longitude_ = lon;
+  utcOffset_ = utcOffset;
+  logger.logInfo(String("SunriseSunsetCalculator coordinates updated: lat=") + String(lat, 4) +
+         String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
 }
 
 void SunriseSunsetCalculator::update() {
@@ -34,7 +43,7 @@ void SunriseSunsetCalculator::update() {
 void SunriseSunsetCalculator::forceUpdate() {
   // Get current time
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo, 1000)) {
+  if (!hal_->getLocalTime(&timeinfo, 1000)) {
     logger.logWarning("Failed to get local time for sunrise/sunset calculation");
     return;
   }

@@ -2,5 +2,7 @@
   "name": "DoorController",
   "version": "1.0.0",
   "description": "Door automation and motor control",
-  "dependencies": {}
+  "dependencies": {
+    "bblanchon/ArduinoJson": "^7.4.2"
+  }
 }

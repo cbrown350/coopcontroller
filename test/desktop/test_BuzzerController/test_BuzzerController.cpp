@@ -16,8 +16,19 @@ protected:
     void SetUp() override {
         mockHal = new MockHAL();
 
-        // Must set up logging, which uses micros, for it to work in buzzer tests
+        // Reset ArduinoFake
+        ArduinoFakeReset();
+
+        // Reset mock state
+        mockHal->reset();
+
+        // Mock ALL Arduino functions BEFORE initializing anything
         When(Method(ArduinoFake(), micros)).AlwaysReturn(1000000);
+        // Make millis() return mockHAL.millisValue so tests can control time
+        When(Method(ArduinoFake(), millis)).AlwaysDo([this]() { return mockHal->millisValue; });
+        When(Method(ArduinoFake(), delay)).AlwaysReturn();
+        When(Method(ArduinoFake(), delayMicroseconds)).AlwaysReturn();
+
         Logger::getInstance().begin(mockHal);
         Logger::getInstance().clearLogs();
         Logger::getInstance().setLogLevel(LogLevel::VERBOSE);

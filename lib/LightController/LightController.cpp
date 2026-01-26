@@ -334,7 +334,7 @@ String LightController::getNextScheduledAction() const {
     }
     
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
+    if (!hal->getLocalTime(&timeinfo, 0)) {
         return "Time not available";
     }
     
@@ -490,7 +490,7 @@ bool LightController::shouldTurnOnBySchedule() const {
     }
     
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
+    if (!hal->getLocalTime(&timeinfo, 0)) {
         return false;
     }
     
@@ -522,7 +522,7 @@ bool LightController::shouldTurnOffBySchedule() const {
     }
     
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
+    if (!hal->getLocalTime(&timeinfo, 0)) {
         return false;
     }
     

@@ -69,7 +69,7 @@ private:
     bool shouldOpenBySchedule() const;
     bool shouldCloseBySchedule() const;
     time_t getTodaySunrise() const;
-    time_t getTodaySunset() const;    
+    time_t getTodaySunset() const;
     
     // ISR-safe methods called from interrupt context
     void handleHallOpenISR();

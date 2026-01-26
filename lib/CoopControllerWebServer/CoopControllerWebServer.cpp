@@ -197,7 +197,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   
                   // Recalculate sunrise/sunset if location changed
                   if (locationChanged) {
-                      sunriseSunset.begin(settingsManager.getLatitude(),
+                      sunriseSunset.setCoordinates(settingsManager.getLatitude(),
                                           settingsManager.getLongitude(),
                                           settingsManager.getTimezoneOffsetHours());
                       sunriseSunset.forceUpdate();
@@ -638,8 +638,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   // Chip information
                   jsonDoc["chip_model"] = hal->getChipModel();
                   // Note: getCpuFreqMHz and getFlashChipSize are not in HAL, keeping as ESP calls for now
-                  jsonDoc["cpu_freq_mhz"] = ESP.getCpuFreqMHz();
-                  jsonDoc["flash_size"] = ESP.getFlashChipSize();
+                  jsonDoc["cpu_freq_mhz"] = hal->getCpuFreqMHz();
+                  jsonDoc["flash_size"] = hal->getFlashChipSize();
                   
                   // WiFi information (if connected)
                   if (wifiController.isConnected()) {

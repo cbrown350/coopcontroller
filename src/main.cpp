@@ -78,7 +78,7 @@ void setup() // NOSONAR - complexity ok
     lightController.begin(&hal, &sunriseSunset);
     
     // Initialize sunrise/sunset calculator with location settings
-    sunriseSunset.begin(settingsManager.getLatitude(),
+    sunriseSunset.begin(&hal, settingsManager.getLatitude(),
                       settingsManager.getLongitude(),
                       settingsManager.getTimezoneOffsetHours());
     

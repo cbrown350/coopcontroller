@@ -40,10 +40,10 @@ public:
     void update();
     
     // Alert triggering methods
-    void triggerAlert(AlertType alertType);
+    virtual void triggerAlert(AlertType alertType);
     void silenceAlerts(unsigned long silenceDurationMs = 300000); // Default 5 minutes
     void testAlert();
-    void clearAlert(AlertType alertType);
+    virtual void clearAlert(AlertType alertType);
     
     // Configuration methods
     void setEnabled(bool enabled);

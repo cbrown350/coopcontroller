@@ -3,9 +3,9 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <stdint.h>
 #include <cstddef>
 #include <functional>
+#include <stdint.h>
 
 // Forward declaration for Arduino String class
 // This allows interface to be platform-agnostic
@@ -57,7 +57,7 @@ public:
    * @param post true to check POST parameters, false for GET/URL parameters
    * @return true if parameter exists
    */
-  virtual bool hasParam(const char* name, bool post = false) const = 0;
+  virtual bool hasParam(const char *name, bool post = false) const = 0;
 
   /**
    * @brief Get parameter value
@@ -65,19 +65,19 @@ public:
    * @param post true to get POST parameter, false for GET/URL parameter
    * @return Parameter value as string
    */
-  virtual String param(const char* name, bool post = false) const = 0;
+  virtual String param(const char *name, bool post = false) const = 0;
 
   /**
    * @brief Set JSON body content
    * @param json JSON variant representing the body
    */
-  virtual void setJsonBody(const JsonVariant& json) = 0;
+  virtual void setJsonBody(const JsonVariant &json) = 0;
 
   /**
    * @brief Get JSON body content
    * @return JSON variant representing the body
-   */ 
-  virtual const JsonVariant& jsonBody() const = 0;
+   */
+  virtual const JsonVariant &jsonBody() const = 0;
 
   /**
    * @brief Get request body as string
@@ -102,14 +102,14 @@ public:
    * @param contentType Content type (e.g., "text/plain", "application/json")
    * @param body Response body content
    */
-  virtual void send(int code, const char* contentType, const char* body) = 0;
+  virtual void send(int code, const char *contentType, const char *body) = 0;
 
   /**
    * @brief Send file from filesystem as HTTP response
    * @param path File path in filesystem
    * @param contentType Content type (e.g., "text/html")
    */
-  virtual void sendFile(const char* path, const char* contentType) = 0;
+  virtual void sendFile(const char *path, const char *contentType) = 0;
 
   /**
    * @brief Set response content length
@@ -121,7 +121,7 @@ public:
    * @brief Set response content type
    * @param type Content type string (e.g., "text/html")
    */
-  virtual void setContentType(const char* type) = 0;
+  virtual void setContentType(const char *type) = 0;
 };
 
 /**
@@ -132,26 +132,26 @@ public:
  * The response pointer allows handlers to send HTTP responses.
  * Uses std::function to support lambdas with captures.
  */
-using WebServerHandler = std::function<void(IWebRequest*, IWebResponse*)>;
+using WebServerHandler = std::function<void(IWebRequest *, IWebResponse *)>;
 
 /**
  * @brief Web Server JSON Handler Callback Type
  *
  * Function signature for HTTP request handlers with JSON body.
  * Takes IWebRequest pointer and JsonVariant pointer as parameters.
- * 
+ *
  * Note: JsonVariant is passed as pointer to avoid forward declaration
  * conflicts with ArduinoJson template classes.
  */
-using WebServerJsonHandler = void (*)(IWebRequest*, void*);
+using WebServerJsonHandler = void (*)(IWebRequest *, void *);
 
 /**
  * @brief Opaque handle to a file in the filesystem
  * Represents a file opened via fsOpen/fsClose methods.
- * 
+ *
  */
-struct HalFileHandle;    // opaque to users
-using HalFile = HalFileHandle*;
+struct HalFileHandle; // opaque to users
+using HalFile = HalFileHandle *;
 
 // ============================================================================
 // MAIN HAL INTERFACE
@@ -194,19 +194,19 @@ public:
    * @param format Printf-style format string
    * @param ... Variable arguments
    */
-  virtual void SerialPrintf(const char* format, ...) = 0;
+  virtual void SerialPrintf(const char *format, ...) = 0;
 
   /**
    * @brief Print string to serial output with newline
    * @param message String to print
    */
-  virtual void SerialPrintln(const char* message) = 0;
+  virtual void SerialPrintln(const char *message) = 0;
 
   /**
    * @brief Print string to serial output without newline
    * @param message String to print
    */
-  virtual void SerialPrint(const char* message) = 0;
+  virtual void SerialPrint(const char *message) = 0;
 
   // ========================================================================
   // ESP32 SYSTEM FUNCTIONS
@@ -227,7 +227,7 @@ public:
    * @brief Get chip model string
    * @return Chip model (e.g., "ESP32-D0WDQ6")
    */
-  virtual const char* getChipModel() = 0;
+  virtual const char *getChipModel() = 0;
 
   /**
    * @brief Get reset reason code
@@ -236,12 +236,37 @@ public:
   virtual uint8_t getResetReason() = 0;
 
   /**
+   * @brief Get CPU frequency in MHz
+   * @return CPU frequency in MHz
+   */
+  virtual uint32_t getCpuFreqMHz() = 0;
+
+  /**
+   * @brief Get flash chip size in bytes
+   * @return Flash chip size in bytes
+   */
+  virtual uint32_t getFlashChipSize() = 0;
+
+  /**
    * @brief Reset the task watchdog timer
-   * 
+   *
    * This function resets the watchdog timer for the current task to prevent
-   * watchdog timeout. Should be called periodically from long-running operations.
+   * watchdog timeout. Should be called periodically from long-running
+   * operations.
    */
   virtual void taskWdtReset() = 0;
+
+  // ========================================================================
+  // TIME FUNCTIONS
+  // ========================================================================
+
+  /**
+   * @brief Get local time from NTP
+   * @param timeinfo Pointer to tm struct to receive time
+   * @param ms Timeout in milliseconds
+   * @return true if time retrieved successfully
+   */
+  virtual bool getLocalTime(struct tm *timeinfo, unsigned long ms) = 0;
 
   // ========================================================================
   // WIFI MANAGEMENT
@@ -253,7 +278,7 @@ public:
    * @param password Network password
    * @return true if connection initiated successfully
    */
-  virtual bool wifiBegin(const char* ssid, const char* password) = 0;
+  virtual bool wifiBegin(const char *ssid, const char *password) = 0;
 
   /**
    * @brief Start WiFi Access Point mode
@@ -261,14 +286,15 @@ public:
    * @param password AP password (nullptr for open network)
    * @return true if AP started successfully
    */
-  virtual bool wifiBeginAP(const char* ssid, const char* password = nullptr) = 0;
+  virtual bool wifiBeginAP(const char *ssid,
+                           const char *password = nullptr) = 0;
 
   /**
    * @brief Set WiFi hostname
    * @param hostName_ Hostname string
    * @return true if hostname set successfully
    */
-  virtual bool wifiSetHostname(const char* hostName_) = 0;
+  virtual bool wifiSetHostname(const char *hostName_) = 0;
 
   /**
    * @brief Check if WiFi is connected
@@ -334,7 +360,7 @@ public:
    * @param hostname Hostname for mDNS
    * @return true if mDNS started successfully
    */
-  virtual bool mdnsBegin(const char* hostname) = 0;
+  virtual bool mdnsBegin(const char *hostname) = 0;
 
   // ========================================================================
   // FILESYSTEM - LittleFS
@@ -357,14 +383,14 @@ public:
    * @param path File path
    * @return true if file exists
    */
-  virtual bool fsExists(const char* path) = 0;
+  virtual bool fsExists(const char *path) = 0;
 
   /**
    * @brief Remove file
    * @param path File path
    * @return true if file removed successfully
    */
-  virtual bool fsRemove(const char* path) = 0;
+  virtual bool fsRemove(const char *path) = 0;
 
   /**
    * @brief Rename file
@@ -372,21 +398,21 @@ public:
    * @param pathTo Destination path
    * @return true if renamed successfully
    */
-  virtual bool fsRename(const char* pathFrom, const char* pathTo) = 0;
+  virtual bool fsRename(const char *pathFrom, const char *pathTo) = 0;
 
   /**
    * @brief Open file
    * @param path File path
    * @param mode File mode ("r", "w", "a", etc.)
-   * @return File handle as HalFile 
+   * @return File handle as HalFile
    */
-  virtual HalFile  fsOpen(const char* path, const char* mode) = 0; 
+  virtual HalFile fsOpen(const char *path, const char *mode) = 0;
 
   /**
    * @brief Close file
    * @param file File handle from fsOpen
    */
-  virtual void fsClose(HalFile file) = 0; 
+  virtual void fsClose(HalFile file) = 0;
 
   /**
    * @brief Read from file
@@ -395,7 +421,7 @@ public:
    * @param size Number of bytes to read
    * @return Number of bytes actually read
    */
-  virtual size_t fsRead(HalFile file, uint8_t* buf, size_t size) = 0;
+  virtual size_t fsRead(HalFile file, uint8_t *buf, size_t size) = 0;
 
   /**
    * @brief Write to file
@@ -404,7 +430,7 @@ public:
    * @param size Number of bytes to write
    * @return Number of bytes actually written
    */
-  virtual size_t fsWrite(HalFile file, const uint8_t* buf, size_t size) = 0;
+  virtual size_t fsWrite(HalFile file, const uint8_t *buf, size_t size) = 0;
 
   /**
    * @brief Get number of bytes available for reading
@@ -452,7 +478,8 @@ public:
    * @param method HTTP request method
    * @param handler Callback function to handle requests
    */
-  virtual void webServerOn(const char* uri, HAL_WebRequestMethod method, WebServerHandler handler) = 0;
+  virtual void webServerOn(const char *uri, HAL_WebRequestMethod method,
+                           WebServerHandler handler) = 0;
 
   /**
    * @brief Add custom handler to web server (e.g., for JSON body parsing)
@@ -465,14 +492,14 @@ public:
    * @param from Source URI pattern
    * @param to Destination URI path
    */
-  virtual void webServerAddRewrite(const char* from, const char* to) = 0;
+  virtual void webServerAddRewrite(const char *from, const char *to) = 0;
 
   /**
    * @brief Configure static file serving from filesystem
    * @param uri URI prefix for static files (e.g., "/assets/")
    * @param path Filesystem path to serve from (e.g., "/assets/")
    */
-  virtual void webServerServeStatic(const char* uri, const char* path) = 0;
+  virtual void webServerServeStatic(const char *uri, const char *path) = 0;
 
   /**
    * @brief Set handler for requests that don't match any registered route
@@ -516,6 +543,40 @@ public:
    * @param duty Duty cycle value (0 to 2^resolution-1)
    */
   virtual void pwmWrite(uint8_t channel, uint32_t duty) = 0;
+
+  // ========================================================================
+  // GPIO FUNCTIONS
+  // ========================================================================
+
+  /**
+   * @brief Configure GPIO pin mode
+   * @param pin GPIO pin number
+   * @param mode Pin mode (INPUT, OUTPUT, INPUT_PULLUP, etc.)
+   */
+  virtual void pinMode(uint8_t pin, uint8_t mode) = 0;
+
+  /**
+   * @brief Write digital value to GPIO pin
+   * @param pin GPIO pin number
+   * @param value Digital value (HIGH or LOW)
+   */
+  virtual void digitalWrite(uint8_t pin, uint8_t value) = 0;
+
+  // ========================================================================
+  // FREERTOS FUNCTIONS
+  // ========================================================================
+
+  /**
+   * @brief Get current FreeRTOS task core ID
+   * @return Core ID (0 or 1 on ESP32)
+   */
+  virtual int getCoreID() = 0;
+
+  /**
+   * @brief Get current FreeRTOS task handle
+   * @return Task handle pointer
+   */
+  virtual void *getCurrentTaskHandle() = 0;
 };
 
 #endif // __IHAL_H__

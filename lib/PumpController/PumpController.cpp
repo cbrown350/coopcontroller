@@ -3,6 +3,8 @@
 #include "Logger.h"
 #include <Arduino.h>
 #include <stdint.h>
+#include <algorithm>
+#include <climits>
 
 
 void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSensor, uint8_t pin) {
@@ -131,14 +133,14 @@ bool PumpController::checkFlowError() const {
     if (flowSensor_->getSensor1Type() == SensorType::WATER_METER) {
         hasWaterMeter = true;
         SensorData sensor1Data = flowSensor_->getSensor1Data();
-        lastPulseTime = max(lastPulseTime, sensor1Data.last_pulse_time.load());
+        lastPulseTime = std::max(lastPulseTime, sensor1Data.last_pulse_time.load());
     }
     
     // Check sensor 2
     if (flowSensor_->getSensor2Type() == SensorType::WATER_METER) {
         hasWaterMeter = true;
         SensorData sensor2Data = flowSensor_->getSensor2Data();
-        lastPulseTime = max(lastPulseTime, sensor2Data.last_pulse_time.load());
+        lastPulseTime = std::max(lastPulseTime, sensor2Data.last_pulse_time.load());
     }
     
     if (!hasWaterMeter) {
