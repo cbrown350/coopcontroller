@@ -185,7 +185,13 @@ public:
     }
 
     bool wifiBeginAP(const char* ssid, const char* password = nullptr) override {
-        (void)ssid; (void)password;
+        // Store the AP SSID for testing
+        if (ssid != nullptr) {
+            mockSSID = String(ssid);
+        }
+        mockWiFiConnected = false;  // AP mode is not "connected" to a network
+        mockAPIP = "192.168.4.1";  // Default AP IP
+        (void)password;  // Password not used in mock
         return true;
     }
 
@@ -479,7 +485,11 @@ public:
     
     // WiFi helpers
     void setWiFiConnected(bool connected) { mockWiFiConnected = connected; }
-    void setWiFiStatus(int status) { mockWiFiStatus = status; }
+    void setWiFiStatus(int status) {
+        mockWiFiStatus = status;
+        // Auto-sync connected state based on status (WL_CONNECTED = 3)
+        mockWiFiConnected = (status == 3);
+    }
     void setWiFiSSID(const String& ssid) { mockSSID = ssid; }
     void setWiFiBSSID(const String& bssid) { mockBSSID = bssid; }
     void setWiFiMacAddress(const String& mac) { mockMacAddress = mac; }

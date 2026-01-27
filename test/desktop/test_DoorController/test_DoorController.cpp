@@ -11,9 +11,9 @@
 #undef max
 
 #include "MockHAL.h"
+#include "MockBuzzerController.h"
 #include "Logger.h"
 #include "DoorController.h"
-#include "mocks/MockBuzzerController.h"
 #include "mocks/MockSunriseSunsetCalculator.h"
 #include "SettingsManager.h"
 
