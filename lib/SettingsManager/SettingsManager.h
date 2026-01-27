@@ -237,9 +237,14 @@ class SettingsManager // NOSONAR
     // Test-only method to reset internal state
     void resetForTesting() {
         settings = user_settings{};
-        isLoaded = false;
+        isLoaded = true; // Mark as loaded so getters don't trigger unwanted loads
         wifiChanged = false;
         requestRestartAt = 0;
+    }
+
+    // Test-only method to mark settings as not loaded (for testing load() itself)
+    void markAsNotLoadedForTesting() {
+        isLoaded = false;
     }
 #endif
 

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <ArduinoFake.h>
-#include "../../common/mocks/MockHAL.h"
+#include "MockHAL.h"
 #include "SettingsManager.h"
 #include "Logger.h"
 
@@ -136,6 +136,9 @@ TEST_F(SettingsManagerTest, InitializesWithDefaultValues) {
 // ============================================================================
 
 TEST_F(SettingsManagerTest, LoadSucceedsWithValidJson) {
+    // Mark as not loaded so load() will actually load from file
+    sm.markAsNotLoadedForTesting();
+
     // Setup mock HAL to return valid JSON
     String json = createValidSettingsJson();
     mockHal.setFileContent(json.c_str(), json.length());
@@ -154,6 +157,9 @@ TEST_F(SettingsManagerTest, LoadSucceedsWithValidJson) {
 }
 
 TEST_F(SettingsManagerTest, LoadFailsWithMissingFile) {
+    // Mark as not loaded so load() will actually attempt to load
+    sm.markAsNotLoadedForTesting();
+
     // Setup mock HAL to return empty file (simulates file not found)
     // Don't set any file content - fsOpen will still return a handle, but fsSize will be 0
 
@@ -166,6 +172,9 @@ TEST_F(SettingsManagerTest, LoadFailsWithMissingFile) {
 }
 
 TEST_F(SettingsManagerTest, LoadFailsWithInvalidJson) {
+    // Mark as not loaded so load() will actually attempt to load
+    sm.markAsNotLoadedForTesting();
+
     // Setup mock HAL to return invalid JSON
     String invalidJson = "{ invalid json }";
     mockHal.setFileContent(invalidJson.c_str(), invalidJson.length());
@@ -179,6 +188,9 @@ TEST_F(SettingsManagerTest, LoadFailsWithInvalidJson) {
 }
 
 TEST_F(SettingsManagerTest, LoadUsesDefaultForMissingFields) {
+    // Mark as not loaded so load() will actually attempt to load
+    sm.markAsNotLoadedForTesting();
+
     // Setup mock HAL to return JSON with missing fields
     String incompleteJson = R"({
   "ssid": "TestNetwork",
@@ -198,6 +210,9 @@ TEST_F(SettingsManagerTest, LoadUsesDefaultForMissingFields) {
 }
 
 TEST_F(SettingsManagerTest, LoadHandlesPartialJson) {
+    // Mark as not loaded so load() will actually attempt to load
+    sm.markAsNotLoadedForTesting();
+
     // Setup mock HAL to return partial JSON
     String partialJson = R"({
   "ssid": "PartialNetwork",
@@ -222,6 +237,10 @@ TEST_F(SettingsManagerTest, LoadHandlesPartialJson) {
 // ============================================================================
 
 TEST_F(SettingsManagerTest, SaveSucceedsWithValidSettings) {
+    // Initialize mock with minimal content so fsOpen succeeds for write mode
+    String initialJson = "{}";
+    mockHal.setFileContent(initialJson.c_str(), initialJson.length());
+
     // Modify some settings
     sm.setSSID("SaveTestNetwork");
     sm.setPumpAutoMode(true);
@@ -236,6 +255,8 @@ TEST_F(SettingsManagerTest, SaveDetectsWiFiSSIDChange) {
     // Set initial SSID
     sm.setSSID("InitialSSID");
     sm.save();
+    // Reset wifiChanged after first save to establish baseline
+    sm.setWifiChanged(false);
     EXPECT_FALSE(sm.getWifiChanged());
 
     // Change SSID
@@ -248,6 +269,8 @@ TEST_F(SettingsManagerTest, SaveDetectsWiFiPasswordChange) {
     // Set initial password
     sm.setPassword("InitialPassword");
     sm.save();
+    // Reset wifiChanged after first save to establish baseline
+    sm.setWifiChanged(false);
     EXPECT_FALSE(sm.getWifiChanged());
 
     // Change password
@@ -260,6 +283,8 @@ TEST_F(SettingsManagerTest, SaveDetectsAPModeChange) {
     // Set initial AP mode
     sm.setAPMode(false);
     sm.save();
+    // Reset wifiChanged after first save to establish baseline
+    sm.setWifiChanged(false);
     EXPECT_FALSE(sm.getWifiChanged());
 
     // Change AP mode
@@ -269,6 +294,14 @@ TEST_F(SettingsManagerTest, SaveDetectsAPModeChange) {
 }
 
 TEST_F(SettingsManagerTest, SaveDoesNotDetectNonWiFiChanges) {
+    // Initialize mock with minimal content so fsOpen succeeds for write mode
+    String initialJson = "{}";
+    mockHal.setFileContent(initialJson.c_str(), initialJson.length());
+
+    // Do an initial save to establish a baseline
+    sm.save();
+    sm.setWifiChanged(false);
+
     // Change non-WiFi settings
     sm.setTempThresholdOnF(32.0);
     sm.setPumpAutoMode(true);
@@ -981,11 +1014,14 @@ TEST_F(SettingsManagerTest, HandlesZeroRetryValues) {
 // ============================================================================
 
 TEST_F(SettingsManagerTest, FullLoadModifySaveCycle) {
+    // Mark as not loaded so load() will actually attempt to load
+    sm.markAsNotLoadedForTesting();
+
     // Setup mock HAL
     String json = createValidSettingsJson();
     mockHal.setFileContent(json.c_str(), json.length());
-    
-    
+
+
     // Load settings
     EXPECT_TRUE(sm.load());
     EXPECT_STREQ(sm.getSSID().c_str(), "TestNetwork");
@@ -999,12 +1035,15 @@ TEST_F(SettingsManagerTest, FullLoadModifySaveCycle) {
 }
 
 TEST_F(SettingsManagerTest, MultipleSavesAccumulateChanges) {
-    // Setup mock HAL
-    
-    
+    // Setup mock HAL with minimal content so fsOpen succeeds for write mode
+    String initialJson = "{}";
+    mockHal.setFileContent(initialJson.c_str(), initialJson.length());
+
     // First save
     sm.setSSID("FirstSSID");
     sm.save();
+    // Reset wifiChanged after first save to establish baseline
+    sm.setWifiChanged(false);
     EXPECT_FALSE(sm.getWifiChanged());
     
     // Second save with no WiFi changes
@@ -1019,11 +1058,14 @@ TEST_F(SettingsManagerTest, MultipleSavesAccumulateChanges) {
 }
 
 TEST_F(SettingsManagerTest, LoadAfterFactoryResetUsesDefaults) {
+    // Mark as not loaded so load() will actually attempt to load
+    sm.markAsNotLoadedForTesting();
+
     // Setup mock HAL
     String json = createValidSettingsJson();
     mockHal.setFileContent(json.c_str(), json.length());
-    
-    
+
+
     // Load initial settings
     sm.load();
     EXPECT_STREQ(sm.getSSID().c_str(), "TestNetwork");
@@ -1031,7 +1073,10 @@ TEST_F(SettingsManagerTest, LoadAfterFactoryResetUsesDefaults) {
     // Factory reset
     sm.factoryReset();
     EXPECT_STREQ(sm.getSSID().c_str(), "");
-    
+
+    // Mark as not loaded so load() will actually attempt to load
+    sm.markAsNotLoadedForTesting();
+
     // Load again (should use defaults since file was overwritten)
     sm.load();
     EXPECT_STREQ(sm.getSSID().c_str(), "");
