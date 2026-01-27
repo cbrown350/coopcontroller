@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "ArduinoFake.h"
 #include "LightController.h"
-#include "../../common/mocks/MockHAL.h"
+#include "MockHAL.h"
 #include "SolarCalculator.h"
 #include "SettingsManager.h"
 #include "Logger.h"

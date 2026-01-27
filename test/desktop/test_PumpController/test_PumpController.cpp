@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <ArduinoFake.h>
-#include "../../common/mocks/MockHAL.h"
+#include "MockHAL.h"
 #include "Logger.h"
 #include "SettingsManager.h"
 #include "PumpController.h"

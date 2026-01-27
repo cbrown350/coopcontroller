@@ -4,7 +4,7 @@
 
 #include "Logger.h"
 
-#include "../../common/mocks/MockHAL.h"
+#include "MockHAL.h"
 
 void test_same_instance(void);
 
