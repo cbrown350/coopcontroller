@@ -180,11 +180,11 @@ int SettingsManager::getPumpErrorRetrySeconds() {
     return getSettings().pump_on_time_seconds; // Using pump_on_time as retry time
 }
 
-int SettingsManager::getPumpOnTimeSeconds() {
+unsigned int SettingsManager::getPumpOnTimeSeconds() {
     return getSettings().pump_on_time_seconds;
 }
 
-int SettingsManager::getPumpOffTimeSeconds() {
+unsigned int SettingsManager::getPumpOffTimeSeconds() {
     return getSettings().pump_off_time_seconds;
 }
 
@@ -218,7 +218,7 @@ float SettingsManager::getPulsesPerGallon() const {
 }
 
 // Water meter timeout getters
-int SettingsManager::getWaterMeterTimeoutSeconds() const {
+unsigned int SettingsManager::getWaterMeterTimeoutSeconds() const {
     return settings.water_meter_timeout_seconds;
 }
 
@@ -237,11 +237,11 @@ int SettingsManager::getPumpOffFlowGracePeriodSeconds() const {
 }
 
 // WiFi connection settings getters
-int SettingsManager::getWifiMaxRetries() {
+unsigned int SettingsManager::getWifiMaxRetries() {
     return getSettings().wifi_max_retries;
 }
 
-int SettingsManager::getWifiRetryDelaySeconds() {
+unsigned int SettingsManager::getWifiRetryDelaySeconds() {
     return getSettings().wifi_retry_delay_seconds;
 }
 

@@ -106,7 +106,7 @@ TEST_F(LightControllerTest, InitializePWMToOff) {
     // PWM should be set to 0 (off)
     EXPECT_TRUE(mockHAL.pwmWriteCalled);
     EXPECT_EQ(mockHAL.pwmWriteChannel, 0);
-    EXPECT_EQ(mockHAL.pwmWriteValue, 0);
+    EXPECT_EQ(mockHAL.pwmWriteValue, 0u);
 }
 
 // ============================================================================
@@ -126,7 +126,7 @@ TEST_F(LightControllerTest, TurnOnImmediately) {
     EXPECT_EQ(lightController->getTargetBrightness(), 80);
 
     // PWM should be updated
-    int expectedPWM = (80 * 255) / 100;
+    unsigned int expectedPWM = (80 * 255) / 100;
     EXPECT_EQ(mockHAL.pwmWriteValue, expectedPWM);
 }
 
@@ -151,7 +151,7 @@ TEST_F(LightControllerTest, TurnOffImmediately) {
     EXPECT_EQ(lightController->getTargetBrightness(), 0);
 
     // PWM should be set to 0
-    EXPECT_EQ(mockHAL.pwmWriteValue, 0);
+    EXPECT_EQ(mockHAL.pwmWriteValue, 0u);
 }
 
 TEST_F(LightControllerTest, SetBrightnessClampsTo100) {
@@ -186,7 +186,7 @@ TEST_F(LightControllerTest, SetBrightnessUpdatesPWM) {
 
     lightController->setBrightness(50);
 
-    int expectedPWM = (50 * 255) / 100;
+    unsigned int expectedPWM = (50 * 255) / 100;
     EXPECT_EQ(mockHAL.pwmWriteValue, expectedPWM);
 }
 
@@ -1042,13 +1042,13 @@ TEST_F(LightControllerTest, PWMScalingCorrect) {
     
     // Test PWM scaling: brightness * 255 / 100
     lightController->setBrightness(0);
-    EXPECT_EQ(mockHAL.pwmWriteValue, 0);
+    EXPECT_EQ(mockHAL.pwmWriteValue, 0u);
     
     lightController->setBrightness(50);
-    EXPECT_EQ(mockHAL.pwmWriteValue, 127); // 50 * 255 / 100 = 127.5 -> 127
+    EXPECT_EQ(mockHAL.pwmWriteValue, 127u); // 50 * 255 / 100 = 127.5 -> 127
     
     lightController->setBrightness(100);
-    EXPECT_EQ(mockHAL.pwmWriteValue, 255); // 100 * 255 / 100 = 255
+    EXPECT_EQ(mockHAL.pwmWriteValue, 255u); // 100 * 255 / 100 = 255
 }
 
 TEST_F(LightControllerTest, UpdateDoesNothingWhenNotFading) {

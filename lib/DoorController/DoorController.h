@@ -46,8 +46,8 @@ private:
     static const int switchDebounceMs = 50;
     
     // Configuration
-    int openTimeoutSeconds;
-    int closeTimeoutSeconds;
+    unsigned int openTimeoutSeconds;
+    unsigned int closeTimeoutSeconds;
     int sunriseOffsetMinutes;
     int sunsetOffsetMinutes;
     
@@ -107,10 +107,10 @@ public:
     int getProgressPercentage() const;
     
     // Configuration getters/setters
-    int getOpenTimeoutSeconds() const;
-    void setOpenTimeoutSeconds(int seconds);
-    int getCloseTimeoutSeconds() const;
-    void setCloseTimeoutSeconds(int seconds);
+    unsigned int getOpenTimeoutSeconds() const;
+    void setOpenTimeoutSeconds(unsigned int seconds);
+    unsigned int getCloseTimeoutSeconds() const;
+    void setCloseTimeoutSeconds(unsigned int seconds);
     int getSunriseOffsetMinutes() const;
     void setSunriseOffsetMinutes(int minutes);
     int getSunsetOffsetMinutes() const;

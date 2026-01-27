@@ -416,7 +416,7 @@ TEST_F(SensorManagerTest, GetSensorStatusStringDoesNotCrash) {
     EXPECT_NO_THROW({
         String status = sensorMgr.getSensorStatusString(data);
         // Status string should not be empty (we don't validate content)
-        EXPECT_GT(status.length(), 0);
+        EXPECT_GT(status.length(), 0u);
     });
 }
 

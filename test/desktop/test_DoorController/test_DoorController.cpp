@@ -461,12 +461,12 @@ TEST_F(DoorControllerTest, TestModeToggle) {
 
 TEST_F(DoorControllerTest, SetAndGetOpenTimeoutSeconds) {
     doorController->setOpenTimeoutSeconds(45);
-    EXPECT_EQ(doorController->getOpenTimeoutSeconds(), 45);
+    EXPECT_EQ(doorController->getOpenTimeoutSeconds(), 45u);
 }
 
 TEST_F(DoorControllerTest, SetAndGetCloseTimeoutSeconds) {
     doorController->setCloseTimeoutSeconds(45);
-    EXPECT_EQ(doorController->getCloseTimeoutSeconds(), 45);
+    EXPECT_EQ(doorController->getCloseTimeoutSeconds(), 45u);
 }
 
 TEST_F(DoorControllerTest, SetAndGetSunriseOffsetMinutes) {
@@ -481,10 +481,10 @@ TEST_F(DoorControllerTest, SetAndGetSunsetOffsetMinutes) {
 
 TEST_F(DoorControllerTest, TimeoutValuesClamped) {
     doorController->setOpenTimeoutSeconds(3); // Too low
-    EXPECT_GE(doorController->getOpenTimeoutSeconds(), 5);
+    EXPECT_GE(doorController->getOpenTimeoutSeconds(), 5u);
 
     doorController->setOpenTimeoutSeconds(200); // Too high
-    EXPECT_LE(doorController->getOpenTimeoutSeconds(), 120);
+    EXPECT_LE(doorController->getOpenTimeoutSeconds(), 120u);
 }
 
 TEST_F(DoorControllerTest, OffsetValuesClamped) {
@@ -500,9 +500,9 @@ TEST_F(DoorControllerTest, OffsetValuesClamped) {
 // ============================================================================
 
 TEST_F(DoorControllerTest, InitialStatisticsAreZero) {
-    EXPECT_EQ(doorController->getTotalOpenTime(), 0);
-    EXPECT_EQ(doorController->getTotalCloseTime(), 0);
-    EXPECT_EQ(doorController->getTotalCycles(), 0);
+    EXPECT_EQ(doorController->getTotalOpenTime(), 0UL);
+    EXPECT_EQ(doorController->getTotalCloseTime(), 0UL);
+    EXPECT_EQ(doorController->getTotalCycles(), 0UL);
 }
 
 TEST_F(DoorControllerTest, OpeningAccumulatesOpenTime) {
@@ -532,9 +532,9 @@ TEST_F(DoorControllerTest, ResetStatisticsClearsAll) {
 
     doorController->resetStatistics();
 
-    EXPECT_EQ(doorController->getTotalOpenTime(), 0);
-    EXPECT_EQ(doorController->getTotalCloseTime(), 0);
-    EXPECT_EQ(doorController->getTotalCycles(), 0);
+    EXPECT_EQ(doorController->getTotalOpenTime(), 0UL);
+    EXPECT_EQ(doorController->getTotalCloseTime(), 0UL);
+    EXPECT_EQ(doorController->getTotalCycles(), 0UL);
 }
 
 // ============================================================================
@@ -542,20 +542,20 @@ TEST_F(DoorControllerTest, ResetStatisticsClearsAll) {
 // ============================================================================
 
 TEST_F(DoorControllerTest, ToJsonIncludesAllRequiredFields) {
-    StaticJsonDocument<512> doc;
+    JsonDocument doc;
     JsonObject json = doc.to<JsonObject>();
 
     doorController->toJson(json);
 
-    EXPECT_TRUE(json.containsKey("state"));
-    EXPECT_TRUE(json.containsKey("position"));
-    EXPECT_TRUE(json.containsKey("progress"));
-    EXPECT_TRUE(json.containsKey("auto_mode"));
-    EXPECT_TRUE(json.containsKey("test_mode"));
+    EXPECT_TRUE(!json["state"].isNull());
+    EXPECT_TRUE(!json["position"].isNull());
+    EXPECT_TRUE(!json["progress"].isNull());
+    EXPECT_TRUE(!json["auto_mode"].isNull());
+    EXPECT_TRUE(!json["test_mode"].isNull());
 }
 
 TEST_F(DoorControllerTest, ToJsonReturnsCorrectStateValues) {
-    StaticJsonDocument<512> doc;
+    JsonDocument doc;
     JsonObject json = doc.to<JsonObject>();
 
     doorController->toJson(json);
@@ -685,8 +685,8 @@ TEST_F(DoorControllerTest, CompleteOpenCloseSequence) {
 
     // Verify statistics
     EXPECT_EQ(doorController->getTotalCycles(), initialCycles + 1);
-    EXPECT_GT(doorController->getTotalOpenTime(), 0);
-    EXPECT_GT(doorController->getTotalCloseTime(), 0);
+    EXPECT_GT(doorController->getTotalOpenTime(), 0UL);
+    EXPECT_GT(doorController->getTotalCloseTime(), 0UL);
 }
 
 TEST_F(DoorControllerTest, FaultRecoverySequence) {
@@ -722,5 +722,5 @@ TEST_F(DoorControllerTest, MultipleOperationCycles) {
         doorController->stop();
     }
 
-    EXPECT_EQ(doorController->getTotalCycles(), 5);
+    EXPECT_EQ(doorController->getTotalCycles(), 5UL);
 }

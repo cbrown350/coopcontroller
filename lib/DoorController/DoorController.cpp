@@ -458,22 +458,22 @@ int DoorController::getProgressPercentage() const {
 }
 
 // Configuration
-int DoorController::getOpenTimeoutSeconds() const {
+unsigned int DoorController::getOpenTimeoutSeconds() const {
     return openTimeoutSeconds;
 }
 
-void DoorController::setOpenTimeoutSeconds(int seconds) {
-    openTimeoutSeconds = std::max(5, std::min(120, seconds));
-    logger.logfDebug("Door open timeout: %d seconds", openTimeoutSeconds);
+void DoorController::setOpenTimeoutSeconds(unsigned int seconds) {
+    openTimeoutSeconds = std::max(5u, std::min(120u, seconds));
+    logger.logfDebug("Door open timeout: %u seconds", openTimeoutSeconds);
 }
 
-int DoorController::getCloseTimeoutSeconds() const {
+unsigned int DoorController::getCloseTimeoutSeconds() const {
     return closeTimeoutSeconds;
 }
 
-void DoorController::setCloseTimeoutSeconds(int seconds) {
-    closeTimeoutSeconds = std::max(5, std::min(120, seconds));
-    logger.logfDebug("Door close timeout: %d seconds", closeTimeoutSeconds);
+void DoorController::setCloseTimeoutSeconds(unsigned int seconds) {
+    closeTimeoutSeconds = std::max(5u, std::min(120u, seconds));
+    logger.logfDebug("Door close timeout: %u seconds", closeTimeoutSeconds);
 }
 
 int DoorController::getSunriseOffsetMinutes() const {

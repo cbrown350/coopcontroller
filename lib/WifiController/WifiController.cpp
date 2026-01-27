@@ -270,10 +270,10 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             }
         } else {
             // Check if reconnection timeout has elapsed
-            int maxRetries = settingsManager_->getWifiMaxRetries();
-            int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
-            
-            if (millis() - wifiReconnectStart >= (retryDelay * 1000 * maxRetries)) {
+            unsigned int maxRetries = settingsManager_->getWifiMaxRetries();
+            unsigned int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
+
+            if (millis() - wifiReconnectStart >= (static_cast<unsigned long>(retryDelay) * 1000UL * maxRetries)) {
                 logger.logWarning("WiFi reconnection timeout, switching to AP mode");
                 settingsManager_->setAPMode(true);
                 settingsManager_->save();

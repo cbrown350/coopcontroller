@@ -119,15 +119,15 @@ TEST_F(SettingsManagerTest, InitializesWithDefaultValues) {
     EXPECT_FALSE(sm.getLightAutoMode());
     EXPECT_FLOAT_EQ(sm.getTempThresholdOnF(), 34.0);
     EXPECT_FLOAT_EQ(sm.getTempThresholdOffF(), 36.0);
-    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 300);
-    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 600);
+    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 300u);
+    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 600u);
     EXPECT_EQ(sm.getLightOnHour(), 6);
     EXPECT_EQ(sm.getLightOffHour(), 21);
     EXPECT_EQ(sm.getLightBrightnessPercent(), 80);
     EXPECT_EQ(sm.getLightTransitionDurationMinutes(), 15);
     EXPECT_EQ(sm.getWaterFlowErrorTimeoutSeconds(), 120);
-    EXPECT_EQ(sm.getWifiMaxRetries(), 5);
-    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 30);
+    EXPECT_EQ(sm.getWifiMaxRetries(), 5u);
+    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 30u);
     EXPECT_EQ(sm.getWifiAPDurationMinutes(), 10);
 }
 
@@ -389,22 +389,22 @@ TEST_F(SettingsManagerTest, TempThresholdOffFSetterUpdatesValue) {
 
 TEST_F(SettingsManagerTest, PumpOnTimeSecondsGetterReturnsCorrectValue) {
     sm.setPumpOnTimeSeconds(400);
-    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 400);
+    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 400u);
 }
 
 TEST_F(SettingsManagerTest, PumpOnTimeSecondsSetterUpdatesValue) {
     sm.setPumpOnTimeSeconds(500);
-    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 500);
+    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 500u);
 }
 
 TEST_F(SettingsManagerTest, PumpOffTimeSecondsGetterReturnsCorrectValue) {
     sm.setPumpOffTimeSeconds(900);
-    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 900);
+    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 900u);
 }
 
 TEST_F(SettingsManagerTest, PumpOffTimeSecondsSetterUpdatesValue) {
     sm.setPumpOffTimeSeconds(1200);
-    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 1200);
+    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 1200u);
 }
 
 TEST_F(SettingsManagerTest, WaterFlowErrorTimeoutSecondsGetterReturnsCorrectValue) {
@@ -527,12 +527,12 @@ TEST_F(SettingsManagerTest, PulsesPerGallonSetterUpdatesValue) {
 
 TEST_F(SettingsManagerTest, WaterMeterTimeoutSecondsGetterReturnsCorrectValue) {
     sm.setWaterMeterTimeoutSeconds(10);
-    EXPECT_EQ(sm.getWaterMeterTimeoutSeconds(), 10);
+    EXPECT_EQ(sm.getWaterMeterTimeoutSeconds(), 10u);
 }
 
 TEST_F(SettingsManagerTest, WaterMeterTimeoutSecondsSetterUpdatesValue) {
     sm.setWaterMeterTimeoutSeconds(15);
-    EXPECT_EQ(sm.getWaterMeterTimeoutSeconds(), 15);
+    EXPECT_EQ(sm.getWaterMeterTimeoutSeconds(), 15u);
 }
 
 TEST_F(SettingsManagerTest, WaterMeterPerPulseCalculationEnabledGetterReturnsCorrectValue) {
@@ -571,22 +571,22 @@ TEST_F(SettingsManagerTest, PumpOffFlowGracePeriodSecondsSetterUpdatesValue) {
 
 TEST_F(SettingsManagerTest, WifiMaxRetriesGetterReturnsCorrectValue) {
     sm.setWifiMaxRetries(10);
-    EXPECT_EQ(sm.getWifiMaxRetries(), 10);
+    EXPECT_EQ(sm.getWifiMaxRetries(), 10u);
 }
 
 TEST_F(SettingsManagerTest, WifiMaxRetriesSetterUpdatesValue) {
     sm.setWifiMaxRetries(7);
-    EXPECT_EQ(sm.getWifiMaxRetries(), 7);
+    EXPECT_EQ(sm.getWifiMaxRetries(), 7u);
 }
 
 TEST_F(SettingsManagerTest, WifiRetryDelaySecondsGetterReturnsCorrectValue) {
     sm.setWifiRetryDelaySeconds(60);
-    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 60);
+    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 60u);
 }
 
 TEST_F(SettingsManagerTest, WifiRetryDelaySecondsSetterUpdatesValue) {
     sm.setWifiRetryDelaySeconds(45);
-    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 45);
+    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 45u);
 }
 
 TEST_F(SettingsManagerTest, WifiAPDurationMinutesGetterReturnsCorrectValue) {
@@ -831,15 +831,15 @@ TEST_F(SettingsManagerTest, FactoryResetResetsAllSettingsToDefaults) {
     EXPECT_FALSE(sm.getLightAutoMode());
     EXPECT_FLOAT_EQ(sm.getTempThresholdOnF(), 34.0);
     EXPECT_FLOAT_EQ(sm.getTempThresholdOffF(), 36.0);
-    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 300);
-    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 600);
+    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 300u);
+    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 600u);
     EXPECT_EQ(sm.getLightOnHour(), 6);
     EXPECT_EQ(sm.getLightOffHour(), 21);
     EXPECT_EQ(sm.getLightBrightnessPercent(), 80);
     EXPECT_EQ(sm.getLightTransitionDurationMinutes(), 15);
     EXPECT_EQ(sm.getWaterFlowErrorTimeoutSeconds(), 120);
-    EXPECT_EQ(sm.getWifiMaxRetries(), 5);
-    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 30);
+    EXPECT_EQ(sm.getWifiMaxRetries(), 5u);
+    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 30u);
     EXPECT_EQ(sm.getWifiAPDurationMinutes(), 10);
 }
 
@@ -927,16 +927,16 @@ TEST_F(SettingsManagerTest, HandlesZeroTimeValues) {
     sm.setPumpOnTimeSeconds(0);
     sm.setPumpOffTimeSeconds(0);
     
-    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 0);
-    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 0);
+    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 0u);
+    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 0u);
 }
 
 TEST_F(SettingsManagerTest, HandlesVeryLargeTimeValues) {
     sm.setPumpOnTimeSeconds(3600);
     sm.setPumpOffTimeSeconds(7200);
     
-    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 3600);
-    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 7200);
+    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 3600u);
+    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 7200u);
 }
 
 TEST_F(SettingsManagerTest, HandlesExtremeLatitudeValues) {
@@ -995,18 +995,18 @@ TEST_F(SettingsManagerTest, HandlesZeroPulsesPerGallonValues) {
 
 TEST_F(SettingsManagerTest, HandlesLargeRetryValues) {
     sm.setWifiMaxRetries(100);
-    EXPECT_EQ(sm.getWifiMaxRetries(), 100);
+    EXPECT_EQ(sm.getWifiMaxRetries(), 100u);
     
     sm.setWifiRetryDelaySeconds(600);
-    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 600);
+    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 600u);
 }
 
 TEST_F(SettingsManagerTest, HandlesZeroRetryValues) {
     sm.setWifiMaxRetries(0);
-    EXPECT_EQ(sm.getWifiMaxRetries(), 0);
+    EXPECT_EQ(sm.getWifiMaxRetries(), 0u);
     
     sm.setWifiRetryDelaySeconds(0);
-    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 0);
+    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 0u);
 }
 
 // ============================================================================
@@ -1152,8 +1152,8 @@ TEST_F(SettingsManagerTest, AllSettersAndGettersAreConsistent) {
     EXPECT_TRUE(sm.getLightAutoMode());
     EXPECT_FLOAT_EQ(sm.getTempThresholdOnF(), 30.0);
     EXPECT_FLOAT_EQ(sm.getTempThresholdOffF(), 35.0);
-    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 400);
-    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 800);
+    EXPECT_EQ(sm.getPumpOnTimeSeconds(), 400u);
+    EXPECT_EQ(sm.getPumpOffTimeSeconds(), 800u);
     EXPECT_EQ(sm.getLightOnHour(), 7);
     EXPECT_EQ(sm.getLightOffHour(), 20);
     EXPECT_EQ(sm.getLightOnMinute(), 15);
@@ -1163,12 +1163,12 @@ TEST_F(SettingsManagerTest, AllSettersAndGettersAreConsistent) {
     EXPECT_EQ(sm.getLightOnSunsetOffsetMinutes(), 15);
     EXPECT_EQ(sm.getWaterFlowErrorTimeoutSeconds(), 180);
     EXPECT_EQ(sm.getPulsesPerGallon(), 500);
-    EXPECT_EQ(sm.getWaterMeterTimeoutSeconds(), 10);
+    EXPECT_EQ(sm.getWaterMeterTimeoutSeconds(), 10u);
     EXPECT_TRUE(sm.getWaterMeterPerPulseCalculationEnabled());
     EXPECT_TRUE(sm.getPumpOffFlowMonitoringEnabled());
     EXPECT_EQ(sm.getPumpOffFlowGracePeriodSeconds(), 45);
-    EXPECT_EQ(sm.getWifiMaxRetries(), 10);
-    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 60);
+    EXPECT_EQ(sm.getWifiMaxRetries(), 10u);
+    EXPECT_EQ(sm.getWifiRetryDelaySeconds(), 60u);
     EXPECT_EQ(sm.getWifiAPDurationMinutes(), 15);
     EXPECT_EQ(sm.getWatchdogTimeoutSeconds(), 180);
     EXPECT_FALSE(sm.getWifiLedEnabled());

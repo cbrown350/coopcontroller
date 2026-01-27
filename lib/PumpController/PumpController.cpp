@@ -206,9 +206,9 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
         } else {
             // Check if we need to switch phases
             unsigned long cycleElapsed = currentTime - cycleStartTime;
-            int onTime = settingsManager.getPumpOnTimeSeconds() * 1000;
-            int offTime = settingsManager.getPumpOffTimeSeconds() * 1000;
-            
+            unsigned long onTime = settingsManager.getPumpOnTimeSeconds() * 1000UL;
+            unsigned long offTime = settingsManager.getPumpOffTimeSeconds() * 1000UL;
+
             if (currentlyInOnPhase) {
                 // In ON phase - check if it's time to switch to OFF
                 unsigned long timeUntilOff = onTime - cycleElapsed;
@@ -217,7 +217,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
                     currentlyInOnPhase = false;
                     offPhaseStartTime = currentTime;
                     setPumpState(false);
-                    logger.logfInfo("Pump cycle: switching to OFF phase for %d seconds", settingsManager.getPumpOffTimeSeconds());
+                    logger.logfInfo("Pump cycle: switching to OFF phase for %u seconds", settingsManager.getPumpOffTimeSeconds());
                 } else if (cycleElapsed % 10000 < 1000) {
                     // Log countdown every 10 seconds in debug mode
                     logger.logfDebug("Pump ON phase: %d seconds remaining until OFF", (timeUntilOff + 500) / 1000);
@@ -357,8 +357,8 @@ unsigned long PumpController::getTimeUntilNextSwitch() const {
     
     unsigned long currentTime = millis();
     unsigned long cycleElapsed = currentTime - cycleStartTime;
-    int onTime = settingsManager.getPumpOnTimeSeconds() * 1000;
-    int offTime = settingsManager.getPumpOffTimeSeconds() * 1000;
+    unsigned long onTime = settingsManager.getPumpOnTimeSeconds() * 1000UL;
+    unsigned long offTime = settingsManager.getPumpOffTimeSeconds() * 1000UL;
     
     if (currentlyInOnPhase) {
         return (onTime - cycleElapsed) > 0 ? (onTime - cycleElapsed) : 0;
