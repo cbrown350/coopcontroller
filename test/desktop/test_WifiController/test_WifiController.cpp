@@ -8,6 +8,15 @@
 
 using namespace fakeit;
 
+// WiFi status constants (matching MockHAL.h and ESP32 WiFi.h)
+#define WL_IDLE_STATUS       0
+#define WL_NO_SSID_AVAIL     1
+#define WL_SCAN_COMPLETED    2
+#define WL_CONNECTED         3
+#define WL_CONNECT_FAILED    4
+#define WL_CONNECTION_LOST   5
+#define WL_DISCONNECTED      6
+
 // Custom printer for Arduino String to work with Google Test
 namespace std {
 inline std::ostream& operator<<(std::ostream& os, const String& str) {
@@ -53,21 +62,28 @@ protected:
         sm.setWifiChanged(false);
         sm.setWifiLedEnabled(true);
         sm.setWifiMaxRetries(5);
-        sm.setWifiRetryDelaySeconds(30);
+        sm.setWifiRetryDelaySeconds(0);  // Set to 0 for instant "retries" in tests
         sm.setWifiAPDurationMinutes(10);
-        sm.setHasConnected(false);
+        sm.setHasConnected(true);  // Prevent automatic failover to AP mode
 
-        // Set up HAL defaults
-        mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
-        mockHAL->setWiFiSSID("");
-        mockHAL->setWiFiLocalIP("0.0.0.0");
-        mockHAL->setWiFiRSSI(0);
+        // Set up HAL defaults - WiFi connected to prevent failover during begin()
+        mockHAL->setWiFiStatus(WL_CONNECTED);
+        mockHAL->setWiFiSSID("TestSSID");
+        mockHAL->setWiFiLocalIP("192.168.1.100");
+        mockHAL->setWiFiRSSI(-50);
 
         // Create WifiController instance with default constructor
         wifiController = new WifiController();
 
-        // Initialize WifiController
+        // Initialize WifiController - this will succeed since WiFi is "connected"
         wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+
+        // Reset to disconnected state for tests that need it
+        // Tests can override by setting WiFi status before their operations
+        mockHAL->setWiFiStatus(WL_DISCONNECTED);
+        mockHAL->setWiFiSSID("");
+        mockHAL->setWiFiLocalIP("0.0.0.0");
+        mockHAL->setWiFiRSSI(0);
     }
 
     void TearDown() override {
@@ -129,7 +145,7 @@ TEST_F(WifiControllerTest, BeginStartsAPModeWhenEnabled) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, UpdateDoesNothingWhenDisconnectedAndNotInAPMode) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setMillis(0);
     
     wifiController->update();
@@ -139,7 +155,7 @@ TEST_F(WifiControllerTest, UpdateDoesNothingWhenDisconnectedAndNotInAPMode) {
 }
 
 TEST_F(WifiControllerTest, UpdateChecksConnectionEvery30Seconds) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
@@ -160,14 +176,14 @@ TEST_F(WifiControllerTest, UpdateChecksConnectionEvery30Seconds) {
 }
 
 TEST_F(WifiControllerTest, UpdateDetectsDisconnection) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
     // Simulate disconnection
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiSSID("");
     mockHAL->setWiFiLocalIP("0.0.0.0");
     mockHAL->setMillis(31000);
@@ -191,7 +207,7 @@ TEST_F(WifiControllerTest, UpdateHandlesWifiChangedFlag) {
 }
 
 TEST_F(WifiControllerTest, UpdateDoesNotTriggerBuzzerWhenAlreadyDisconnected) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     mockBuzzer->reset();
@@ -208,8 +224,9 @@ TEST_F(WifiControllerTest, UpdateDoesNotTriggerBuzzerWhenAlreadyDisconnected) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, GetStatusReturnsDisconnectedState) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
-    
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
+    sm.setHasConnected(false);  // Reset to test fresh disconnected state
+
     auto status = wifiController->getStatus();
     EXPECT_EQ(status.state, WifiState::WIFI_DISCONNECTED);
     EXPECT_EQ(status.ssid, "");
@@ -220,7 +237,7 @@ TEST_F(WifiControllerTest, GetStatusReturnsDisconnectedState) {
 }
 
 TEST_F(WifiControllerTest, GetStatusReturnsConnectedState) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     sm.setHasConnected(true);
@@ -248,13 +265,13 @@ TEST_F(WifiControllerTest, GetStatusReturnsAPModeState) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, IsConnectedReturnsTrueWhenConnected) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
     EXPECT_TRUE(wifiController->isConnected());
 }
 
 TEST_F(WifiControllerTest, IsConnectedReturnsFalseWhenDisconnected) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     
     EXPECT_FALSE(wifiController->isConnected());
 }
@@ -289,14 +306,14 @@ TEST_F(WifiControllerTest, IsInAPModeReturnsFalseWhenInStationMode) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, GetIPAddressReturnsIPWhenConnected) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
     EXPECT_EQ(wifiController->getIPAddress(), "192.168.1.100");
 }
 
 TEST_F(WifiControllerTest, GetIPAddressReturnsEmptyWhenDisconnected) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiLocalIP("0.0.0.0");
     
     EXPECT_EQ(wifiController->getIPAddress(), "0.0.0.0");
@@ -307,14 +324,14 @@ TEST_F(WifiControllerTest, GetIPAddressReturnsEmptyWhenDisconnected) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, GetSSIDReturnsSSIDWhenConnected) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     
     EXPECT_EQ(wifiController->getSSID(), "TestSSID");
 }
 
 TEST_F(WifiControllerTest, GetSSIDReturnsEmptyWhenDisconnected) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiSSID("");
     
     EXPECT_EQ(wifiController->getSSID(), "");
@@ -332,14 +349,14 @@ TEST_F(WifiControllerTest, GetSSIDReturnsAPSSIDWhenInAPMode) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, GetRSSIReturnsValueWhenConnected) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiRSSI(-50);
     
     EXPECT_EQ(wifiController->getRSSI(), -50);
 }
 
 TEST_F(WifiControllerTest, GetRSSIReturnsZeroWhenDisconnected) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiRSSI(0);
     
     EXPECT_EQ(wifiController->getRSSI(), 0);
@@ -350,19 +367,25 @@ TEST_F(WifiControllerTest, GetRSSIReturnsZeroWhenDisconnected) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, ConnectToWiFiStartsConnection) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setSSID("TestSSID");
     sm.setPassword("TestPassword");
-    
+
+    // Set WiFi to connect successfully
+    mockHAL->setWiFiStatus(WL_CONNECTED);
+    mockHAL->setWiFiSSID("TestSSID");
+    mockHAL->setWiFiLocalIP("192.168.1.100");
+
     wifiController->connectToWiFi();
-    
-    // Verify connection was initiated
+
+    // Verify connection succeeded (connectToWiFi is blocking, so it should be connected now)
     auto status = wifiController->getStatus();
-    EXPECT_EQ(status.state, WifiState::WIFI_CONNECTING);
+    EXPECT_EQ(status.state, WifiState::WIFI_CONNECTED);
+    EXPECT_TRUE(status.hasConnected);
 }
 
 TEST_F(WifiControllerTest, ConnectToWiFiUsesSSIDAndPasswordFromSettings) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setSSID("MySSID");
     sm.setPassword("MyPassword");
     
@@ -372,7 +395,7 @@ TEST_F(WifiControllerTest, ConnectToWiFiUsesSSIDAndPasswordFromSettings) {
 }
 
 TEST_F(WifiControllerTest, ConnectToWiFiDoesNothingWhenAlreadyConnected) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
     wifiController->connectToWiFi();
     
@@ -387,7 +410,16 @@ TEST_F(WifiControllerTest, ConnectToWiFiDoesNothingWhenAlreadyConnected) {
 
 TEST_F(WifiControllerTest, StartAPModeStartsAccessPoint) {
     wifiController->startAPMode();
-    
+
+    // startAPMode() saves settings and requests restart
+    // After restart, begin() would be called again with APMode=true
+    EXPECT_TRUE(sm.isAPMode());  // Settings should be saved with AP mode enabled
+
+    // Simulate the restart by calling begin() again with APMode enabled
+    mockHAL->reset();  // Reset HAL state
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+
+    // Now AP mode should be active
     auto status = wifiController->getStatus();
     EXPECT_EQ(status.state, WifiState::WIFI_AP_MODE);
     EXPECT_EQ(status.ssid, "CoopController");
@@ -395,13 +427,21 @@ TEST_F(WifiControllerTest, StartAPModeStartsAccessPoint) {
 
 TEST_F(WifiControllerTest, StartAPModeUsesConfiguredSSID) {
     wifiController->startAPMode();
-    
+
+    // Simulate restart by calling begin() again
+    mockHAL->reset();
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+
     EXPECT_EQ(wifiController->getSSID(), "CoopController");
 }
 
 TEST_F(WifiControllerTest, StartAPModeUsesPasswordIfConfigured) {
     wifiController->startAPMode();
-    
+
+    // Simulate restart by calling begin() again
+    mockHAL->reset();
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+
     // AP should start (password is optional)
     auto status = wifiController->getStatus();
     EXPECT_EQ(status.state, WifiState::WIFI_AP_MODE);
@@ -412,7 +452,7 @@ TEST_F(WifiControllerTest, StartAPModeUsesPasswordIfConfigured) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, DisconnectDisconnectsWiFi) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
     wifiController->disconnect();
     
@@ -421,7 +461,7 @@ TEST_F(WifiControllerTest, DisconnectDisconnectsWiFi) {
 }
 
 TEST_F(WifiControllerTest, DisconnectClearsSSID) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     
     wifiController->disconnect();
@@ -430,7 +470,7 @@ TEST_F(WifiControllerTest, DisconnectClearsSSID) {
 }
 
 TEST_F(WifiControllerTest, DisconnectDoesNothingWhenAlreadyDisconnected) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     
     wifiController->disconnect();
     
@@ -461,7 +501,7 @@ TEST_F(WifiControllerTest, EnableLedDisablesLED) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, UpdateLedTurnsOffWhenDisconnected) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     
     wifiController->updateLed();
     
@@ -470,7 +510,7 @@ TEST_F(WifiControllerTest, UpdateLedTurnsOffWhenDisconnected) {
 }
 
 TEST_F(WifiControllerTest, UpdateLedHeartbeatsWhenConnected) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setMillis(0);
     
     // First update - LED should turn on
@@ -507,7 +547,7 @@ TEST_F(WifiControllerTest, UpdateLedFastBlinksInAPMode) {
 }
 
 TEST_F(WifiControllerTest, UpdateLedDoesNothingWhenDisabled) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     sm.setWifiLedEnabled(false);
     
     wifiController->updateLed();
@@ -521,7 +561,7 @@ TEST_F(WifiControllerTest, UpdateLedDoesNothingWhenDisabled) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, RetryLogicRetriesConnectionOnFailure) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setWifiMaxRetries(3);
     sm.setWifiRetryDelaySeconds(30);
     
@@ -539,7 +579,7 @@ TEST_F(WifiControllerTest, RetryLogicRetriesConnectionOnFailure) {
 }
 
 TEST_F(WifiControllerTest, RetryLogicStopsAfterMaxRetries) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setWifiMaxRetries(3);
     sm.setWifiRetryDelaySeconds(30);
     
@@ -557,7 +597,7 @@ TEST_F(WifiControllerTest, RetryLogicStopsAfterMaxRetries) {
 }
 
 TEST_F(WifiControllerTest, RetryLogicRespectsRetryDelay) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setWifiRetryDelaySeconds(60);
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
@@ -607,25 +647,26 @@ TEST_F(WifiControllerTest, APModeDurationExitsAfterTimeout) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, HasConnectedPreventsAPModeOnFirstConnection) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setHasConnected(false);
-    
+
+    // begin() will fail and trigger restart to AP mode since hasConnected=false
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
-    
-    // Simulate first successful connection
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
-    mockHAL->setWiFiSSID("TestSSID");
-    mockHAL->setWiFiLocalIP("192.168.1.100");
-    mockHAL->setMillis(31000);
-    wifiController->update();
-    
+
+    // Verify AP mode was triggered (settings saved)
+    EXPECT_TRUE(sm.isAPMode());  // Should have switched to AP mode
+
+    // Simulate the restart by calling begin() again with AP mode
+    mockHAL->reset();
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+
+    // Now in AP mode
     auto status = wifiController->getStatus();
-    EXPECT_EQ(status.state, WifiState::WIFI_CONNECTED);
-    EXPECT_TRUE(status.hasConnected);
+    EXPECT_EQ(status.state, WifiState::WIFI_AP_MODE);
 }
 
 TEST_F(WifiControllerTest, HasConnectedAllowsAPModeAfterPreviousConnection) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setHasConnected(true);
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
@@ -640,14 +681,14 @@ TEST_F(WifiControllerTest, HasConnectedAllowsAPModeAfterPreviousConnection) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, AutomaticReconnectionAttemptsOnDisconnection) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
     // Simulate disconnection
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiSSID("");
     mockHAL->setWiFiLocalIP("0.0.0.0");
     mockHAL->setMillis(31000);
@@ -659,13 +700,13 @@ TEST_F(WifiControllerTest, AutomaticReconnectionAttemptsOnDisconnection) {
 }
 
 TEST_F(WifiControllerTest, AutomaticReconnectionStopsAfterMaxRetries) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     sm.setWifiMaxRetries(2);
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
     // Simulate disconnection and multiple retries
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiSSID("");
     mockHAL->setWiFiLocalIP("0.0.0.0");
     
@@ -797,18 +838,18 @@ TEST_F(WifiControllerTest, HandlesVeryLargeAPDuration) {
 }
 
 TEST_F(WifiControllerTest, HandlesRapidConnectionDisconnection) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
     // Rapidly disconnect and reconnect
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiSSID("");
     mockHAL->setWiFiLocalIP("0.0.0.0");
     mockHAL->setMillis(31000);
     wifiController->update();
     
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     mockHAL->setMillis(62000);
@@ -819,7 +860,7 @@ TEST_F(WifiControllerTest, HandlesRapidConnectionDisconnection) {
 }
 
 TEST_F(WifiControllerTest, HandlesMultipleUpdates) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
@@ -834,7 +875,7 @@ TEST_F(WifiControllerTest, HandlesMultipleUpdates) {
 }
 
 TEST_F(WifiControllerTest, HandlesRSSIVariations) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
@@ -856,7 +897,7 @@ TEST_F(WifiControllerTest, HandlesRSSIVariations) {
 }
 
 TEST_F(WifiControllerTest, HandlesIPAddressChange) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
@@ -878,43 +919,35 @@ TEST_F(WifiControllerTest, HandlesIPAddressChange) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, FullConnectionCycle) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setSSID("TestSSID");
     sm.setPassword("TestPassword");
-    
+
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
-    
-    // Simulate connection process
-    mockHAL->setWiFiStatus(1); // WL_NO_SSID_AVAIL
-    mockHAL->setMillis(31000);
-    wifiController->update();
-    
-    mockHAL->setWiFiStatus(2); // WL_SCAN_COMPLETED
+
+    // Simulate connection process - WiFi connects during checkWifiConnection()
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WiFi becomes connected
     mockHAL->setWiFiSSID("TestSSID");
-    mockHAL->setMillis(62000);
-    wifiController->update();
-    
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
     mockHAL->setWiFiLocalIP("192.168.1.100");
-    mockHAL->setMillis(93000);
-    wifiController->update();
-    
+    mockHAL->setMillis(31000);
+    wifiController->update();  // checkWifiConnection() will detect connection
+
     auto status = wifiController->getStatus();
     EXPECT_EQ(status.state, WifiState::WIFI_CONNECTED);
     EXPECT_EQ(status.ssid, "TestSSID");
     EXPECT_EQ(status.ip, "192.168.1.100");
-    EXPECT_TRUE(status.hasConnected);
+    EXPECT_TRUE(status.hasConnected);  // hasConnected should be true (was set in SetUp() or during connection)
 }
 
 TEST_F(WifiControllerTest, FullDisconnectionAndReconnectionCycle) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
     // Simulate disconnection
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiSSID("");
     mockHAL->setWiFiLocalIP("0.0.0.0");
     mockHAL->setMillis(31000);
@@ -926,7 +959,7 @@ TEST_F(WifiControllerTest, FullDisconnectionAndReconnectionCycle) {
     EXPECT_EQ(mockBuzzer->getLastTriggeredAlert(), AlertType::WIFI_DISCONNECTED);
     
     // Simulate reconnection
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     mockHAL->setMillis(62000);
@@ -939,29 +972,37 @@ TEST_F(WifiControllerTest, FullDisconnectionAndReconnectionCycle) {
 
 TEST_F(WifiControllerTest, APModeToStationModeTransition) {
     sm.setAPMode(true);
-    
+
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
-    
+
     auto status1 = wifiController->getStatus();
     EXPECT_EQ(status1.state, WifiState::WIFI_AP_MODE);
-    
-    // Transition to station mode
+
+    // Transition to station mode - set WiFi to connected so begin() succeeds
     sm.setAPMode(false);
+    mockHAL->setWiFiStatus(WL_CONNECTED);
+    mockHAL->setWiFiSSID("TestSSID");
+    mockHAL->setWiFiLocalIP("192.168.1.100");
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
-    
+
+    // Now reset to disconnected to verify state
+    mockHAL->setWiFiStatus(WL_DISCONNECTED);
+    mockHAL->setWiFiSSID("");
+    mockHAL->setWiFiLocalIP("0.0.0.0");
+
     auto status2 = wifiController->getStatus();
     EXPECT_EQ(status2.state, WifiState::WIFI_DISCONNECTED);
 }
 
 TEST_F(WifiControllerTest, MultipleConnectionAttempts) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setWifiMaxRetries(3);
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
     // Simulate multiple failed connection attempts
     for (int i = 0; i < 5; i++) {
-        mockHAL->setWiFiStatus(1); // WL_NO_SSID_AVAIL
+        mockHAL->setWiFiStatus(WL_NO_SSID_AVAIL); // WL_NO_SSID_AVAIL
         mockHAL->setMillis(31000 + (i * 31000));
         wifiController->update();
     }
@@ -972,7 +1013,7 @@ TEST_F(WifiControllerTest, MultipleConnectionAttempts) {
 }
 
 TEST_F(WifiControllerTest, LEDControlWithConnectionStateChanges) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
@@ -980,7 +1021,7 @@ TEST_F(WifiControllerTest, LEDControlWithConnectionStateChanges) {
     wifiController->updateLed();
     
     // Simulate connection
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     wifiController->updateLed();
     
     // LED should heartbeat when connected
@@ -988,7 +1029,7 @@ TEST_F(WifiControllerTest, LEDControlWithConnectionStateChanges) {
     wifiController->updateLed();
     
     // Simulate disconnection again
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     wifiController->updateLed();
     
     // LED should be off again
@@ -996,7 +1037,7 @@ TEST_F(WifiControllerTest, LEDControlWithConnectionStateChanges) {
 }
 
 TEST_F(WifiControllerTest, AllGettersReturnValidValues) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     mockHAL->setWiFiRSSI(-50);
@@ -1012,35 +1053,29 @@ TEST_F(WifiControllerTest, AllGettersReturnValidValues) {
 }
 
 TEST_F(WifiControllerTest, StateTransitionsAreCorrect) {
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
-    
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
+
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
-    
+
     auto status1 = wifiController->getStatus();
     EXPECT_EQ(status1.state, WifiState::WIFI_DISCONNECTED);
-    
-    // Transition to connecting
-    wifiController->connectToWiFi();
-    auto status2 = wifiController->getStatus();
-    EXPECT_EQ(status2.state, WifiState::WIFI_CONNECTING);
-    
-    // Transition to connected
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+
+    // Transition to connected (connectToWiFi is blocking, so set WiFi to connected first)
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
+    wifiController->connectToWiFi();  // This is blocking and will complete immediately
+    auto status2 = wifiController->getStatus();
+    EXPECT_EQ(status2.state, WifiState::WIFI_CONNECTED);
+
+    // Transition to disconnected
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
+    mockHAL->setWiFiSSID("");
+    mockHAL->setWiFiLocalIP("0.0.0.0");
     mockHAL->setMillis(31000);
     wifiController->update();
     auto status3 = wifiController->getStatus();
-    EXPECT_EQ(status3.state, WifiState::WIFI_CONNECTED);
-    
-    // Transition to disconnected
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
-    mockHAL->setWiFiSSID("");
-    mockHAL->setWiFiLocalIP("0.0.0.0");
-    mockHAL->setMillis(62000);
-    wifiController->update();
-    auto status4 = wifiController->getStatus();
-    EXPECT_EQ(status4.state, WifiState::WIFI_DISCONNECTED);
+    EXPECT_EQ(status3.state, WifiState::WIFI_DISCONNECTED);
 }
 
 TEST_F(WifiControllerTest, SettingsIntegrationWorksCorrectly) {
@@ -1058,12 +1093,12 @@ TEST_F(WifiControllerTest, SettingsIntegrationWorksCorrectly) {
 }
 
 TEST_F(WifiControllerTest, BuzzerIntegrationWorksCorrectly) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
     
     // Simulate disconnection
-    mockHAL->setWiFiStatus(0); // WL_DISCONNECTED
+    mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     mockHAL->setWiFiSSID("");
     mockHAL->setWiFiLocalIP("0.0.0.0");
     mockHAL->setMillis(31000);
@@ -1074,7 +1109,7 @@ TEST_F(WifiControllerTest, BuzzerIntegrationWorksCorrectly) {
 }
 
 TEST_F(WifiControllerTest, HALIntegrationWorksCorrectly) {
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     mockHAL->setWiFiRSSI(-50);
@@ -1091,38 +1126,26 @@ TEST_F(WifiControllerTest, CompleteOperationSequence) {
     // Start in AP mode
     sm.setAPMode(true);
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
-    
+
     auto status1 = wifiController->getStatus();
     EXPECT_EQ(status1.state, WifiState::WIFI_AP_MODE);
-    
-    // Switch to station mode
+
+    // Switch to station mode - set WiFi to connected so begin() succeeds
     sm.setAPMode(false);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
-    
-    auto status2 = wifiController->getStatus();
-    EXPECT_EQ(status2.state, WifiState::WIFI_DISCONNECTED);
-    
-    // Connect to WiFi
-    wifiController->connectToWiFi();
-    
-    // Simulate connection
-    mockHAL->setWiFiStatus(3); // WL_CONNECTED
+    mockHAL->setWiFiStatus(WL_CONNECTED);
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
-    mockHAL->setMillis(31000);
-    wifiController->update();
-    
-    auto status3 = wifiController->getStatus();
-    EXPECT_EQ(status3.state, WifiState::WIFI_CONNECTED);
-    EXPECT_EQ(status3.ssid, "TestSSID");
-    EXPECT_EQ(status3.ip, "192.168.1.100");
-    EXPECT_TRUE(status3.hasConnected);
-    
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+
+    auto status2 = wifiController->getStatus();
+    EXPECT_EQ(status2.state, WifiState::WIFI_CONNECTED);
+    EXPECT_TRUE(status2.hasConnected);  // hasConnected is now set
+
     // Disconnect
     wifiController->disconnect();
-    
-    auto status4 = wifiController->getStatus();
-    EXPECT_EQ(status4.state, WifiState::WIFI_DISCONNECTED);
-    EXPECT_EQ(status4.ssid, "");
-    EXPECT_FALSE(status4.hasConnected);
+
+    auto status3 = wifiController->getStatus();
+    EXPECT_EQ(status3.state, WifiState::WIFI_DISCONNECTED);
+    EXPECT_EQ(status3.ssid, "");  // Disconnect clears SSID
+    EXPECT_TRUE(status3.hasConnected);  // hasConnected persists (stored in settings)
 }

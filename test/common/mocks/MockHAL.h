@@ -230,6 +230,9 @@ public:
 
     void wifiDisconnect() override {
         mockWiFiConnected = false;
+        mockWiFiStatus = 6; // WL_DISCONNECTED
+        mockSSID = "";
+        mockLocalIP = "0.0.0.0";
     }
 
     void wifiSetAutoReconnect(bool autoReconnect) override {

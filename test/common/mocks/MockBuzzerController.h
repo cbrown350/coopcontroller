@@ -12,6 +12,7 @@ public:
     void triggerAlert(AlertType type) {
         lastTriggeredAlert = type;
         hasAlert = true;
+        alertTriggered = true;
     }
 
     void clearAlert(AlertType type) {
@@ -30,16 +31,22 @@ public:
         return lastClearedAlert;
     }
 
+    bool wasAlertTriggered() const {
+        return alertTriggered;
+    }
+
     void reset() {
-        lastTriggeredAlert = AlertType::SYSTEM_ERROR;
-        lastClearedAlert = AlertType::SYSTEM_ERROR;
+        lastTriggeredAlert = static_cast<AlertType>(255); // Invalid value to indicate "no alert"
+        lastClearedAlert = static_cast<AlertType>(255);
         hasAlert = false;
+        alertTriggered = false;
     }
 
 private:
-    AlertType lastTriggeredAlert = AlertType::SYSTEM_ERROR;
-    AlertType lastClearedAlert = AlertType::SYSTEM_ERROR;
+    AlertType lastTriggeredAlert = static_cast<AlertType>(255); // Invalid value
+    AlertType lastClearedAlert = static_cast<AlertType>(255);
     bool hasAlert = false;
+    bool alertTriggered = false;
 };
 
 #endif // MOCK_BUZZERCONTROLLER_H
