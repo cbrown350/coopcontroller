@@ -232,6 +232,17 @@ class SettingsManager // NOSONAR
     void setFromJsonDoc(const JsonDocument &doc);
     String toJson(bool includePassword = true) const;
     JsonDocument toJsonDoc(bool includePassword = true) const;
+
+#ifdef UNIT_TEST_DESKTOP
+    // Test-only method to reset internal state
+    void resetForTesting() {
+        settings = user_settings{};
+        isLoaded = false;
+        wifiChanged = false;
+        requestRestartAt = 0;
+    }
+#endif
+
 };
 
 #define settingsManager SettingsManager::getInstance()
