@@ -1,6 +1,13 @@
 Import("env") # type: ignore
 import math
 import os
+# Verify PIL is installed
+try:
+    import PIL  # noqa: F401
+except ImportError as e:
+    print("Required module not found:", e)
+    print("In order to modify dev images, install Pillow (~\\.platformio\\penv\\Scripts\\activate && pip install Pillow).")
+    raise e
 
 def _try_load_font(font_path, size):
     from PIL import ImageFont

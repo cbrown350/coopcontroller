@@ -1,0 +1,8 @@
+{
+  "name": "SettingsManager",
+  "version": "1.0.0",
+  "description": "Persistent configuration management with LittleFS",
+  "dependencies": {
+    "bblanchon/ArduinoJson": "^7.4.2"
+  }
+}

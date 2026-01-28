@@ -37,7 +37,8 @@ function Status() {
       time_until_retry: 0,
       total_on_time: 0,
       total_off_time: 0,
-      total_cycles: 0
+      total_cycles: 0,
+      pump_off_flow_detected: false
     },
     system: {
       temp_threshold_on_f: 34,
@@ -186,6 +187,17 @@ function Status() {
       }
     } catch (error) {
       console.error('Pump control error:', error)
+    }
+  }
+
+  const handleClearOffFlowDetected = async () => {
+    try {
+      const response = await fetch('/pump/clear_off_flow_detected', { method: 'GET' })
+      if (response.ok) {
+        await refreshSensorStatus() // Refresh status after action
+      }
+    } catch (error) {
+      console.error('Clear off flow detected error:', error)
     }
   }
 
@@ -356,6 +368,23 @@ function Status() {
                     <Show when={sensorStatus().pump.time_until_retry > 0}>
                       <div class="stat-desc text-error">Retry in: {formatTime(sensorStatus().pump.time_until_retry)}</div>
                     </Show>
+                  </Show>
+
+                  <Show when={sensorStatus().pump.pump_off_flow_detected}>
+                    <div class="alert alert-warning mt-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M12 17v.01" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v.01" />
+                      </svg>
+                      <span class="font-semibold">Water Flow Detected While Pump is OFF</span>
+                      <span class="block text-sm">Possible stuck relay or valve leak. Check pump hardware and water system.</span>
+                      <button
+                        class="btn btn-sm btn-outline mt-2"
+                        onClick={handleClearOffFlowDetected}
+                      >
+                        Clear Warning
+                      </button>
+                    </div>
                   </Show>
                 </div>
                 

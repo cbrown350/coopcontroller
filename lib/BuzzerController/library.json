@@ -1,0 +1,6 @@
+{
+  "name": "BuzzerController",
+  "version": "1.0.0",
+  "description": "Buzzer control for alerts and notifications",
+  "dependencies": {}
+}

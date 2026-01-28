@@ -5,13 +5,13 @@
 .vscode/ipch
 compile_commands.json
 
-data/assets/
-data/index.htm
-data/index.htm.gz
+data/www/assets/
+data/www/index.htm
+data/www/index.htm.gz
 data/user_settings.json
-data/favicon.ico
-data/favicon.ico.gz
-data/logo.webp
+data/www/favicon.ico
+data/www/favicon.ico.gz
+data/www/logo.webp
 
 data_testbed/
 
@@ -22,3 +22,10 @@ logs
 
 .DS_Store
 *.lnk
+.g3
+
+settings.local.json
+
+docs/temp_*.md
+.cache
+tmp/

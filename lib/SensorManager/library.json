@@ -1,0 +1,8 @@
+{
+  "name": "SensorManager",
+  "version": "1.0.0",
+  "description": "Dual sensor management for temperature and water meters",
+  "dependencies": {
+    "milesburton/DallasTemperature": "^4.0.4"
+  }
+}

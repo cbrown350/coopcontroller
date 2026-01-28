@@ -1,7 +1,6 @@
 #include "CoopControllerWebServer.h"
-#include <AsyncJson.h>
-#include <ElegantOTA.h>
-#include <ArduinoOTA.h>
+#include "config.h"
+#include "IHAL.h"
 
 #include "Logger.h"
 #include "SensorManager.h"
@@ -12,265 +11,250 @@
 #include "SunriseSunset.h"
 #include "WifiController.h"
 
-#define SPIFFS LittleFS
+#include <stdint.h>
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <ElegantOTA.h>
+#include <ArduinoOTA.h>
 
-// External references to firmware version from main.cpp
-extern const char *firmwareVersion;
-extern const char *chipFamily;
+CoopControllerWebServer::CoopControllerWebServer(IHAL* hal, uint16_t port) : hal(hal), port(port) {
+}
 
-extern const char* hostName;
-extern const char* otaPasswd;
-
-// External references to coop controller components
-extern SensorManager tempSensor;
-extern PumpController pumpController;
-extern BuzzerController buzzerController;
-extern DoorController doorController;
-extern LightController lightController;
-extern WifiController wifiController;
-
-// External reference to sunrise/sunset calculator
-extern SunriseSunsetCalculator sunriseSunset;
-
-CoopControllerWebServer::CoopControllerWebServer(int port) : server(port) {}
-
-void CoopControllerWebServer::begin()
+void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - complexity ok
+                                      PumpController& pumpController,
+                                      BuzzerController& buzzerController,
+                                      DoorController& doorController,
+                                      LightController& lightController,
+                                      const WifiController& wifiController,
+                                      SunriseSunsetCalculator& sunriseSunset)
 {
-    server.begin();
+    hal->webServerBegin(port);
 
     // Get settings endpoint
-    server.on("/get_settings", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/get_settings", HAL_WebRequestMethod::HTTP_GET,
+              [](IWebRequest *request, IWebResponse *response)
               {
                   String jsonResponse = settingsManager.toJson(false);
-                  // add hostName 
-                  jsonResponse.replace("}", ",\"hostname\":\"" + String(hostName) + "\"}");
-                  request->send(200, "application/json", jsonResponse);
+                  // add hostName
+                  jsonResponse.replace("}", R"(,"hostname":")" + String(hostName) + R"("})");
+                  response->send(200, "application/json", jsonResponse.c_str());
               });
 
-    server.addHandler(new AsyncCallbackJsonWebHandler(
-        "/update_settings",
-        [](AsyncWebServerRequest *request, JsonVariant &json)
-        {
-            JsonObject jsonObj = json.as<JsonObject>();
-            
-            // Only set WiFi settings if provided (i.e., when changing WiFi)
-            if (jsonObj["ssid"].is<const char*>()) {
-                settingsManager.setSSID(jsonObj["ssid"].as<String>());
-            }
-            if (jsonObj["passwd"].is<const char*>()) {
-                settingsManager.setPassword(jsonObj["passwd"].as<String>());
-            }
-            if (jsonObj["ap_mode"].is<bool>()) {
-                settingsManager.setAPMode(jsonObj["ap_mode"].as<bool>());
-            }
-            
-            // Handle coop controller settings (these don't trigger WiFi changes)
-            if (jsonObj["temp_threshold_on_f"].is<float>()) {
-                settingsManager.setTempThresholdOnF(jsonObj["temp_threshold_on_f"].as<float>());
-            }
-            if (jsonObj["temp_threshold_off_f"].is<float>()) {
-                settingsManager.setTempThresholdOffF(jsonObj["temp_threshold_off_f"].as<float>());
-            }
-            if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
-                settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
-            }
-            if (jsonObj["pump_on_time_seconds"].is<int>()) {
-                settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
-            }
-            if (jsonObj["pump_off_time_seconds"].is<int>()) {
-                settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
-            }
-            if (jsonObj["pump_auto_mode"].is<bool>()) {
-                settingsManager.setPumpAutoMode(jsonObj["pump_auto_mode"].as<bool>());
-            }
-            if (jsonObj["light_auto_mode"].is<bool>()) {
-                settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
-                lightController.setAutoMode(jsonObj["light_auto_mode"].as<bool>());
-            }
-            if (jsonObj["light_on_hour"].is<int>()) {
-                settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
-                lightController.setOnHour(jsonObj["light_on_hour"].as<int>());
-            }
-            if (jsonObj["light_off_hour"].is<int>()) {
-                settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
-                lightController.setOffHour(jsonObj["light_off_hour"].as<int>());
-            }
-            if (jsonObj["light_brightness_percent"].is<int>()) {
-                settingsManager.setLightBrightnessPercent(jsonObj["light_brightness_percent"].as<int>());
-                lightController.setMaxBrightness(jsonObj["light_brightness_percent"].as<int>());
-            }
-            if (jsonObj["light_transition_duration_minutes"].is<int>()) {
-                settingsManager.setLightTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
-                lightController.setTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
-            }
-            if (jsonObj["log_level"].is<String>()) {
-                settingsManager.setLogLevel(jsonObj["log_level"].as<String>());
-                // Update logger's current log level
-                String levelStr = jsonObj["log_level"].as<String>();
-                if (levelStr == "VERBOSE") {
-                    logger.setLogLevel(LogLevel::VERBOSE);
-                } else if (levelStr == "DEBUG") {
-                    logger.setLogLevel(LogLevel::DEBUG);
-                } else if (levelStr == "INFO") {
-                    logger.setLogLevel(LogLevel::INFO);
-                } else if (levelStr == "WARNING") {
-                    logger.setLogLevel(LogLevel::WARNING);
-                } else if (levelStr == "ERROR") {
-                    logger.setLogLevel(LogLevel::ERROR);
-                } else {
-                    logger.setLogLevel(LogLevel::INFO); // Default fallback
-                }
-            }
-            
-            if (jsonObj["watchdog_timeout_seconds"].is<int>()) {
-                settingsManager.setWatchdogTimeoutSeconds(jsonObj["watchdog_timeout_seconds"].as<int>());
-                logger.logInfo("Watchdog timeout updated - restart required for changes to take effect");
-            }
+    // Update settings endpoint - uses POST with JSON body
+    hal->webServerOn("/update_settings", HAL_WebRequestMethod::HTTP_POST,
+              [&lightController, &tempSensor, &buzzerController, &sunriseSunset](IWebRequest *request, IWebResponse *response) // NOSONAR
+              {
+                  // Get request body and parse JSON  
+                //   String body = request->body();                
+                // Serial.printf("[WebServer] /update_settings request received, %s\n", body.c_str());
+                // delay(3000);
+                //   JsonDocument jsonDoc;
+                //   DeserializationError error = deserializeJson(jsonDoc, body);
+                  
+                //   if (error != DeserializationError::Ok) {
+                //       response->send(400, "application/json", R"({"success":false,"error":"Invalid JSON format"})");
+                //       return;
+                //   }
+                  
+                //   JsonObject jsonObj = jsonDoc.as<JsonObject>();
+                  JsonObject jsonObj = request->jsonBody().as<JsonObject>();
+                  // print json
+                  Serial.println("[WebServer] /update_settings request received with JSON:");
+                  serializeJsonPretty(jsonObj, Serial);
+                  Serial.println();
+                  
+                  // Only set WiFi settings if provided (i.e., when changing WiFi)
+                  if (jsonObj["ssid"].is<const char*>()) {
+                      settingsManager.setSSID(jsonObj["ssid"].as<String>());
+                  }
+                  if (jsonObj["passwd"].is<const char*>()) {
+                      settingsManager.setPassword(jsonObj["passwd"].as<String>());
+                  }
+                  if (jsonObj["ap_mode"].is<bool>()) {
+                      settingsManager.setAPMode(jsonObj["ap_mode"].as<bool>());
+                  }
+                  
+                  // Handle coop controller settings (these don't trigger WiFi changes)
+                  if (jsonObj["temp_threshold_on_f"].is<float>()) {
+                      settingsManager.setTempThresholdOnF(jsonObj["temp_threshold_on_f"].as<float>());
+                  }
+                  if (jsonObj["temp_threshold_off_f"].is<float>()) {
+                      settingsManager.setTempThresholdOffF(jsonObj["temp_threshold_off_f"].as<float>());
+                  }
+                  if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
+                      settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
+                  }
+                  if (jsonObj["pump_on_time_seconds"].is<int>()) {
+                      settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
+                  }
+                  if (jsonObj["pump_off_time_seconds"].is<int>()) {
+                      settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
+                  }
+                  if (jsonObj["pump_auto_mode"].is<bool>()) {
+                      settingsManager.setPumpAutoMode(jsonObj["pump_auto_mode"].as<bool>());
+                  }
+                  if (jsonObj["light_auto_mode"].is<bool>()) {
+                      settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
+                      lightController.setAutoMode(jsonObj["light_auto_mode"].as<bool>());
+                  }
+                  if (jsonObj["light_on_hour"].is<int>()) {
+                      settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
+                      lightController.setOnHour(jsonObj["light_on_hour"].as<int>());
+                  }
+                  if (jsonObj["light_off_hour"].is<int>()) {
+                      settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
+                      lightController.setOffHour(jsonObj["light_off_hour"].as<int>());
+                  }
+                  if (jsonObj["light_brightness_percent"].is<int>()) {
+                      settingsManager.setLightBrightnessPercent(jsonObj["light_brightness_percent"].as<int>());
+                      lightController.setMaxBrightness(jsonObj["light_brightness_percent"].as<int>());
+                  }
+                  if (jsonObj["light_transition_duration_minutes"].is<int>()) {
+                      settingsManager.setLightTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
+                      lightController.setTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
+                  }
+                  if (jsonObj["log_level"].is<String>()) {
+                      settingsManager.setLogLevel(jsonObj["log_level"].as<String>());
+                      logger.setLogLevel(logger.stringToLogLevel(settingsManager.getLogLevel()));
+                  }
+                  
+                  if (jsonObj["watchdog_timeout_seconds"].is<int>()) {
+                      settingsManager.setWatchdogTimeoutSeconds(jsonObj["watchdog_timeout_seconds"].as<int>());
+                      logger.logInfo("Watchdog timeout updated - restart required for changes to take effect");
+                  }
 
-            if (jsonObj["pulses_per_gallon"].is<float>()) {
-                float newCalibration = jsonObj["pulses_per_gallon"].as<float>();
-                settingsManager.setPulsesPerGallon(newCalibration);
-                tempSensor.setPulsesPerGallon(newCalibration);
-                logger.logInfo("Water meter calibration updated: " + String(newCalibration, 1) + " pulses per gallon");
-            }
-            
-            if (jsonObj["water_meter_timeout_seconds"].is<int>()) {
-                int timeout = jsonObj["water_meter_timeout_seconds"].as<int>();
-                settingsManager.setWaterMeterTimeoutSeconds(timeout);
-                logger.logInfo("Water meter timeout updated: " + String(timeout) + " seconds");
-            }
-            
-            if (jsonObj["wifi_led_enabled"].is<bool>()) {
-                bool enabled = jsonObj["wifi_led_enabled"].as<bool>();
-                settingsManager.setWifiLedEnabled(enabled);
-                logger.logInfo("WiFi LED enabled: " + String(enabled ? "true" : "false"));
-            }
-            
-            // Handle buzzer settings
-            if (jsonObj["buzzer_enabled"].is<bool>()) {
-                bool enabled = jsonObj["buzzer_enabled"].as<bool>();
-                settingsManager.setBuzzerEnabled(enabled);
-                buzzerController.setEnabled(enabled);
-                logger.logInfo("Buzzer enabled: " + String(enabled ? "true" : "false"));
-            }
-            
-            if (jsonObj["buzzer_type"].is<String>()) {
-                String type = jsonObj["buzzer_type"].as<String>();
-                settingsManager.setBuzzerType(type);
-                BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
-                buzzerController.setBuzzerType(buzzerType);
-                logger.logInfo("Buzzer type set to: " + type);
-            }
-            
-            // Handle door control settings
-            if (jsonObj["door_auto_mode"].is<bool>()) {
-                settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
-            }
-            if (jsonObj["door_open_timeout_seconds"].is<int>()) {
-                settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
-            }
-            if (jsonObj["door_close_timeout_seconds"].is<int>()) {
-                settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
-            }
-            if (jsonObj["sunrise_offset_minutes"].is<int>()) {
-                settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
-            }
-            if (jsonObj["sunset_offset_minutes"].is<int>()) {
-                settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
-            }
-            
-            // Handle location settings
-            bool locationChanged = false;
-            if (jsonObj["latitude"].is<float>()) {
-                settingsManager.setLatitude(jsonObj["latitude"].as<float>());
-                locationChanged = true;
-            }
-            if (jsonObj["longitude"].is<float>()) {
-                settingsManager.setLongitude(jsonObj["longitude"].as<float>());
-                locationChanged = true;
-            }
-            if (jsonObj["timezone_offset_hours"].is<int>()) {
-                settingsManager.setTimezoneOffsetHours(jsonObj["timezone_offset_hours"].as<int>());
-                locationChanged = true;
-            }
-            
-            // Recalculate sunrise/sunset if location changed
-            if (locationChanged) {
-                sunriseSunset.begin(settingsManager.getLatitude(),
-                                   settingsManager.getLongitude(),
-                                   settingsManager.getTimezoneOffsetHours());
-                sunriseSunset.forceUpdate();
-                logger.logInfo("Location settings updated, sunrise/sunset recalculated");
-            }
-            
-            // Handle Task 3.5k preparation settings
-            if (jsonObj["door_auto_close_after_sunset_enabled"].is<bool>()) {
-                settingsManager.setDoorAutoCloseAfterSunsetEnabled(jsonObj["door_auto_close_after_sunset_enabled"].as<bool>());
-            }
-            if (jsonObj["door_auto_close_after_sunset_minutes"].is<int>()) {
-                settingsManager.setDoorAutoCloseAfterSunsetMinutes(jsonObj["door_auto_close_after_sunset_minutes"].as<int>());
-            }
-            
-            // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
-            
-            settingsManager.save();
-            jsonObj.clear();
-            request->send(200, "text/plain", "ok");
-        }));
-        
-    // Setup ArduinoOTA
-
-    if (hostName && strlen(hostName) > 0) {
-        ArduinoOTA.setHostname(hostName); // Need to set hostname in all places for mDNS to work
-    } 
-    if (otaPasswd && strlen(otaPasswd) > 0) {
-        ArduinoOTA.setPassword(otaPasswd); // Optional for authentication
-        logger.logInfo("OTA password set: " + String(otaPasswd));
-    }
-    ArduinoOTA.begin();
-
-    // Setup ElegantOTA
-    ElegantOTA.begin(&server);
-    if (otaPasswd && strlen(otaPasswd) > 0) {
-        ElegantOTA.setAuth("admin", otaPasswd);  // Optional: add authentication
-        logger.logInfo("ElegantOTA admin password set: " + String(otaPasswd));
-    } 
-    // Configure ElegantOTA for filesystem updates
-    ElegantOTA.onProgress([](unsigned int progress, unsigned int total) {
-        logger.logInfo("OTA Update Progress: " + String(progress / (total / 100)) + "%");
-    });
+                  if (jsonObj["pulses_per_gallon"].is<float>()) {
+                      float newCalibration = jsonObj["pulses_per_gallon"].as<float>();
+                          settingsManager.setPulsesPerGallon(newCalibration);
+                          tempSensor.setPulsesPerGallon(newCalibration);
+                          String calibMsg = "Water meter calibration updated: " + String(newCalibration, 1) + " pulses per gallon";
+                          logger.logInfo(calibMsg.c_str());
+                  }
+                  
+                  if (jsonObj["water_meter_timeout_seconds"].is<int>()) {
+                      int timeout = jsonObj["water_meter_timeout_seconds"].as<int>();
+                          settingsManager.setWaterMeterTimeoutSeconds(timeout);
+                          String timeoutMsg = "Water meter timeout updated: " + String(timeout) + " seconds";
+                          logger.logInfo(timeoutMsg.c_str());
+                  }
+                  
+                  if (jsonObj["wifi_led_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["wifi_led_enabled"].as<bool>();
+                      settingsManager.setWifiLedEnabled(enabled);
+                      String ledMsg = "WiFi LED enabled: " + String(enabled ? "true" : "false");
+                      logger.logInfo(ledMsg.c_str());
+                  }
+                  
+                  // Handle buzzer settings
+                  if (jsonObj["buzzer_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["buzzer_enabled"].as<bool>();
+                      settingsManager.setBuzzerEnabled(enabled);
+                      buzzerController.setEnabled(enabled);
+                      String buzzerMsg = "Buzzer enabled: " + String(enabled ? "true" : "false");
+                      logger.logInfo(buzzerMsg.c_str());
+                  }
+                  
+                  if (jsonObj["buzzer_type"].is<String>()) {
+                      String type = jsonObj["buzzer_type"].as<String>();
+                      settingsManager.setBuzzerType(type);
+                      BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
+                      buzzerController.setBuzzerType(buzzerType);
+                      String buzzerTypeMsg = "Buzzer type set to: " + type;
+                      logger.logInfo(buzzerTypeMsg.c_str());
+                  }
+                  
+                  // Handle door control settings
+                  if (jsonObj["door_auto_mode"].is<bool>()) {
+                      settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
+                  }
+                  if (jsonObj["door_open_timeout_seconds"].is<int>()) {
+                      settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
+                  }
+                  if (jsonObj["door_close_timeout_seconds"].is<int>()) {
+                      settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
+                  }
+                  if (jsonObj["sunrise_offset_minutes"].is<int>()) {
+                      settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
+                  }
+                  if (jsonObj["sunset_offset_minutes"].is<int>()) {
+                      settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
+                  }
+                  
+                  // Handle location settings
+                  bool locationChanged = false;
+                  if (jsonObj["latitude"].is<float>()) {
+                      settingsManager.setLatitude(jsonObj["latitude"].as<float>());
+                      locationChanged = true;
+                  }
+                  if (jsonObj["longitude"].is<float>()) {
+                      settingsManager.setLongitude(jsonObj["longitude"].as<float>());
+                      locationChanged = true;
+                  }
+                  if (jsonObj["timezone_offset_hours"].is<int>()) {
+                      settingsManager.setTimezoneOffsetHours(jsonObj["timezone_offset_hours"].as<int>());
+                      locationChanged = true;
+                  }
+                  
+                  // Recalculate sunrise/sunset if location changed
+                  if (locationChanged) {
+                      sunriseSunset.setCoordinates(settingsManager.getLatitude(),
+                                          settingsManager.getLongitude(),
+                                          settingsManager.getTimezoneOffsetHours());
+                      sunriseSunset.forceUpdate();
+                      logger.logInfo("Location settings updated, sunrise/sunset recalculated");
+                  }
+                  
+                  // Handle Task 3.5k preparation settings
+                  if (jsonObj["door_auto_close_after_sunset_enabled"].is<bool>()) {
+                      settingsManager.setDoorAutoCloseAfterSunsetEnabled(jsonObj["door_auto_close_after_sunset_enabled"].as<bool>());
+                  }
+                  if (jsonObj["door_auto_close_after_sunset_minutes"].is<int>()) {
+                      settingsManager.setDoorAutoCloseAfterSunsetMinutes(jsonObj["door_auto_close_after_sunset_minutes"].as<int>());
+                  }
+                  
+                  if (jsonObj["water_meter_per_pulse_calculation_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["water_meter_per_pulse_calculation_enabled"].as<bool>();
+                      settingsManager.setWaterMeterPerPulseCalculationEnabled(enabled);
+                      String calcMsg = "Per-pulse flow calculation: " + String(enabled ? "enabled" : "disabled");
+                      logger.logInfo(calcMsg.c_str());
+                  }
+                  
+                  if (jsonObj["pump_off_flow_monitoring_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["pump_off_flow_monitoring_enabled"].as<bool>();
+                      settingsManager.setPumpOffFlowMonitoringEnabled(enabled);
+                      String monitorMsg = "Pump OFF flow monitoring: " + String(enabled ? "enabled" : "disabled");
+                      logger.logInfo(monitorMsg.c_str());
+                  }
+                  
+                  if (jsonObj["pump_off_flow_grace_period_seconds"].is<int>()) {
+                      int gracePeriod = jsonObj["pump_off_flow_grace_period_seconds"].as<int>();
+                      settingsManager.setPumpOffFlowGracePeriodSeconds(gracePeriod);
+                      String graceMsg = "Pump OFF flow grace period: " + String(gracePeriod) + " seconds";
+                      logger.logInfo(graceMsg.c_str());
+                  }
+                  
+                  // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
+                  
+                  settingsManager.save();
+                  response->send(200, "text/plain", "ok");
+              });
     
-    // Add custom callback for filesystem updates
-    ElegantOTA.onStart([]() {
-        logger.logInfo("Start OTA updating ");
-        LittleFS.end();
-    });
-    
-    ElegantOTA.onEnd([](bool success) {
-        logger.logInfo("OTA update End");
-        if(success) {
-            logger.logInfo("OTA update completed successfully, restarting...");
-            ESP.restart();
-        } else {
-            logger.logError("OTA update failed");
-            LittleFS.begin();
-        }
-    });
-
     // Sensor status endpoint
-    server.on("/sensor_status", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/sensor_status", HAL_WebRequestMethod::HTTP_GET,
+              [&tempSensor, &pumpController, &buzzerController, &doorController,  // NOSONAR - complexity ok
+                  &lightController, &sunriseSunset](IWebRequest *request, IWebResponse *response)
               {
                   JsonDocument jsonDoc;
                   
                   // Temperature sensor data
                   JsonObject sensor1 = jsonDoc["sensor1"].to<JsonObject>();
-                  sensor1["type"] = tempSensor.getSensor1Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
-                  sensor1["connected"] = tempSensor.isSensor1Detected() && 
-                                      (tempSensor.getSensor1Type() == SensorType::WATER_METER ? 
-                                       tempSensor.isActivelyConnected(tempSensor.getSensor1Data()) : 
-                                       tempSensor.isSensor1Connected());
+                  sensor1["type"] = tempSensor.getSensor1Type() ==
+                    SensorType::DALLAS_TEMP ? "DALLAS_TEMP" :
+                        (tempSensor.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN"); // NOSONAR - complexity ok
+                  sensor1["connected"] = tempSensor.isSensor1Detected() &&
+                                        (tempSensor.getSensor1Type() == SensorType::WATER_METER ?
+                                         tempSensor.isActivelyConnected(tempSensor.getSensor1Data()) :
+                                         tempSensor.isSensor1Connected());
                   if (isnan(tempSensor.getTemperature1F())) {
                       sensor1["temperature_f"] = nullptr;
                   } else {
@@ -283,11 +267,12 @@ void CoopControllerWebServer::begin()
                   sensor1["status"] = tempSensor.getSensorStatusString(tempSensor.getSensor1Data());
                   
                   JsonObject sensor2 = jsonDoc["sensor2"].to<JsonObject>();
-                  sensor2["type"] = tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : (tempSensor.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN");
-                  sensor2["connected"] = tempSensor.isSensor2Detected() && 
-                                      (tempSensor.getSensor2Type() == SensorType::WATER_METER ? 
-                                       tempSensor.isActivelyConnected(tempSensor.getSensor2Data()) : 
-                                       tempSensor.isSensor2Connected());
+                  sensor2["type"] = tempSensor.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" :
+                            (tempSensor.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "UNKNOWN"); // NOSONAR - complexity ok
+                  sensor2["connected"] = tempSensor.isSensor2Detected() &&
+                                        (tempSensor.getSensor2Type() == SensorType::WATER_METER ?
+                                         tempSensor.isActivelyConnected(tempSensor.getSensor2Data()) :
+                                         tempSensor.isSensor2Connected());
                   if (isnan(tempSensor.getTemperature2F())) {
                       sensor2["temperature_f"] = nullptr;
                   } else {
@@ -303,8 +288,8 @@ void CoopControllerWebServer::begin()
                   JsonObject pump = jsonDoc["pump"].to<JsonObject>();
                   pump["state"] = pumpController.getStateString();
                   pump["is_active"] = pumpController.isPumpOn();
-                  float pumpTemp = pumpController.getCurrentTemperature();
-                  if (isnan(pumpTemp)) {
+                  
+                  if (float pumpTemp = pumpController.getCurrentTemperature(); isnan(pumpTemp)) {
                       pump["temperature_f"] = nullptr;
                   } else {
                       pump["temperature_f"] = pumpTemp;
@@ -317,6 +302,7 @@ void CoopControllerWebServer::begin()
                   pump["total_off_time"] = pumpController.getTotalOffTime() / 1000;
                   pump["total_cycles"] = pumpController.getTotalCycles();
                   pump["time_until_retry"] = pumpController.getTimeUntilRetry() / 1000;
+                  pump["pump_off_flow_detected"] = pumpController.getPumpOffFlowDetected();
                   
                   // System status
                   JsonObject system = jsonDoc["system"].to<JsonObject>();
@@ -330,309 +316,303 @@ void CoopControllerWebServer::begin()
                   system["watchdog_timeout_seconds"] = settingsManager.getWatchdogTimeoutSeconds();
                   system["water_meter_timeout_seconds"] = settingsManager.getWaterMeterTimeoutSeconds();
                   system["water_flow_error_timeout_seconds"] = settingsManager.getWaterFlowErrorTimeoutSeconds();
-
+                  system["pump_off_flow_monitoring_enabled"] = settingsManager.getPumpOffFlowMonitoringEnabled();
+                  system["pump_off_flow_grace_period_seconds"] = settingsManager.getPumpOffFlowGracePeriodSeconds();
+                  
                    // Buzzer status
                    JsonObject buzzer = jsonDoc["buzzer"].to<JsonObject>();
                    buzzerController.toJson(buzzer);
-                   
-                   // Door status
+                       
+                     // Door status
                    JsonObject door = jsonDoc["door"].to<JsonObject>();
                    doorController.toJson(door);
-                   
-                   // Light status
+                       
+                     // Light status
                    JsonObject light = jsonDoc["light"].to<JsonObject>();
                    lightController.toJson(light);
-                   
-                   // Sun times
+                       
+                     // Sun times
                    JsonObject sun = jsonDoc["sun"].to<JsonObject>();
                    sun["sunrise"] = sunriseSunset.getSunriseTime();
                    sun["sunset"] = sunriseSunset.getSunsetTime();
                    sun["sunrise_minutes"] = sunriseSunset.getSunriseMinutes();
                    sun["sunset_minutes"] = sunriseSunset.getSunsetMinutes();
-                  
+                     
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
-                  request->send(200, "application/json", jsonResponse);
+                  response->send(200, "application/json", jsonResponse.c_str());
               });
 
     // Pump control endpoints
-    server.on("/pump/on", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/pump/on", HAL_WebRequestMethod::HTTP_GET,
+              [&pumpController](IWebRequest *request, IWebResponse *response)
               {
                   pumpController.turnOn();
-                  request->send(200, "text/plain", "Pump turned on");
+                  logger.logInfo("Pump turned on (manual)");
+                  response->send(200, "text/plain", "Pump turned on");
               });
 
-    server.on("/pump/off", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/pump/off", HAL_WebRequestMethod::HTTP_GET,
+              [&pumpController](IWebRequest *request, IWebResponse *response)
               {
                   pumpController.turnOff();
-                  request->send(200, "text/plain", "Pump turned off");
+                  logger.logInfo("Pump turned off (manual)");
+                  response->send(200, "text/plain", "Pump turned off");
               });
 
-    server.on("/pump/auto", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/pump/auto", HAL_WebRequestMethod::HTTP_GET,
+              [&pumpController](IWebRequest *request, IWebResponse *response)
               {
                   pumpController.setAutoMode(true);
-                  request->send(200, "text/plain", "Pump set to auto mode");
+                  response->send(200, "text/plain", "Pump set to auto mode");
               });
 
-    server.on("/pump/force_cycle", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/pump/force_cycle", HAL_WebRequestMethod::HTTP_GET,
+              [&pumpController](IWebRequest *request, IWebResponse *response)
               {
                   pumpController.forceCycle();
-                  request->send(200, "text/plain", "Pump cycle forced");
+                  response->send(200, "text/plain", "Pump cycle forced");
               });
 
-    server.on("/pump/reset_stats", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/pump/reset_stats", HAL_WebRequestMethod::HTTP_GET,
+              [&pumpController](IWebRequest *request, IWebResponse *response)
               {
                   pumpController.resetStatistics();
-                  request->send(200, "text/plain", "Pump statistics reset");
+                  response->send(200, "text/plain", "Pump statistics reset");
               });
 
-    server.on("/pump/clear_error", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/pump/clear_error", HAL_WebRequestMethod::HTTP_GET,
+              [&pumpController](IWebRequest *request, IWebResponse *response)
               {
                   pumpController.clearFlowError();
-                  request->send(200, "text/plain", "Pump flow error cleared");
+                  response->send(200, "text/plain", "Pump flow error cleared");
+              });
+
+    hal->webServerOn("/pump/clear_off_flow_detected", HAL_WebRequestMethod::HTTP_GET,
+              [&pumpController](IWebRequest *request, IWebResponse *response)
+              {
+                  pumpController.clearPumpOffFlowDetected();
+                  response->send(200, "text/plain", "Pump off flow detection cleared");
+                  logger.logInfo("Pump off flow detection cleared via web request");
               });
 
         // Water meter reset endpoints
-    server.on("/water/reset/1", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/water/reset/1", HAL_WebRequestMethod::HTTP_GET,
+              [&tempSensor](IWebRequest *request, IWebResponse *response)
               {
                   tempSensor.resetPulseCount(1);
-                  request->send(200, "text/plain", "Water meter 1 reset");
+                  response->send(200, "text/plain", "Water meter 1 reset");
               });
-
-    server.on("/water/reset/2", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/water/reset/2", HAL_WebRequestMethod::HTTP_GET,
+              [&tempSensor](IWebRequest *request, IWebResponse *response)
               {
                   tempSensor.resetPulseCount(2);
-                  request->send(200, "text/plain", "Water meter 2 reset");
+                  response->send(200, "text/plain", "Water meter 2 reset");
               });
-
+    
     // Buzzer control endpoints
-    server.on("/buzzer/silence", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/buzzer/silence", HAL_WebRequestMethod::HTTP_POST,
+              [&buzzerController](IWebRequest *request, IWebResponse *response)
               {
                   buzzerController.silenceAlerts();
-                  request->send(200, "text/plain", "Buzzer alerts silenced");
+                  response->send(200, "text/plain", "Buzzer alerts silenced");
               });
-
-    server.on("/buzzer/test", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/buzzer/test", HAL_WebRequestMethod::HTTP_GET,
+              [&buzzerController](IWebRequest *request, IWebResponse *response)
               {
                   buzzerController.testAlert();
-                  request->send(200, "text/plain", "Buzzer test alert triggered");
+                  response->send(200, "text/plain", "Buzzer test alert triggered");
               });
-    server.on("/buzzer/clear", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/buzzer/clear", HAL_WebRequestMethod::HTTP_POST,
+              [&buzzerController](IWebRequest *request, IWebResponse *response)
               {
-                  // Clear the currently active alert (could be TEST_ALERT or PUMP_ERROR)
+                  // Clear currently active alert (could be TEST_ALERT or PUMP_ERROR)
                   if (buzzerController.hasActiveAlert()) {
                       AlertType currentAlert = buzzerController.getCurrentAlertType();
                       buzzerController.clearAlert(currentAlert);
-                      request->send(200, "text/plain", "Buzzer alert cleared");
+                      response->send(200, "text/plain", "Buzzer alert cleared");
                   } else {
-                      request->send(200, "text/plain", "No active alert to clear");
+                      response->send(200, "text/plain", "No active alert to clear");
                   }
               });
-
+    
     // Door control endpoints
-    server.on("/door/open", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/door/open", HAL_WebRequestMethod::HTTP_GET,
+              [&doorController](IWebRequest *request, IWebResponse *response)
               {
                   doorController.open();
-                  request->send(200, "text/plain", "Door opening");
+                  response->send(200, "text/plain", "Door opening");
               });
-
-    server.on("/door/close", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/door/close", HAL_WebRequestMethod::HTTP_GET,
+              [&doorController](IWebRequest *request, IWebResponse *response)
               {
                   doorController.close();
-                  request->send(200, "text/plain", "Door closing");
+                  response->send(200, "text/plain", "Door closing");
               });
-
-    server.on("/door/stop", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/door/stop", HAL_WebRequestMethod::HTTP_GET,
+              [&doorController](IWebRequest *request, IWebResponse *response)
               {
                   doorController.stop();
-                  request->send(200, "text/plain", "Door stopped");
+                  response->send(200, "text/plain", "Door stopped");
               });
-
-    server.on("/door/set_auto", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/door/set_auto", HAL_WebRequestMethod::HTTP_POST,
+              [&doorController](IWebRequest *request, IWebResponse *response)
               {
-                  if (!request->hasParam("auto", true)) {
-                      request->send(400, "text/plain", "Missing auto parameter");
-                      return;
-                  }
-                  
-                  String autoStr = request->getParam("auto", true)->value();
+                  String autoStr = request->param("auto");
                   bool autoMode = (autoStr == "true" || autoStr == "1");
                   doorController.setAutoMode(autoMode);
-                  request->send(200, "text/plain", autoMode ? "Door auto mode enabled" : "Door auto mode disabled");
+                  response->send(200, "text/plain", autoMode ? "Door auto mode enabled" : "Door auto mode disabled");
               });
-
-    server.on("/door/clear_fault", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/door/clear_fault", HAL_WebRequestMethod::HTTP_POST,
+              [&doorController](IWebRequest *request, IWebResponse *response)
               {
                   doorController.clearFault();
-                  request->send(200, "text/plain", "Door fault cleared");
+                  response->send(200, "text/plain", "Door fault cleared");
               });
-
-    server.on("/door/reset_stats", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/door/reset_stats", HAL_WebRequestMethod::HTTP_GET,
+              [&doorController](IWebRequest *request, IWebResponse *response)
               {
                   doorController.resetStatistics();
-                  request->send(200, "text/plain", "Door statistics reset");
+                  response->send(200, "text/plain", "Door statistics reset");
               });
 
     // Light control endpoints
-    server.on("/light/on", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/light/on", HAL_WebRequestMethod::HTTP_GET,
+              [&lightController](IWebRequest *request, IWebResponse *response)
               {
                   lightController.turnOn();
-                  request->send(200, "text/plain", "Light turned on");
+                  logger.logInfo("Light turned on (manual)");
+                  response->send(200, "text/plain", "Light turned on");
               });
-
-    server.on("/light/off", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/light/off", HAL_WebRequestMethod::HTTP_GET,
+              [&lightController](IWebRequest *request, IWebResponse *response)
               {
                   lightController.turnOff();
-                  request->send(200, "text/plain", "Light turned off");
+                  logger.logInfo("Light turned off (manual)");
+                  response->send(200, "text/plain", "Light turned off");
               });
-
-    server.on("/light/fade_in", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/light/fade_in", HAL_WebRequestMethod::HTTP_GET,
+              [&lightController](IWebRequest *request, IWebResponse *response)
               {
                   lightController.fadeIn();
-                  request->send(200, "text/plain", "Light fading in");
+                  response->send(200, "text/plain", "Light fading in");
               });
-
-    server.on("/light/fade_out", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/light/fade_out", HAL_WebRequestMethod::HTTP_GET,
+              [&lightController](IWebRequest *request, IWebResponse *response)
               {
                   lightController.fadeOut();
-                  request->send(200, "text/plain", "Light fading out");
+                  response->send(200, "text/plain", "Light fading out");
               });
-
-    server.on("/light/set_brightness", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/light/set_brightness", HAL_WebRequestMethod::HTTP_POST,
+              [&lightController](IWebRequest *request, IWebResponse *response)
               {
-                  if (!request->hasParam("brightness", true)) {
-                      request->send(400, "text/plain", "Missing brightness parameter");
-                      return;
-                  }
-                  
-                  int brightness = request->getParam("brightness", true)->value().toInt();
+                  String brightnessStr = request->param("brightness");
+                  int brightness = brightnessStr.toInt();
                   if (brightness < 0 || brightness > 100) {
-                      request->send(400, "text/plain", "Brightness must be 0-100");
+                      response->send(400, "text/plain", "Brightness must be 0-100");
                       return;
                   }
                   
                   lightController.setBrightness(brightness);
-                  request->send(200, "text/plain", "Light brightness set to " + String(brightness) + "%");
+                  String msg = "Light brightness set to " + String(brightness) + "%";
+                  response->send(200, "text/plain", msg.c_str());
               });
-
-    server.on("/light/set_auto", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/light/set_auto", HAL_WebRequestMethod::HTTP_POST,
+              [&lightController](IWebRequest *request, IWebResponse *response)
               {
-                  if (!request->hasParam("auto", true)) {
-                      request->send(400, "text/plain", "Missing auto parameter");
-                      return;
-                  }
-                  
-                  String autoStr = request->getParam("auto", true)->value();
+                  String autoStr = request->param("auto");
                   bool autoMode = (autoStr == "true" || autoStr == "1");
                   lightController.setAutoMode(autoMode);
                   settingsManager.setLightAutoMode(autoMode);
                   settingsManager.save();
-                  request->send(200, "text/plain", autoMode ? "Light auto mode enabled" : "Light auto mode disabled");
+                  response->send(200, "text/plain", autoMode ? "Light auto mode enabled" : "Light auto mode disabled");
               });
-
-    server.on("/light/reset_stats", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/light/reset_stats", HAL_WebRequestMethod::HTTP_GET,
+              [&lightController](IWebRequest *request, IWebResponse *response)
               {
                   lightController.resetStatistics();
-                  request->send(200, "text/plain", "Light statistics reset");
+                  response->send(200, "text/plain", "Light statistics reset");
               });
-
-    server.on("/light/test_mode", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    
+    hal->webServerOn("/light/test_mode", HAL_WebRequestMethod::HTTP_POST,
+              [&lightController](IWebRequest *request, IWebResponse *response)
               {
-                  if (!request->hasParam("enabled", true)) {
-                      request->send(400, "text/plain", "Missing enabled parameter");
-                      return;
-                  }
-                  
-                  String enabledStr = request->getParam("enabled", true)->value();
+                  String enabledStr = request->param("enabled");
                   bool enabled = (enabledStr == "true" || enabledStr == "1");
                   lightController.setTestMode(enabled);
-                  request->send(200, "text/plain", enabled ? "Light test mode enabled" : "Light test mode disabled");
+                  response->send(200, "text/plain", enabled ? "Light test mode enabled" : "Light test mode disabled");
               });
 
     // Logs endpoint
-
-    // Logs endpoint
-    server.on("/logs", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/logs", HAL_WebRequestMethod::HTTP_GET,
+              [](IWebRequest *request, IWebResponse *response)
               {
                   String jsonResponse = logger.getLogsAsJson();
-                  request->send(200, "application/json", jsonResponse);
+                  response->send(200, "application/json", jsonResponse.c_str());
               });
-
-   // Sun times endpoint
-   server.on("/sun/times", HTTP_GET,
-             [](AsyncWebServerRequest *request)
-             {
-                 JsonDocument doc;
-                 
-                 // Format sunrise time without leading zero
-                 int sunriseMin = sunriseSunset.getSunriseMinutes();
-                 int sunriseHour = sunriseMin / 60;
-                 int sunriseMinute = sunriseMin % 60;
-                 String sunrisePeriod = (sunriseHour >= 12) ? "PM" : "AM";
-                 sunriseHour = (sunriseHour > 12) ? sunriseHour - 12 : sunriseHour;
-                 sunriseHour = (sunriseHour == 0) ? 12 : sunriseHour;
-                 char sunriseBuffer[16];
-                 sprintf(sunriseBuffer, "%d:%02d %s", sunriseHour, sunriseMinute, sunrisePeriod.c_str());
-                 doc["sunrise"] = String(sunriseBuffer);
-                 
-                 // Format sunset time without leading zero
-                 int sunsetMin = sunriseSunset.getSunsetMinutes();
-                 int sunsetHour = sunsetMin / 60;
-                 int sunsetMinute = sunsetMin % 60;
-                 String sunsetPeriod = (sunsetHour >= 12) ? "PM" : "AM";
-                 sunsetHour = (sunsetHour > 12) ? sunsetHour - 12 : sunsetHour;
-                 sunsetHour = (sunsetHour == 0) ? 12 : sunsetHour;
-                 char sunsetBuffer[16];
-                 sprintf(sunsetBuffer, "%d:%02d %s", sunsetHour, sunsetMinute, sunsetPeriod.c_str());
-                 doc["sunset"] = String(sunsetBuffer);
-                 
-                 doc["sunrise_minutes"] = sunriseSunset.getSunriseMinutes();
-                 doc["sunset_minutes"] = sunriseSunset.getSunsetMinutes();
-                 doc["latitude"] = settingsManager.getLatitude();
-                 doc["longitude"] = settingsManager.getLongitude();
-                 doc["timezone_offset"] = settingsManager.getTimezoneOffsetHours();
-                 
-                 String response;
-                 serializeJson(doc, response);
-                 request->send(200, "application/json", response);
-             });
-
+    
+    // Sun times endpoint
+    hal->webServerOn("/sun/times", HAL_WebRequestMethod::HTTP_GET,
+              [&sunriseSunset](IWebRequest *request, IWebResponse *response) // NOSONAR - complexity ok
+              {
+                  JsonDocument doc;
+                  
+                  // Format sunrise time without leading zero
+                  int sunriseMin = sunriseSunset.getSunriseMinutes();
+                  int sunriseHour = sunriseMin / 60;
+                  int sunriseMinute = sunriseMin % 60;
+                  String sunrisePeriod = (sunriseHour >= 12) ? "PM" : "AM";
+                  sunriseHour = (sunriseHour > 12) ? sunriseHour - 12 : sunriseHour;
+                  String sunriseFormatted = String(sunriseHour) + ":" +
+                                         (sunriseMinute < 10 ? "0" : "") +
+                                         String(sunriseMinute) + " " + sunrisePeriod;
+                  doc["sunrise"] = sunriseFormatted;
+                  
+                  // Format sunset time without leading zero
+                  int sunsetMin = sunriseSunset.getSunsetMinutes();
+                  int sunsetHour = sunsetMin / 60;
+                  int sunsetMinute = sunsetMin % 60;
+                  String sunsetPeriod = (sunsetHour >= 12) ? "PM" : "AM";
+                  sunsetHour = (sunsetHour > 12) ? sunsetHour - 12 : sunsetHour;
+                  String sunsetFormatted = String(sunsetHour) + ":" +
+                                         (sunsetMinute < 10 ? "0" : "") +
+                                         String(sunsetMinute) + " " + sunsetPeriod;
+                  doc["sunset"] = sunsetFormatted;
+                  
+                  doc["sunrise_minutes"] = sunriseSunset.getSunriseMinutes();
+                  doc["sunset_minutes"] = sunriseSunset.getSunsetMinutes();
+                  doc["latitude"] = settingsManager.getLatitude();
+                  doc["longitude"] = settingsManager.getLongitude();
+                  doc["timezone_offset"] = settingsManager.getTimezoneOffsetHours();
+                  
+                  String jsonResponse;
+                  serializeJson(doc, jsonResponse);
+                  response->send(200, "application/json", jsonResponse.c_str());
+              });
+    
     // System status endpoint
-    server.on("/system_status", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/system_status", HAL_WebRequestMethod::HTTP_GET,
+              [&wifiController, this](IWebRequest *request, IWebResponse *response) // NOSONAR - complexity ok
               {
                   JsonDocument jsonDoc;
                   
                   // Memory information
-                  jsonDoc["heap_free"] = ESP.getFreeHeap();
-                  jsonDoc["heap_size"] = ESP.getHeapSize();
-                  jsonDoc["heap_used_percent"] = 100.0 - (100.0 * ESP.getFreeHeap() / ESP.getHeapSize());
+                  jsonDoc["heap_free"] = hal->getFreeHeap();
+                  jsonDoc["heap_size"] = hal->getHeapSize();
+                  jsonDoc["heap_used_percent"] = 100.0 - (100.0 * hal->getFreeHeap() / hal->getHeapSize());
                   
                   // Uptime
                   unsigned long uptimeSeconds = millis() / 1000;
@@ -650,14 +630,16 @@ void CoopControllerWebServer::begin()
                   if (days > 0) formatted += String(days) + "d ";
                   if (hours > 0 || days > 0) formatted += String(hours) + "h ";
                   if (minutes > 0 || hours > 0 || days > 0) formatted += String(minutes) + "m ";
+                  if (uptimeSeconds > 0 || hours > 0 || minutes > 0 || days > 0) formatted += String(uptimeSeconds) + "s ";
                   formatted += String(uptimeSeconds) + "s";
                   
                   jsonDoc["uptime_formatted"] = formatted;
                   
                   // Chip information
-                  jsonDoc["chip_model"] = ESP.getChipModel();
-                  jsonDoc["cpu_freq_mhz"] = ESP.getCpuFreqMHz();
-                  jsonDoc["flash_size"] = ESP.getFlashChipSize();
+                  jsonDoc["chip_model"] = hal->getChipModel();
+                  // Note: getCpuFreqMHz and getFlashChipSize are not in HAL, keeping as ESP calls for now
+                  jsonDoc["cpu_freq_mhz"] = hal->getCpuFreqMHz();
+                  jsonDoc["flash_size"] = hal->getFlashChipSize();
                   
                   // WiFi information (if connected)
                   if (wifiController.isConnected()) {
@@ -670,37 +652,32 @@ void CoopControllerWebServer::begin()
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
-                  request->send(200, "application/json", jsonResponse);
+                  response->send(200, "application/json", jsonResponse.c_str());
               });
-
+    
     // Version endpoint
-    server.on("/version", HTTP_GET,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/version", HAL_WebRequestMethod::HTTP_GET,
+              [](IWebRequest *request, IWebResponse *response)
               {
                   JsonDocument jsonDoc;
                   jsonDoc["firmware_version"] = firmwareVersion;
                   jsonDoc["chip_family"]      = chipFamily;
                   jsonDoc["build_date"]       = __DATE__;
                   jsonDoc["build_time"]       = __TIME__;
-
+                  
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
-                  request->send(200, "application/json", jsonResponse);
+                  response->send(200, "application/json", jsonResponse.c_str());
               });
-
+    
     // Factory reset endpoint
-    server.on("/factory_reset", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/factory_reset", HAL_WebRequestMethod::HTTP_POST,
+              [this](IWebRequest *request, IWebResponse *response)
               {
                   // Check for confirmation parameter
-                  if (!request->hasParam("confirm", true)) {
-                      request->send(400, "text/plain", "Missing confirmation parameter");
-                      return;
-                  }
-                  
-                  String confirm = request->getParam("confirm", true)->value();
+                  String confirm = request->param("confirm");
                   if (confirm != "RESET") {
-                      request->send(400, "text/plain", "Invalid confirmation value");
+                      response->send(400, "text/plain", "Invalid confirmation value");
                       return;
                   }
                   
@@ -709,169 +686,246 @@ void CoopControllerWebServer::begin()
                   // Perform factory reset
                   settingsManager.factoryReset();
                   
-                  request->send(200, "text/plain", "Factory reset complete. Device will restart in 3 seconds.");
+                  response->send(200, "text/plain", "Factory reset complete. Device will restart in 3 seconds.");
                   
                   // Schedule restart
                   delay(3000);
-                  ESP.restart();
+                  hal->restart();
               });
+    
     // Reboot endpoint
-    server.on("/reboot", HTTP_POST,
-              [](AsyncWebServerRequest *request)
+    hal->webServerOn("/reboot", HAL_WebRequestMethod::HTTP_POST,
+              [this](IWebRequest *request, IWebResponse *response)
               {
                   // Check for confirmation parameter
-                  if (!request->hasParam("confirm", true)) {
-                      request->send(400, "text/plain", "Missing confirmation parameter");
-                      return;
-                  }
-                  
-                  String confirm = request->getParam("confirm", true)->value();
+                  String confirm = request->param("confirm");
                   if (confirm != "REBOOT") {
-                      request->send(400, "text/plain", "Invalid confirmation value");
+                      response->send(400, "text/plain", "Invalid confirmation value");
                       return;
                   }
                   
                   logger.logWarning("Reboot requested via web interface");
                   
-                  request->send(200, "text/plain", "Device will reboot in 3 seconds.");
+                  response->send(200, "text/plain", "Device will reboot in 3 seconds.");
                   
-                  // Schedule reboot
+                  // Schedule restart
                   delay(3000);
-                  ESP.restart();
+                  hal->restart();
               });
-
+    
     // Backup settings endpoint
-    server.on("/settings/backup", HTTP_GET,
-      [](AsyncWebServerRequest *request)
-      {
-        String jsonResponse = settingsManager.toJson(false);
-        request->send(200, "application/json", jsonResponse);
-      });
+    hal->webServerOn("/settings/backup", HAL_WebRequestMethod::HTTP_GET,
+              [](IWebRequest *request, IWebResponse *response)
+              {
+                  String jsonResponse = settingsManager.toJson(false);
+                  response->send(200, "application/json", jsonResponse.c_str());
+              });
+    
+    // Restore settings endpoint - Note: Using manual JSON parsing instead of AsyncCallbackJsonWebHandler
+    hal->webServerOn("/settings/restore", HAL_WebRequestMethod::HTTP_POST,
+              [&tempSensor, &buzzerController, &lightController](IWebRequest *request, IWebResponse *response) // NOSONAR - complexity ok
+              {
+                  // Get request body and parse JSON
+                  String body = request->body();
+                  JsonDocument jsonDoc;
+                  DeserializationError error = deserializeJson(jsonDoc, body);
+                  
+                  if (error != DeserializationError::Ok) {
+                      response->send(400, "application/json", R"({"success":false,"error":"Invalid JSON format"})");
+                      return;
+                  }
+                  
+                  JsonObject jsonObj = jsonDoc.as<JsonObject>();
+                  
+                  // Basic validation - check for required fields
+                  if (jsonObj.isNull()) {
+                    response->send(400, "application/json", R"({"success":false,"error":"Invalid JSON format"})");
+                    return;
+                  }
+                  
+                  // Update settings with validation
+                  if (jsonObj["temp_threshold_on_f"].is<float>()) {
+                    settingsManager.setTempThresholdOnF(jsonObj["temp_threshold_on_f"].as<float>());
+                  }
+                  if (jsonObj["temp_threshold_off_f"].is<float>()) {
+                    settingsManager.setTempThresholdOffF(jsonObj["temp_threshold_off_f"].as<float>());
+                  }
+                  if (jsonObj["pump_on_time_seconds"].is<int>()) {
+                    settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
+                  }
+                  if (jsonObj["pump_off_time_seconds"].is<int>()) {
+                    settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
+                  }
+                  if (jsonObj["light_auto_mode"].is<bool>()) {
+                    settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
+                  }
+                  if (jsonObj["light_on_hour"].is<int>()) {
+                    settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
+                    lightController.setOnHour(jsonObj["light_on_hour"].as<int>());
+                  }
+                  if (jsonObj["light_off_hour"].is<int>()) {
+                    settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
+                    lightController.setOffHour(jsonObj["light_off_hour"].as<int>());
+                  }
+                  if (jsonObj["light_brightness_percent"].is<int>()) {
+                    settingsManager.setLightBrightnessPercent(jsonObj["light_brightness_percent"].as<int>());
+                    lightController.setMaxBrightness(jsonObj["light_brightness_percent"].as<int>());
+                  }
+                  if (jsonObj["light_transition_duration_minutes"].is<int>()) {
+                    settingsManager.setLightTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
+                    lightController.setTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
+                  }
+                  if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
+                    settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
+                  }
+                  if (jsonObj["pulses_per_gallon"].is<float>()) {
+                    float newCalibration = jsonObj["pulses_per_gallon"].as<float>();
+                    settingsManager.setPulsesPerGallon(newCalibration);
+                    tempSensor.setPulsesPerGallon(newCalibration);
+                    logger.logInfo("Water meter calibration restored: " + String(newCalibration, 1) + " pulses per gallon");
+                  }
+                  if (jsonObj["water_meter_timeout_seconds"].is<int>()) {
+                    settingsManager.setWaterMeterTimeoutSeconds(jsonObj["water_meter_timeout_seconds"].as<int>());
+                  }
+                  if (jsonObj["wifi_led_enabled"].is<bool>()) {
+                    settingsManager.setWifiLedEnabled(jsonObj["wifi_led_enabled"].as<bool>());
+                  }
+                  if (jsonObj["buzzer_enabled"].is<bool>()) {
+                    bool enabled = jsonObj["buzzer_enabled"].as<bool>();
+                    settingsManager.setBuzzerEnabled(enabled);
+                    buzzerController.setEnabled(enabled);
+                    logger.logInfo("Buzzer enabled restored: " + String(enabled ? "true" : "false"));
+                  }
+                  if (jsonObj["buzzer_type"].is<String>()) {
+                    String type = jsonObj["buzzer_type"].as<String>();
+                    settingsManager.setBuzzerType(type);
+                    BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
+                    buzzerController.setBuzzerType(buzzerType);
+                    logger.logInfo("Buzzer type restored: " + type);
+                  }
+                  if (jsonObj["door_auto_mode"].is<bool>()) {
+                    settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
+                  }
+                  if (jsonObj["door_open_timeout_seconds"].is<int>()) {
+                    settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
+                  }
+                  if (jsonObj["door_close_timeout_seconds"].is<int>()) {
+                    settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
+                  }
+                  if (jsonObj["sunrise_offset_minutes"].is<int>()) {
+                    settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
+                  }
+                  if (jsonObj["sunset_offset_minutes"].is<int>()) {
+                    settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
+                  }
+                  if (jsonObj["water_meter_per_pulse_calculation_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["water_meter_per_pulse_calculation_enabled"].as<bool>();
+                      settingsManager.setWaterMeterPerPulseCalculationEnabled(enabled);
+                      String calcMsg = "Per-pulse flow calculation: " + String(enabled ? "enabled" : "disabled");
+                      logger.logInfo(calcMsg.c_str());
+                  }
+                  
+                  // Save settings to persistent storage
+                  settingsManager.save();
+                  
+                  response->send(200, "application/json", R"({"success":true,"message":"Settings restored successfully"})");
+              });
+    
+    // SPA URL rewriting - redirect client-side routes to root before static file serving
+    // This prevents filesystem errors when navigating to SPA routes like /update, /settings, /logs    
+    hal->webServerAddRewrite("/status", "/index.htm");
+    hal->webServerAddRewrite("/settings", "/index.htm");
+    hal->webServerAddRewrite("/log", "/index.htm");
+    hal->webServerAddRewrite("/updates", "/index.htm");
+    hal->webServerAddRewrite("/about", "/index.htm");
+    
+        
+    // Setup ArduinoOTA - Note: ArduinoOTA is ESP32-specific, not part of HAL
+    if (hostName && strlen(hostName) > 0) {
+        ArduinoOTA.setHostname(hostName); // Need to set hostname in all places for mDNS to work
+    }
+    if (otaPasswd && strlen(otaPasswd) > 0) {
+        ArduinoOTA.setPassword(otaPasswd); // Optional for authentication
+        String otaMsg = "OTA password set: " + String(otaPasswd);
+        logger.logInfo(otaMsg.c_str());
+    }
+    ArduinoOTA.begin();
+    
+    // Setup ElegantOTA - Note: ElegantOTA is ESP32-specific, not part of HAL
+    if (otaPasswd && strlen(otaPasswd) > 0) {
+        ElegantOTA.setAuth("admin", otaPasswd); // Optional: add authentication
+        String elegantMsg = "ElegantOTA admin password set: " + String(otaPasswd);
+        logger.logInfo(elegantMsg.c_str());
+    }
+    // Configure ElegantOTA for filesystem updates
+    ElegantOTA.onProgress([](unsigned int progress, unsigned int total) {
+        String progressMsg = "OTA Update Progress: " + String(progress / (total / 100)) + "%";
+        logger.logInfo(progressMsg.c_str());
+    });
+    
+    // Add custom callback for filesystem updates - capture this to access hal
+    ElegantOTA.onStart([this]() {
+        logger.logInfo("Start OTA updating ");
+        hal->fsEnd();
+    });
+    
+    ElegantOTA.onEnd([this](bool success) {
+        logger.logInfo("OTA update End");
+        if(success) {
+            logger.logInfo("OTA update completed successfully, restarting...");
+            hal->restart();
+        } else {
+            logger.logError("OTA update failed");
+            if(!hal->fsBegin()) {
+                logger.logError("Failed to re-initialize filesystem after OTA failure");
+            }
+        }
+    });
 
-    // Restore settings endpoint
-    server.addHandler(new AsyncCallbackJsonWebHandler(
-      "/settings/restore",
-      [](AsyncWebServerRequest *request, JsonVariant &json)
-      {
-        JsonObject jsonObj = json.as<JsonObject>();
-        
-        // Basic validation - check for required fields
-        if (jsonObj.isNull()) {
-          request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON format\"}");
-          return;
-        }
-        
-        // Update settings with validation
-        if (jsonObj["temp_threshold_on_f"].is<float>()) {
-          settingsManager.setTempThresholdOnF(jsonObj["temp_threshold_on_f"].as<float>());
-        }
-        if (jsonObj["temp_threshold_off_f"].is<float>()) {
-          settingsManager.setTempThresholdOffF(jsonObj["temp_threshold_off_f"].as<float>());
-        }
-        if (jsonObj["pump_on_time_seconds"].is<int>()) {
-          settingsManager.setPumpOnTimeSeconds(jsonObj["pump_on_time_seconds"].as<int>());
-        }
-        if (jsonObj["pump_off_time_seconds"].is<int>()) {
-          settingsManager.setPumpOffTimeSeconds(jsonObj["pump_off_time_seconds"].as<int>());
-        }
-        if (jsonObj["light_auto_mode"].is<bool>()) {
-          settingsManager.setLightAutoMode(jsonObj["light_auto_mode"].as<bool>());
-        }
-        if (jsonObj["light_on_hour"].is<int>()) {
-          settingsManager.setLightOnHour(jsonObj["light_on_hour"].as<int>());
-        }
-        if (jsonObj["light_off_hour"].is<int>()) {
-          settingsManager.setLightOffHour(jsonObj["light_off_hour"].as<int>());
-        }
-        if (jsonObj["light_brightness_percent"].is<int>()) {
-          settingsManager.setLightBrightnessPercent(jsonObj["light_brightness_percent"].as<int>());
-        }
-        if (jsonObj["light_transition_duration_minutes"].is<int>()) {
-          settingsManager.setLightTransitionDurationMinutes(jsonObj["light_transition_duration_minutes"].as<int>());
-        }
-        if (jsonObj["water_flow_error_timeout_seconds"].is<int>()) {
-          settingsManager.setWaterFlowErrorTimeoutSeconds(jsonObj["water_flow_error_timeout_seconds"].as<int>());
-        }
-        if (jsonObj["pulses_per_gallon"].is<float>()) {
-          float newCalibration = jsonObj["pulses_per_gallon"].as<float>();
-          settingsManager.setPulsesPerGallon(newCalibration);
-          tempSensor.setPulsesPerGallon(newCalibration);
-          logger.logInfo("Water meter calibration restored: " + String(newCalibration, 1) + " pulses per gallon");
-        }
-        if (jsonObj["water_meter_timeout_seconds"].is<int>()) {
-          settingsManager.setWaterMeterTimeoutSeconds(jsonObj["water_meter_timeout_seconds"].as<int>());
-        }
-        if (jsonObj["wifi_led_enabled"].is<bool>()) {
-          settingsManager.setWifiLedEnabled(jsonObj["wifi_led_enabled"].as<bool>());
-        }
-        if (jsonObj["buzzer_enabled"].is<bool>()) {
-          bool enabled = jsonObj["buzzer_enabled"].as<bool>();
-          settingsManager.setBuzzerEnabled(enabled);
-          buzzerController.setEnabled(enabled);
-          logger.logInfo("Buzzer enabled restored: " + String(enabled ? "true" : "false"));
-        }
-        if (jsonObj["buzzer_type"].is<String>()) {
-          String type = jsonObj["buzzer_type"].as<String>();
-          settingsManager.setBuzzerType(type);
-          BuzzerType buzzerType = (type == "PASSIVE") ? BuzzerType::PASSIVE : BuzzerType::ACTIVE;
-          buzzerController.setBuzzerType(buzzerType);
-          logger.logInfo("Buzzer type restored: " + type);
-        }
-        if (jsonObj["door_auto_mode"].is<bool>()) {
-          settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
-        }
-        if (jsonObj["door_open_timeout_seconds"].is<int>()) {
-          settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
-        }
-        if (jsonObj["door_close_timeout_seconds"].is<int>()) {
-          settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
-        }
-        if (jsonObj["sunrise_offset_minutes"].is<int>()) {
-          settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
-        }
-        if (jsonObj["sunset_offset_minutes"].is<int>()) {
-          settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
-        }
-        if (jsonObj["door_auto_mode"].is<bool>()) {
-          settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
-        }
-        if (jsonObj["door_open_timeout_seconds"].is<int>()) {
-          settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
-        }
-        if (jsonObj["door_close_timeout_seconds"].is<int>()) {
-          settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
-        }
-        if (jsonObj["sunrise_offset_minutes"].is<int>()) {
-          settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
-        }
-        if (jsonObj["sunset_offset_minutes"].is<int>()) {
-          settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
-        }
-        
-        // Save settings to persistent storage
-        settingsManager.save();
-        
-        jsonObj.clear();
-        request->send(200, "application/json", "{\"success\":true,\"message\":\"Settings restored successfully\"}");
-      }));
-      
-    // SPA route rewrites (avoid FS open errors for client-side routes)
-    server.addRewrite(new AsyncWebRewrite("/status", "/index.htm"));
-    server.addRewrite(new AsyncWebRewrite("/settings", "/index.htm"));
-    server.addRewrite(new AsyncWebRewrite("/log", "/index.htm"));
-    server.addRewrite(new AsyncWebRewrite("/updates", "/index.htm"));
-    server.addRewrite(new AsyncWebRewrite("/about", "/index.htm"));
+    // TODO: username/password for ElegantOTA?
+    // ElegantOTA.begin(server_);
+    hal->webServerAddElegantOTA();
+    
 
-    // Serve static files from SPIFFS
-    server.serveStatic("/assets/", SPIFFS, "/assets/");
-    server.serveStatic("/", SPIFFS, "/");
-    server.onNotFound([](AsyncWebServerRequest *request){
-        request->send(SPIFFS, "/index.htm", "text/html");
+    // Static and not found placed last to catch all unmatched routes
+
+    // Serve static files from LittleFS - LittleFS kept for AsyncWebServer serveStatic() only
+    // Web assets are served from /www/ subdirectory to protect sensitive files in root
+    if(!hal->fsBegin()) {
+        logger.logError("Failed to initialize filesystem for web server static file serving");
+    }
+    hal->webServerServeStatic("/assets/", "/www/assets/");
+    hal->webServerServeStatic("/", "/www/");
+
+    // SPA catch-all handler - serves index.htm for client-side routes
+    // This prevents filesystem errors when navigating to SPA routes like /update, /settings, /logs
+    hal->webServerOnNotFound([](IWebRequest *request, IWebResponse *response) {
+        String uri = request->url();
+
+        Serial.println("Handling SPA route for URI: " + uri);
+
+        // Check if this is an API endpoint - return 404 for unknown API routes
+        if (uri.startsWith("/get_") || uri.startsWith("/get_") || uri.startsWith("/pump/") || uri.startsWith("/water/") ||
+            uri.startsWith("/update_settings") || uri.equals("/logs") || uri.equals("/version") ||
+            uri.equals("/update") || uri.startsWith("/buzzer/") || uri.startsWith("/door/") ||
+            uri.startsWith("/light/") || uri.equals("/sun/times") ||
+            uri.equals("/system_status") || uri.equals("/factory_reset") ||
+            uri.equals("/reboot") || uri.startsWith("/settings/")) {
+            response->send(404, "text/plain", "Not Found");
+            return;
+        }
+
+        // For all other requests (client-side routes), serve index.htm
+        // This allows SolidJS router to handle the route on the client side
+        // Note: request->url() returns only the path (e.g., "/update"), not the full URL
+        response->sendFile("/www/index.htm", "text/html");
     });
 }
-
-void CoopControllerWebServer::loop()
+void CoopControllerWebServer::loop() const
 {
-    ArduinoOTA.handle();
-    ElegantOTA.loop();
+  // Process ArduinoOTA events (network OTA)
+  ArduinoOTA.handle();
+  
+  // Process ElegantOTA events (web OTA)
+  ElegantOTA.loop();
 }

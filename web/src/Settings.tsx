@@ -4,6 +4,8 @@ function Settings() {
   const [ssid, setSsid] = createSignal('')
   const [password, setPassword] = createSignal('')
   const [showPassword, setShowPassword] = createSignal(false)
+  const [clearPassword, setClearPassword] = createSignal(false)
+  const [passwordError, setPasswordError] = createSignal('')
   const [loading, setLoading] = createSignal(true)
   const [loaded, setLoaded] = createSignal(false)
   const [error, setError] = createSignal('')
@@ -34,6 +36,13 @@ function Settings() {
 
   // Water meter calibration
   const [pulsesPerGallon, setPulsesPerGallon] = createSignal<number | null>(null)
+  
+  // Per-pulse flow calculation
+  const [waterMeterPerPulseCalculationEnabled, setWaterMeterPerPulseCalculationEnabled] = createSignal<boolean | null>(null)
+  
+  // Pump off flow monitoring
+  const [pumpOffFlowMonitoringEnabled, setPumpOffFlowMonitoringEnabled] = createSignal<boolean | null>(null)
+  const [pumpOffFlowGracePeriodSeconds, setPumpOffFlowGracePeriodSeconds] = createSignal<number | null>(null)
   
   // Water meter timeout
   const [waterMeterTimeoutSeconds, setWaterMeterTimeoutSeconds] = createSignal<number | null>(null)
@@ -103,6 +112,9 @@ function Settings() {
       setLightTransitionDurationMinutes(settings.light_transition_duration_minutes ?? null)
       setWaterFlowErrorTimeoutSeconds(settings.water_flow_error_timeout_seconds ?? null)
       setWaterMeterTimeoutSeconds(settings.water_meter_timeout_seconds ?? null)
+      setWaterMeterPerPulseCalculationEnabled(settings.water_meter_per_pulse_calculation_enabled ?? false)
+      setPumpOffFlowMonitoringEnabled(settings.pump_off_flow_monitoring_enabled ?? false)
+      setPumpOffFlowGracePeriodSeconds(settings.pump_off_flow_grace_period_seconds ?? 30)
       setLogLevel(settings.log_level ?? 'INFO')
       setPulsesPerGallon(settings.pulses_per_gallon ?? null)
       setWifiLedEnabled(settings.wifi_led_enabled ?? true)
@@ -156,6 +168,19 @@ function Settings() {
     return true
   }
 
+  const validatePassword = (pwd: string) => {
+    if (pwd.length === 0) {
+      setPasswordError('')
+      return true
+    }
+    if (pwd.length < 5) {
+      setPasswordError('Password must be at least 5 characters long')
+      return false
+    }
+    setPasswordError('')
+    return true
+  }
+
   const handleSave = async () => {
     if (!loaded()) {
       setError('Settings not loaded. Please refresh the page.')
@@ -164,13 +189,17 @@ function Settings() {
 
     if (!validateThresholds()) return
 
+    // Validate password if not clearing it
+    if (!clearPassword() && password().length > 0 && !validatePassword(password())) {
+      return
+    }
+
     try {
       setSaveSuccess(false)
       setError('')
 
-      const settingsPayload = {
+      const settingsPayload: any = {
         ssid: ssid(),
-        passwd: password(),
         temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
         temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
         pump_on_time_seconds: pumpOnTimeSeconds() ?? 150,
@@ -184,6 +213,9 @@ function Settings() {
         light_brightness_percent: lightBrightnessPercent() ?? 100,
         light_transition_duration_minutes: lightTransitionDurationMinutes() ?? 5,
         pulses_per_gallon: pulsesPerGallon() ?? 450.0,
+        water_meter_per_pulse_calculation_enabled: waterMeterPerPulseCalculationEnabled() ?? false,
+        pump_off_flow_monitoring_enabled: pumpOffFlowMonitoringEnabled() ?? false,
+        pump_off_flow_grace_period_seconds: pumpOffFlowGracePeriodSeconds() ?? 30,
         wifi_led_enabled: wifiLedEnabled() ?? true,
         buzzer_enabled: buzzerEnabled() ?? true,
         buzzer_type: buzzerType() ?? 'ACTIVE',
@@ -196,8 +228,15 @@ function Settings() {
         longitude: longitude() ?? -74.0060,
         timezone_offset_hours: timezoneOffsetHours() ?? -5,
         door_auto_close_after_sunset_enabled: doorAutoCloseAfterSunsetEnabled() ?? false,
-        // Auto close after sunset minutes should be a number, not a string when defined
-        door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0 // Default to 0 if not defined
+        door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0,
+        log_level: logLevel() ?? 'INFO'
+      }
+
+      // Handle password: either set new password, clear it, or don't change it
+      if (clearPassword()) {
+        settingsPayload['passwd'] = ''
+      } else if (password().length >= 5) {
+        settingsPayload['passwd'] = password()
       }
 
       const response = await fetch('/update_settings', {
@@ -374,12 +413,25 @@ function Settings() {
               <fieldset class="fieldset">
                 <legend class="fieldset-legend">Password</legend>
                 <div class="input-group">
-                  <input type={showPassword() ? "text" : "password"} id="password" value={password()} onInput={(e) => setPassword(e.target.value)} placeholder="Enter WiFi password..." class="input" />
+                  <input 
+                    type={showPassword() ? "text" : "password"} 
+                    id="password" 
+                    value={clearPassword() ? '' : password()} 
+                    onInput={(e) => {
+                      const value = e.target.value
+                      setPassword(value)
+                      validatePassword(value)
+                    }} 
+                    placeholder="Enter WiFi password..." 
+                    class={`input ${passwordError() ? 'input-error' : ''}`}
+                    disabled={clearPassword()}
+                  />
                   <button 
                     type="button" 
                     class="btn btn-ghost" 
                     onClick={() => setShowPassword(!showPassword())}
                     title={showPassword() ? "Hide password" : "Show password"}
+                    disabled={clearPassword()}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={showPassword() ? "lucide lucide-eye-off" : "lucide lucide-eye"}>
                       {showPassword() ? (
@@ -397,6 +449,32 @@ function Settings() {
                       )}
                     </svg>
                   </button>
+                </div>
+                <Show when={passwordError()}>
+                  <div class="fieldset-label text-error">{passwordError()}</div>
+                </Show>
+              </fieldset>
+
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Clear Password</legend>
+                <div class="form-control">
+                  <label class="label cursor-pointer">
+                    <span class="label-text">Clear WiFi password (connect to open network)</span>
+                    <input
+                      type="checkbox"
+                      class="toggle toggle-error"
+                      checked={clearPassword()}
+                      onChange={(e) => {
+                        setClearPassword(e.currentTarget.checked)
+                        if (e.currentTarget.checked) {
+                          setPasswordError('')
+                        }
+                      }}
+                    />
+                  </label>
+                  <label class="label">
+                    <span class="label-text-alt">Check to remove WiFi password and connect to an open network</span>
+                  </label>
                 </div>
               </fieldset>
 
@@ -468,6 +546,57 @@ function Settings() {
               <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
             </Show>
             <div class="fieldset-label">Time since last pulse before water meter considered disconnected (default: 300 seconds)</div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Per-Pulse Flow Calculation</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Per-Pulse Flow Calculation</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={waterMeterPerPulseCalculationEnabled() ?? false}
+                  onChange={(e) => setWaterMeterPerPulseCalculationEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Calculate flow rate instantly after each pulse instead of 60-second interval. More responsive to flow changes.
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Pump OFF Flow Monitoring</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Pump OFF Flow Monitoring</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-warning"
+                  checked={pumpOffFlowMonitoringEnabled() ?? false}
+                  onChange={(e) => setPumpOffFlowMonitoringEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Monitor for water flow when pump is OFF to detect hardware faults (stuck relay, valve leak).
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Pump OFF Grace Period (seconds)</legend>
+            <Show when={loaded()}>
+              <input type="number" id="pump_off_flow_grace_period_seconds" value={pumpOffFlowGracePeriodSeconds()!} onInput={(e) => setPumpOffFlowGracePeriodSeconds(parseInt(e.target.value))} placeholder="30" step="1" min="5" max="300" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">Grace period after pump turns off before monitoring starts (default: 30 seconds)</div>
           </fieldset>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

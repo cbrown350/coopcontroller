@@ -1,0 +1,7 @@
+{
+  "name": "WifiController",
+  "version": "1.0.0",
+  "description": "WiFi connection management with AP fallback",
+  "dependencies": {
+  }
+}

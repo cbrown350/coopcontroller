@@ -1,13 +1,31 @@
-[](https://github.com/cbrown350/)
+# Coop Controller
 
+![Coop Controller logo](web/logo.webp)
 
-Firmware Installation
-Flash the firmware and filesystem, this can be done through the web tool
-Once it's flashed, it will create a WiFi network called CoopController, connect to it with the password coopycontroller
-Go to http://192.168.4.1 in your browser to load the user interface
-Enter your wifi ssid, password and hit "save settings", the device will restart and connect to your network.
-Access the web UI at anytime by going to http://coopcontroller.local
+ESP32-based automation for chicken coop management: temperature monitoring, freeze prevention, pump control, lighting automation, WiFi management, and a SolidJS web UI for configuration and status.
 
+## Highlights
 
-Web UI
-Web UI code is a SolidJS app with vite in the /web folder, it comes with a mock server. Just run `npm i && npm run dev` in the web folder. Use `npm i --include=dev`, `npm run build` in the /web folder to copy code into the /data folder, followed by Upload file sytem image command from PlatformIO
+- Automated pump control with freeze prevention, hysteresis, and flow monitoring
+- Dual-purpose sensor inputs (Dallas temp or water meter) with auto-detection
+- Smooth PWM lighting control with manual and scheduled modes
+- Async web server with OTA updates, logs, and real-time status dashboard
+- All settings stored in LittleFS and configurable via web UI
+
+## Firmware Installation (ESP32)
+
+1. Flash firmware and filesystem (web tool or PlatformIO Upload Filesystem Image).
+2. Connect to the temporary WiFi AP `CoopController` (password `coopycontroller`).
+3. Open [http://192.168.4.1](http://192.168.4.1) or [http://coopcontroller.local](http://coopcontroller.local) to load the UI, enter your WiFi SSID/password, and save settings.
+4. After restart, access the device at [http://coopcontroller.local](http://coopcontroller.local) on your network.
+
+## Web UI Development (SolidJS)
+
+- `cd web && npm i`
+- `npm run dev` to run with the mock API server.
+- `npm run build` then upload the filesystem image to copy assets into `data/`.
+
+## Project Resources
+
+- Full project guide and hardware/feature details: Agents and architecture notes in [Agents.md](Agents.md)
+- PlatformIO configuration and pin definitions: [platformio.ini](platformio.ini)

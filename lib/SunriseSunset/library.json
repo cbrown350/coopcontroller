@@ -1,0 +1,8 @@
+{
+  "name": "SunriseSunset",
+  "version": "1.0.0",
+  "description": "Sunrise/sunset calculations with timezone support",
+  "dependencies": {
+    "jpb10/SolarCalculator": "^2.0.2"
+  }
+}
