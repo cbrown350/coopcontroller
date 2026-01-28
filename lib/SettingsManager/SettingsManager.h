@@ -8,82 +8,148 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+/**
+ * @brief User settings structure
+ *
+ * Contains all configurable settings for the chicken coop controller.
+ * Stored in JSON format in non-volatile storage (LittleFS).
+ *
+ * Default values are defined for each setting to ensure
+ * valid operation even on first boot.
+ */
 struct user_settings // NOSONAR
-{    
-    String ssid;
-    String passwd;
-    bool   ap_mode = true;
-    bool   has_connected = false;
+{
+    String ssid;                         ///< WiFi SSID
+    String passwd;                       ///< WiFi password
+    bool   ap_mode = true;               ///< Start in AP mode on first boot
+    bool   has_connected = false;        ///< Has successfully connected to WiFi
     
-    // Coop Controller specific settings
-    float  temp_threshold_on_f = 34.0;     // Temperature threshold to turn ON pump in Fahrenheit (default 34F)
-    float  temp_threshold_off_f = 36.0;    // Temperature threshold to turn OFF pump in Fahrenheit (default 36F)
-    unsigned int pump_on_time_seconds = 300;    // Pump ON time in seconds (default 300)
-    unsigned int pump_off_time_seconds = 600;   // Pump OFF time in seconds (default 600)
-    bool   pump_auto_mode = true;          // Enable automatic pump control based on temperature
-    bool   light_auto_mode = false;         // Enable automatic light control
-    int    light_on_minute = 0;           // Minute to turn on light (0-59)
-    String light_on_mode = "fixed";           // 'fixed' or 'sunset_offset'
-    int    light_on_sunset_offset_minutes = 0; // Minutes before/after sunset for light on (default: 0)
-    int    light_on_hour = 6;           // Hour to turn on light (24-hour format)
-    int    light_off_hour = 21;          // Hour to turn off light (24-hour format)
-    int    light_brightness_percent = 80; // Maximum brightness percentage (0-100)
-    int    light_transition_duration_minutes = 15; // Fade transition duration in minutes
-    int    water_flow_error_timeout_seconds = 120; // Timeout for water flow error detection in seconds (default 120 seconds)
-    String log_level = DEFAULT_LOGLEVEL;               // Log level: "VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR" (default "INFO")
+    // ========================================================================
+    // COOP CONTROLLER SPECIFIC SETTINGS
+    // ========================================================================
+
+    float  temp_threshold_on_f = 34.0;     ///< Temperature threshold to turn ON pump (°F)
+    float  temp_threshold_off_f = 36.0;    ///< Temperature threshold to turn OFF pump (°F)
+    unsigned int pump_on_time_seconds = 300;    ///< Pump ON time in automatic cycling (seconds)
+    unsigned int pump_off_time_seconds = 600;   ///< Pump OFF time in automatic cycling (seconds)
+    bool   pump_auto_mode = true;          ///< Enable automatic pump control based on temperature
+    bool   light_auto_mode = false;        ///< Enable automatic light control
+    int    light_on_minute = 0;            ///< Minute to turn on light (0-59)
+    String light_on_mode = "fixed";        ///< Light on mode: 'fixed' or 'sunset_offset'
+    int    light_on_sunset_offset_minutes = 0; ///< Minutes before/after sunset for light on
+    int    light_on_hour = 6;              ///< Hour to turn on light (24-hour format)
+    int    light_off_hour = 21;            ///< Hour to turn off light (24-hour format)
+    int    light_brightness_percent = 80;  ///< Maximum light brightness percentage (0-100)
+    int    light_transition_duration_minutes = 15; ///< Light fade transition duration (minutes)
+    int    water_flow_error_timeout_seconds = 120; ///< Water flow error detection timeout (seconds)
+    String log_level = DEFAULT_LOGLEVEL;   ///< Log level: "VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR"
     
-    // Water meter calibration
-    float  pulses_per_gallon = 450.0;       // Pulses per gallon for water meter calibration (default 450.0)
-    unsigned int water_meter_timeout_seconds = 300; // Timeout in seconds before water meter considered disconnected (default 300)
-    
-    // WiFi connection settings
-    unsigned int wifi_max_retries = 5;        // Maximum number of WiFi connection retries (default 5)
-    unsigned int wifi_retry_delay_seconds = 30;  // Delay between WiFi retry attempts in seconds (default 30)
-    int    wifi_ap_duration_minutes = 10;  // How long to stay in AP mode before retrying (default 10)
-    int    watchdog_timeout_seconds = 30; // Watchdog timeout in seconds (default 30, range 10-120)
-    bool   wifi_led_enabled = true;        // Enable WiFi status LED (default: true)
-    
-    // Buzzer settings
-    bool   buzzer_enabled = true;         // Enable buzzer alerts (default: true)
-    String buzzer_type = "ACTIVE";            // Buzzer type: "ACTIVE" or "PASSIVE" (default: "ACTIVE")
-    
-    // Door control settings
-    bool   door_auto_mode = false;          // Enable automatic door control (default: false)
-    int    door_open_timeout_seconds = 30; // Door open timeout in seconds (default: 30)
-    int    door_close_timeout_seconds = 30; // Door close timeout in seconds (default: 30)
-    int    sunrise_offset_minutes = 0;   // Sunrise offset for door opening (default: 0)
-    int    sunset_offset_minutes = 0;    // Sunset offset for door closing (default: 0)
-    
-    // Location settings for sunrise/sunset calculations
-    float  latitude = (float)40.7128;               // Latitude for sunrise/sunset calculations (default: 40.7128 - NYC)
-    float  longitude = (float)-74.0060;              // Longitude for sunrise/sunset calculations (default: -74.0060 - NYC)
-    int    timezone_offset_hours = -5;   // UTC timezone offset in hours (default: -5 - EST)
-    
-    // Task 3.5k preparation
-    bool   door_auto_close_after_sunset_enabled = false; // Enable auto-close X minutes after sunset (default: false)
-    int    door_auto_close_after_sunset_minutes = 0;  // Minutes after sunset to auto-close (default: 0)
-    
-    // Water meter per-pulse calculation
-    bool   water_meter_per_pulse_calculation_enabled = false; // Enable per-pulse flow calculation (default: false)
-    
-    // Pump off flow monitoring
-    bool   pump_off_flow_monitoring_enabled = false; // Enable pump OFF flow monitoring (default: false)
-    int    pump_off_flow_grace_period_seconds = 30; // Grace period after pump turns off before monitoring starts (default: 30 seconds)
+    // ========================================================================
+    // WATER METER CALIBRATION
+    // ========================================================================
+
+    float  pulses_per_gallon = 450.0;       ///< Pulses per gallon for water meter calibration
+    unsigned int water_meter_timeout_seconds = 300; ///< Timeout before water meter considered disconnected
+
+    // ========================================================================
+    // WIFI CONNECTION SETTINGS
+    // ========================================================================
+
+    unsigned int wifi_max_retries = 5;      ///< Maximum WiFi connection retry attempts
+    unsigned int wifi_retry_delay_seconds = 30;  ///< Delay between WiFi retry attempts (seconds)
+    int    wifi_ap_duration_minutes = 10;   ///< How long to stay in AP mode before retrying
+    int    watchdog_timeout_seconds = 30;   ///< Watchdog timeout in seconds (range 10-120)
+    bool   wifi_led_enabled = true;         ///< Enable WiFi status LED
+
+    // ========================================================================
+    // BUZZER SETTINGS
+    // ========================================================================
+
+    bool   buzzer_enabled = true;           ///< Enable buzzer alerts
+    String buzzer_type = "ACTIVE";          ///< Buzzer type: "ACTIVE" or "PASSIVE"
+
+    // ========================================================================
+    // DOOR CONTROL SETTINGS
+    // ========================================================================
+
+    bool   door_auto_mode = false;          ///< Enable automatic door control
+    int    door_open_timeout_seconds = 30;  ///< Door open timeout (seconds)
+    int    door_close_timeout_seconds = 30; ///< Door close timeout (seconds)
+    int    sunrise_offset_minutes = 0;      ///< Sunrise offset for door opening (minutes)
+    int    sunset_offset_minutes = 0;       ///< Sunset offset for door closing (minutes)
+
+    // ========================================================================
+    // LOCATION SETTINGS
+    // ========================================================================
+
+    float  latitude = (float)40.7128;       ///< Latitude for sunrise/sunset (default: NYC)
+    float  longitude = (float)-74.0060;      ///< Longitude for sunrise/sunset (default: NYC)
+    int    timezone_offset_hours = -5;      ///< UTC timezone offset in hours (default: EST)
+
+    // ========================================================================
+    // FUTURE FEATURES (Task 3.5k)
+    // ========================================================================
+
+    bool   door_auto_close_after_sunset_enabled = false; ///< Auto-close after sunset
+    int    door_auto_close_after_sunset_minutes = 0;     ///< Minutes after sunset to close
+
+    // ========================================================================
+    // WATER METER PER-PULSE CALCULATION
+    // ========================================================================
+
+    bool   water_meter_per_pulse_calculation_enabled = false; ///< Enable per-pulse flow calc
+
+    // ========================================================================
+    // PUMP OFF FLOW MONITORING
+    // ========================================================================
+
+    bool   pump_off_flow_monitoring_enabled = false; ///< Enable pump OFF flow monitoring
+    int    pump_off_flow_grace_period_seconds = 30;  ///< Grace period after pump turns off
 };
 
+/**
+ * @brief Settings manager singleton
+ *
+ * Manages persistent storage and retrieval of all system settings.
+ * Uses JSON format stored in LittleFS for non-volatile storage.
+ *
+ * Features:
+ * - Singleton pattern for global access
+ * - Automatic loading on first access
+ * - Deferred restart for WiFi setting changes
+ * - JSON import/export
+ * - Factory reset capability
+ * - Test support methods
+ *
+ * Usage:
+ *   settingsManager.begin(&hal);
+ *   settingsManager.load();
+ *   float threshold = settingsManager.getTempThresholdOnF();
+ *   settingsManager.setTempThresholdOnF(35.0);
+ *   settingsManager.save();
+ */
 class SettingsManager // NOSONAR
 {
    private:
-    IHAL*         _hal;
-    user_settings settings;
-    bool          isLoaded;
-    bool          wifiChanged;
+    IHAL*         _hal;          ///< Hardware abstraction layer for filesystem access
+    user_settings settings;      ///< Current settings values
+    bool          isLoaded;      ///< Settings loaded from file flag
+    bool          wifiChanged;   ///< WiFi settings changed flag (triggers restart)
 
+    /**
+     * @brief Private constructor for singleton
+     */
     SettingsManager();
 
+    // Delete copy constructor and assignment operator (singleton)
     SettingsManager(const SettingsManager &)            = delete;
     SettingsManager &operator=(const SettingsManager &) = delete;
-    
+
+    /**
+     * @brief Load settings from file
+     *
+     * @return File contents as string
+     */
     String loadFile();
 
    public:

@@ -7,44 +7,86 @@
 
 #include <stdint.h>
 
-// Default alert patterns for each alert type
+/**
+ * @file BuzzerController.cpp
+ * @brief Implementation of BuzzerController class
+ *
+ * This file contains the implementation of the buzzer alert controller
+ * for the chicken coop system. Provides audible alerts with customizable
+ * patterns for different system conditions.
+ */
+
+// ============================================================================
+// DEFAULT ALERT PATTERNS
+// ============================================================================
+
+/**
+ * @brief Default beep patterns for each alert type
+ *
+ * Array indexed by AlertType enum value containing predefined beep patterns.
+ * Each pattern defines the distinctive sound for that alert type.
+ *
+ * Pattern structure: {beep_duration_ms, pause_duration_ms, repeat_count, pattern_pause_ms, max_cycles}
+ */
 const AlertPattern BuzzerController::DEFAULT_PATTERNS[] = { // NOSONAR - intentional array
     // PUMP_ERROR: 3 long beeps, repeat every 10 seconds, max 30 cycles
     {1000, 500, 3, 10000, 30},
-    
+
     // SENSOR_ERROR: 2 short beeps, repeat every 5 seconds, max 20 cycles
     {200, 300, 2, 5000, 20},
-    
+
     // WIFI_DISCONNECTED: 1 short beep, repeat every 30 seconds, infinite
     {200, 0, 1, 30000, 0},
-    
+
     // LOW_MEMORY: 5 rapid short beeps, repeat every 15 seconds, max 10 cycles
     {100, 100, 5, 15000, 10},
-    
+
     // DOOR_FAULT: 4 medium beeps, repeat every 8 seconds, max 15 cycles
     {500, 200, 4, 8000, 15},
-    
+
     // LIGHT_FAULT: 3 short beeps, repeat every 10 seconds, max 20 cycles
     {300, 200, 3, 10000, 20},
-    
+
     // SYSTEM_ERROR: 2 long beeps, repeat every 12 seconds, max 25 cycles
     {1000, 1000, 2, 12000, 25},
-    
+
     // TEST_ALERT: 1 medium beep, no repeat
     {500, 0, 1, 0, 1}
 };
 
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+/**
+ * @brief Initialize the buzzer controller
+ *
+ * Configures the GPIO pin for output and loads saved settings.
+ * The buzzer uses active LOW logic (LOW = on, HIGH = off).
+ *
+ * @param pin GPIO pin number connected to the buzzer
+ */
 void BuzzerController::begin(uint8_t pin) {
     _pin = pin;
     pinMode(_pin, OUTPUT);
     digitalWrite(_pin, HIGH); // Active LOW - turn off initially
-    
+
     // Load settings
     loadFromSettings();
-    
+
     logger.logInfo(String("Buzzer controller initialized on pin ") + String(_pin) + String(", type: ") + String(_buzzerType == BuzzerType::ACTIVE ? "Active" : "Passive") + String(", enabled: ") + String(_enabled ? "true" : "false"));
 }
 
+// ============================================================================
+// UPDATE LOOP
+// ============================================================================
+
+/**
+ * @brief Update buzzer state (call in main loop)
+ *
+ * Handles beep pattern execution, silence timeout, and state transitions.
+ * Must be called frequently for accurate timing (every loop iteration).
+ */
 void BuzzerController::update() {
     if (!_enabled) {
         if (_isBeeping) {
@@ -53,19 +95,19 @@ void BuzzerController::update() {
         }
         return;
     }
-    
+
     // Check if silence period has expired
     if (isSilenced() && millis() > _silenceUntil) {
         _silenceUntil = 0;
         logger.logInfo("Buzzer silence period expired");
     }
-    
+
     // Execute current pattern if active and not silenced
     if (_hasActiveAlert && !isSilenced()) {
         executePattern();
     } else if (_isBeeping) {
-        logger.logDebug(String("Buzzer update - no active alert or silenced, stopping beep (has_active: ") + 
-                       String(_hasActiveAlert ? "true" : "false") + String(", silenced: ") + 
+        logger.logDebug(String("Buzzer update - no active alert or silenced, stopping beep (has_active: ") +
+                       String(_hasActiveAlert ? "true" : "false") + String(", silenced: ") +
                        String(isSilenced() ? "true" : "false") + ")");
         stopBeep();
     }
@@ -233,25 +275,35 @@ void BuzzerController::toJson(JsonObject& json) const { // NOSONAR - json is bei
     }
 }
 
+// ============================================================================
+// PATTERN EXECUTION
+// ============================================================================
+
+/**
+ * @brief Execute the current beep pattern
+ *
+ * State machine that handles timing for beeps and pauses in the pattern.
+ * Manages cycle counting and pattern completion detection.
+ */
 void BuzzerController::executePattern() {
     unsigned long currentTime = millis();
-    
+
     // Check if we've exceeded max cycles
     if (_currentPattern.max_cycles > 0 && _currentCycle >= _currentPattern.max_cycles) {
-        logger.logDebug(String("Buzzer pattern - exceeded max cycles (") + String(_currentCycle) + 
+        logger.logDebug(String("Buzzer pattern - exceeded max cycles (") + String(_currentCycle) +
                        String(" >= ") + String(_currentPattern.max_cycles) + ")");
         _hasActiveAlert = false;
         logAlert(_currentAlertType, "completed max cycles");
         return;
     }
-    
+
     // State machine for pattern execution
     if (!_isBeeping) {
         // Should we start a beep?
         unsigned long timeSinceLastState = currentTime - _lastStateChange;
         if (timeSinceLastState >= _currentPattern.pause_duration_ms) {
-            logger.logDebug(String("Buzzer pattern - starting beep ") + String(_currentBeep + 1) + 
-                           String(" of ") + String(_currentPattern.repeat_count) + 
+            logger.logDebug(String("Buzzer pattern - starting beep ") + String(_currentBeep + 1) +
+                           String(" of ") + String(_currentPattern.repeat_count) +
                            String(" in cycle ") + String(_currentCycle + 1));
             startBeep();
             _lastStateChange = currentTime;
@@ -264,22 +316,22 @@ void BuzzerController::executePattern() {
             stopBeep();
             _lastStateChange = currentTime;
             _currentBeep++;
-            
+
             // Check if we've completed all beeps in this cycle
             if (_currentBeep >= _currentPattern.repeat_count) {
                 _currentBeep = 0;
                 _currentCycle++;
-                
-                logger.logDebug(String("Buzzer pattern - completed cycle ") + String(_currentCycle) + 
+
+                logger.logDebug(String("Buzzer pattern - completed cycle ") + String(_currentCycle) +
                                String(" (max: ") + String(_currentPattern.max_cycles) + ")");
-                
+
                 // If this was the last beep and no pattern pause, we're done
                 if (_currentPattern.pattern_pause_ms == 0) { // NOSONAR - nesting ok
                     _hasActiveAlert = false;
                     logger.logDebug("Buzzer pattern - no pattern pause, clearing alert");
                     logAlert(_currentAlertType, "pattern completed");
                 } else {
-                    logger.logDebug(String("Buzzer pattern - waiting for pattern pause ") + 
+                    logger.logDebug(String("Buzzer pattern - waiting for pattern pause ") +
                                    String(_currentPattern.pattern_pause_ms) + "ms");
                 }
             }
@@ -287,6 +339,13 @@ void BuzzerController::executePattern() {
     }
 }
 
+/**
+ * @brief Start beep output
+ *
+ * Activates the buzzer based on hardware type:
+ * - Active: Sets GPIO LOW (active LOW)
+ * - Passive: Generates 1kHz PWM tone
+ */
 void BuzzerController::startBeep() {
     if (_buzzerType == BuzzerType::ACTIVE) {
         digitalWrite(_pin, LOW); // Active LOW - turn on
@@ -298,6 +357,13 @@ void BuzzerController::startBeep() {
     _isBeeping = true;
 }
 
+/**
+ * @brief Stop beep output
+ *
+ * Deactivates the buzzer based on hardware type:
+ * - Active: Sets GPIO HIGH
+ * - Passive: Stops PWM tone generation
+ */
 void BuzzerController::stopBeep() {
     if (_buzzerType == BuzzerType::ACTIVE) {
         digitalWrite(_pin, HIGH); // Active LOW - turn off

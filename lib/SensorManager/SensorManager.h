@@ -8,27 +8,44 @@
 #include <string>
 #include <memory>
 
-// Sensor types for each pin
+/**
+ * @brief Supported sensor types
+ *
+ * Enumeration of sensor types that can be connected to each pin.
+ * Auto-detection determines which type is attached.
+ */
 enum class SensorType {
-    NONE = 0,
-    DALLAS_TEMP,
-    WATER_METER
+    NONE = 0,          ///< No sensor detected
+    DALLAS_TEMP,       ///< DS18B20 temperature sensor
+    WATER_METER        ///< Pulse-based water flow meter
 };
 
-// Sensor data structure
+/**
+ * @brief Sensor data container
+ *
+ * Stores all data for a single sensor including type, readings,
+ * connection status, and statistics. Uses atomic types for
+ * thread-safe access from ISRs.
+ *
+ * Thread Safety:
+ * - pulse_count, last_pulse_time are atomic for ISR access
+ * - Other fields updated only in main loop context
+ */
 struct SensorData {  // NOSONAR - shouldn't warn about destructor since it's defined below
-    SensorType type;
-    float temperature_f;
-    bool is_connected;
-    bool was_detected;
-    unsigned long last_reading_time;
-    std::atomic<unsigned long> pulse_count;
-    float flow_rate;  // Calculated flow rate for water meter
-    std::atomic<unsigned long> last_pulse_time;
-    std::atomic<unsigned long> previous_pulse_time;  // For per-pulse calculation
-    unsigned long last_flow_calculation_time;  // Track last calculation time per sensor
-    
-    // Constructor
+    SensorType type;                              ///< Type of sensor detected
+    float temperature_f;                          ///< Temperature reading in Fahrenheit
+    bool is_connected;                            ///< Currently connected (recent communication)
+    bool was_detected;                            ///< Was ever detected (since boot)
+    unsigned long last_reading_time;              ///< Timestamp of last successful read
+    std::atomic<unsigned long> pulse_count;       ///< Total pulse count (water meter)
+    float flow_rate;                              ///< Calculated flow rate (GPM)
+    std::atomic<unsigned long> last_pulse_time;   ///< Timestamp of most recent pulse
+    std::atomic<unsigned long> previous_pulse_time; ///< Timestamp of previous pulse (for per-pulse calc)
+    unsigned long last_flow_calculation_time;     ///< Last time flow rate was calculated
+
+    /**
+     * @brief Constructor with default values
+     */
     explicit SensorData(SensorType t = SensorType::NONE,    // NOSONAR
                float temp = 0.0f,
                bool connected = false,
@@ -96,8 +113,38 @@ struct SensorData {  // NOSONAR - shouldn't warn about destructor since it's def
     }
 };
 
+/**
+ * @brief Sensor manager for temperature and flow sensors
+ *
+ * Manages up to two sensor pins with auto-detection of sensor type.
+ * Supports DS18B20 temperature sensors and pulse-based water meters.
+ *
+ * Features:
+ * - Automatic sensor type detection
+ * - Temperature reading in Fahrenheit
+ * - Water meter pulse counting with ISR
+ * - Flow rate calculation (GPM)
+ * - Connection status monitoring
+ * - Per-pulse and interval-based flow calculation
+ * - Atomic operations for ISR safety
+ *
+ * Sensor Auto-Detection:
+ * - Attempts OneWire detection first (Dallas temp)
+ * - Falls back to pulse counting mode (water meter)
+ * - Updates connection status based on communication
+ *
+ * Water Meter Operation:
+ * - Counts pulses via interrupt handler
+ * - Calculates flow rate based on pulses-per-gallon
+ * - Supports both per-pulse and interval calculation methods
+ */
 class SensorManager {
 public:
+    /**
+     * @brief Virtual destructor
+     *
+     * Allows mocking in unit tests.
+     */
     virtual ~SensorManager() = default;
 
 private:

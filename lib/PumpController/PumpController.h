@@ -5,107 +5,354 @@
 #include "SensorManager.h"
 #include <stdint.h>
 
-// Pump states
+/**
+ * @brief Pump operational states
+ *
+ * Enumeration of all possible pump states during operation.
+ */
 enum class PumpState {
-    PUMP_OFF = 0,
-    PUMP_ON,
-    PUMP_AUTO,
-    PUMP_ERROR
+    PUMP_OFF = 0,    ///< Pump is manually off
+    PUMP_ON,         ///< Pump is manually on
+    PUMP_AUTO,       ///< Pump is in automatic mode
+    PUMP_ERROR       ///< Pump error state (flow error detected)
 };
 
-// Pump status structure
+/**
+ * @brief Complete pump status structure
+ *
+ * Contains all current pump information including state, timing,
+ * temperature, error flags, and statistics.
+ */
 struct PumpStatus {
-    PumpState state = PumpState::PUMP_AUTO;
-    bool is_active;
-    unsigned long last_switch_time;
-    unsigned long current_cycle_start;
-    int current_cycle_duration;
-    float temperature_f;
-    bool temperature_below_threshold;
-    bool flow_error;
-    unsigned long time_until_retry; // Time remaining until next retry attempt
-    unsigned long total_on_time;
-    unsigned long total_off_time;
-    unsigned long total_cycles;
-    bool pump_off_flow_detected; // Flow detected when pump should be off
+    PumpState state = PumpState::PUMP_AUTO;      ///< Current pump state
+    bool is_active;                              ///< Is pump currently running
+    unsigned long last_switch_time;              ///< Timestamp of last state change
+    unsigned long current_cycle_start;           ///< When current cycle started
+    int current_cycle_duration;                  ///< Duration of current cycle
+    float temperature_f;                         ///< Current temperature reading
+    bool temperature_below_threshold;            ///< Is temp below on threshold
+    bool flow_error;                             ///< Flow error detected flag
+    unsigned long time_until_retry;              ///< Time until next retry after error
+    unsigned long total_on_time;                 ///< Cumulative pump on time
+    unsigned long total_off_time;                ///< Cumulative pump off time
+    unsigned long total_cycles;                  ///< Number of on/off cycles
+    bool pump_off_flow_detected;                 ///< Flow detected when pump should be off
 };
 
+/**
+ * @brief Water pump controller for chicken coop
+ *
+ * Controls a water pump with automatic cycling based on temperature
+ * and flow monitoring. Features include:
+ *
+ * - Temperature-based automatic cycling
+ * - Flow error detection (pump on but no flow)
+ * - Pump-off flow detection (flow when pump should be off)
+ * - Configurable on/off times
+ * - Statistics tracking (on time, off time, cycles)
+ * - Error state with automatic retry
+ * - Buzzer alerts for flow errors
+ *
+ * Temperature Control:
+ * - Pump cycles ON when temperature drops below threshold
+ * - Pump cycles OFF when temperature rises above threshold
+ * - Configurable on/off durations for cycling
+ *
+ * Flow Monitoring:
+ * - Detects pump failure (running but no water flow)
+ * - Detects leaks/ghost flow (flow when pump is off)
+ * - Grace period after pump off to allow water to settle
+ *
+ * Error Handling:
+ * - Enters ERROR state on flow error
+ * - Automatic retry after timeout period
+ * - Manual error clearing available
+ */
 class PumpController {
 private:
-    uint8_t pumpPin;
-    PumpStatus status;
-    
+    uint8_t pumpPin;                          ///< GPIO pin for pump control
+    PumpStatus status;                        ///< Current pump status
+
     // Sensor references
-    SensorManager* primarySensor_;    // Primary sensor for temperature
-    SensorManager* flowSensor_;       // Sensor for flow detection (can be same or different)
-    
+    SensorManager* primarySensor_;    ///< Primary sensor for temperature reading
+    SensorManager* flowSensor_;       ///< Sensor for flow detection
+
     // Timing variables
-    unsigned long lastUpdateTime;
-    unsigned long cycleStartTime;
-    bool cyclingActive;  // Flag to track if cycling has started (handles time=0 case)
-    bool currentlyInOnPhase;
-    unsigned long offPhaseStartTime;
-    
+    unsigned long lastUpdateTime;            ///< Last time update() was called
+    unsigned long cycleStartTime;            ///< When current cycle phase started
+    bool cyclingActive;                      ///< Has cycling started (handles time=0 case)
+    bool currentlyInOnPhase;                 ///< Are we currently in ON phase
+    unsigned long offPhaseStartTime;         ///< When OFF phase started
+
     // Error detection
-    unsigned long lastFlowCheckTime;
-    unsigned long errorStartTime; // When error state started
-    bool waitingForRetry; // Flag to indicate we're waiting to retry after error
-    
+    unsigned long lastFlowCheckTime;          ///< Last time flow was checked
+    unsigned long errorStartTime;            ///< When error state started
+    bool waitingForRetry;                    ///< Waiting for retry after error
+
     // Pump off flow monitoring
-    bool pump_off_flow_monitoring_enabled; // Enable pump OFF flow monitoring
-    int pump_off_flow_grace_period_seconds; // Grace period after pump turns off before monitoring starts
-    unsigned long pump_turned_off_time; // Track when pump last turned off
-    bool pump_has_been_off; // Flag to track if pump was ever off (handles time=0 case)
-    bool pump_off_flow_detected; // Flag for flow detected when pump should be off
-    
-    // Private methods
+    bool pump_off_flow_monitoring_enabled;   ///< Enable pump OFF flow monitoring
+    int pump_off_flow_grace_period_seconds;  ///< Grace period after pump turns off
+    unsigned long pump_turned_off_time;      ///< Timestamp when pump last turned off
+    bool pump_has_been_off;                  ///< Has pump been off yet (handles time=0 case)
+    bool pump_off_flow_detected;             ///< Flow detected when pump should be off
+
+    // ========================================================================
+    // PRIVATE METHODS
+    // ========================================================================
+
+    /**
+     * @brief Set pump output state
+     *
+     * @param isOn true to turn pump on, false to turn off
+     */
     void setPumpState(bool isOn);
+
+    /**
+     * @brief Update pump statistics
+     *
+     * Accumulates on/off time and cycle counters.
+     */
     void updateStatistics();
+
+    /**
+     * @brief Handle automatic mode operation
+     *
+     * Manages temperature-based cycling and flow error detection.
+     *
+     * @param currentTime Current timestamp from millis()
+     */
     void handleAutoMode(unsigned long currentTime);
+
+    /**
+     * @brief Check for flow error
+     *
+     * Detects if pump is running but no water flow is detected.
+     *
+     * @return true if flow error detected
+     */
     bool checkFlowError() const;
-    void checkPumpOffFlow(unsigned long currentTime); // Check for flow when pump is OFF
+
+    /**
+     * @brief Check for flow when pump should be off
+     *
+     * Detects ghost flow or leaks when pump is off.
+     *
+     * @param currentTime Current timestamp from millis()
+     */
+    void checkPumpOffFlow(unsigned long currentTime);
     
 public:
+    /**
+     * @brief Default constructor
+     *
+     * Initializes pump controller in default state.
+     * Must call begin() before use.
+     */
     PumpController() = default;
-    
-    // Initialization
+
+    // ========================================================================
+    // INITIALIZATION
+    // ========================================================================
+
+    /**
+     * @brief Initialize pump controller
+     *
+     * Configures GPIO pin and sensor references.
+     * Primary sensor used for temperature, flow sensor for flow detection.
+     *
+     * @param primarySensor Sensor for temperature readings
+     * @param flowSensor Sensor for flow detection (can be same as primary)
+     * @param pin GPIO pin for pump control
+     */
     void begin(SensorManager* primarySensor, SensorManager* flowSensor, uint8_t pin);
-    
-    // Main update function - call this in loop()
+
+    // ========================================================================
+    // MAIN UPDATE LOOP
+    // ========================================================================
+
+    /**
+     * @brief Update pump controller state (call in loop)
+     *
+     * Handles automatic cycling, flow error detection, and statistics.
+     * Should be called every loop iteration.
+     */
     void update();
-    
-    // Control methods
+
+    // ========================================================================
+    // CONTROL METHODS
+    // ========================================================================
+
+    /**
+     * @brief Turn pump on manually
+     *
+     * Switches to PUMP_ON state regardless of temperature.
+     */
     void turnOn();
+
+    /**
+     * @brief Turn pump off manually
+     *
+     * Switches to PUMP_OFF state regardless of temperature.
+     */
     void turnOff();
+
+    /**
+     * @brief Enable or disable automatic mode
+     *
+     * In auto mode, pump cycles based on temperature thresholds.
+     *
+     * @param enabled true to enable auto mode
+     */
     void setAutoMode(bool enabled);
+
+    /**
+     * @brief Force a single pump cycle
+     *
+     * Runs one on/off cycle regardless of temperature.
+     */
     void forceCycle();
-    
-    // Status methods
+
+    // ========================================================================
+    // STATUS METHODS
+    // ========================================================================
+
+    /**
+     * @brief Get complete pump status
+     *
+     * @return Current PumpStatus structure
+     */
     PumpStatus getStatus() const { return status; }
+
+    /**
+     * @brief Check if pump is currently running
+     *
+     * @return true if pump is on
+     */
     bool isPumpOn() const { return status.is_active; }
+
+    /**
+     * @brief Get current pump state
+     *
+     * @return Current PumpState
+     */
     PumpState getState() const { return status.state; }
+
+    /**
+     * @brief Get current temperature reading
+     *
+     * @return Temperature in Fahrenheit
+     */
     float getCurrentTemperature() const { return status.temperature_f; }
+
+    /**
+     * @brief Check if flow error is detected
+     *
+     * @return true if pump has flow error
+     */
     bool hasFlowError() const { return status.flow_error; }
+
+    /**
+     * @brief Check if pump-off flow is detected
+     *
+     * @return true if flow detected when pump should be off
+     */
     bool getPumpOffFlowDetected() const { return status.pump_off_flow_detected; }
-    
+
+    /**
+     * @brief Get timestamp of current run start
+     *
+     * @return Timestamp when current run started
+     */
     unsigned long getCurrentRunStartTime() const;
-    
-    // Statistics
+
+    // ========================================================================
+    // STATISTICS
+    // ========================================================================
+
+    /**
+     * @brief Get total pump on time
+     *
+     * @return Total on time in milliseconds
+     */
     unsigned long getTotalOnTime() const { return status.total_on_time; }
+
+    /**
+     * @brief Get total pump off time
+     *
+     * @return Total off time in milliseconds
+     */
     unsigned long getTotalOffTime() const { return status.total_off_time; }
+
+    /**
+     * @brief Get total number of cycles
+     *
+     * @return Total cycle count
+     */
     unsigned long getTotalCycles() const { return status.total_cycles; }
+
+    /**
+     * @brief Get current cycle duration
+     *
+     * @return Duration of current cycle in milliseconds
+     */
     unsigned long getCurrentCycleTime() const;
+
+    /**
+     * @brief Get time until next auto cycle switch
+     *
+     * @return Milliseconds until next on/off switch
+     */
     unsigned long getTimeUntilNextSwitch() const;
+
+    /**
+     * @brief Get time until error retry
+     *
+     * @return Milliseconds until retry attempt (0 if not in error)
+     */
     unsigned long getTimeUntilRetry() const { return status.time_until_retry; }
-    
-    // Status strings
+
+    // ========================================================================
+    // STATUS STRINGS
+    // ========================================================================
+
+    /**
+     * @brief Get state as human-readable string
+     *
+     * @return String representation of current state
+     */
     String getStateString() const;
+
+    /**
+     * @brief Get status as JSON string
+     *
+     * @return JSON string containing complete pump status
+     */
     String getStatusJson() const;
-    
-    // Reset methods
+
+    // ========================================================================
+    // RESET METHODS
+    // ========================================================================
+
+    /**
+     * @brief Reset all statistics to zero
+     *
+     * Clears cumulative timing and cycle counters.
+     */
     void resetStatistics();
+
+    /**
+     * @brief Clear flow error and resume operation
+     *
+     * Resets flow error flag and allows pump to operate.
+     */
     void clearFlowError();
-    void clearPumpOffFlowDetected(); // Clear pump off flow detection flag
+
+    /**
+     * @brief Clear pump-off flow detection flag
+     *
+     * Resets the ghost flow/leak detection flag.
+     */
+    void clearPumpOffFlowDetected();
 };
 
 #endif // __PUMP_CONTROLLER_H__

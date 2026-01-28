@@ -7,132 +7,505 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-// Door state enumeration
+/**
+ * @brief Door operational states
+ *
+ * Enumeration of all possible door states during operation.
+ * States progress through opening/closing transitions with timeout protection.
+ */
 enum class DoorState {
-    IDLE,
-    OPENING,
-    OPEN,
-    CLOSING,
-    CLOSED,
-    FAULT
+    IDLE,       ///< Door is stationary and fully open or closed
+    OPENING,    ///< Door is currently opening (motor running)
+    OPEN,       ///< Door is fully open (hall sensor triggered)
+    CLOSING,    ///< Door is currently closing (motor running)
+    CLOSED,     ///< Door is fully closed (hall sensor triggered)
+    FAULT       ///< Door fault detected (timeout or sensor error)
 };
 
-// Door position enumeration
+/**
+ * @brief Door position states
+ *
+ * Physical position of the door as detected by hall sensors.
+ * Used for UI display and fault detection.
+ */
 enum class DoorPosition {
-    UNKNOWN,
-    OPEN,
-    CLOSED,
-    PARTIAL
+    UNKNOWN,    ///< Position cannot be determined
+    OPEN,       ///< Hall open sensor triggered
+    CLOSED,     ///< Hall closed sensor triggered
+    PARTIAL     ///< Neither sensor triggered (door is partially open/closed)
 };
 
+/**
+ * @brief Automatic chicken coop door controller
+ *
+ * Controls a motorized chicken coop door with automatic opening/closing
+ * based on sunrise/sunset times. Features include:
+ *
+ * - Automatic scheduling based on sunrise/sunset with configurable offsets
+ * - Hall sensor position detection (open/closed)
+ * - Timeout protection for fault detection
+ * - Manual control via switch or API
+ * - Buzzer alerts for faults
+ * - Statistics tracking (cycles, timing)
+ * - Position memory across reboots
+ * - Test mode for UI testing without hardware
+ *
+ * Motor Control:
+ * - Uses H-bridge motor driver with two direction pins
+ * - Open: OPEN_POS=HIGH, OPEN_NEG=LOW
+ * - Close: OPEN_POS=LOW, OPEN_NEG=HIGH
+ * - Stop: Both pins LOW
+ *
+ * Safety Features:
+ * - Automatic stop on hall sensor trigger
+ * - Timeout detection (configurable)
+ * - Fault state on sensor errors
+ * - Buzzer alerts on faults
+ */
 class DoorController { // NOSONAR - complexity ok
 private:
-    BuzzerController* buzzerController;
-    SunriseSunsetCalculator* sunriseSunset;
+    BuzzerController* buzzerController;     ///< Buzzer for fault alerts
+    SunriseSunsetCalculator* sunriseSunset; ///< Sunrise/sunset time calculator
 
     // State variables
-    DoorState currentState;
-    DoorPosition currentPosition;
-    unsigned long stateStartTime;
-    bool autoMode;
-    bool testMode;
-    
+    DoorState currentState;         ///< Current operational state
+    DoorPosition currentPosition;   ///< Physical door position
+    unsigned long stateStartTime;   ///< Timestamp when current state started
+    bool autoMode;                  ///< Automatic scheduling enabled
+    bool testMode;                  ///< Test mode (no hardware control)
+
     // Last movement direction for manual switch reversal
-    DoorState lastMovementDirection;
-    
+    DoorState lastMovementDirection; ///< Direction door was last moving
+
     // Manual switch debouncing
-    unsigned long lastSwitchCheck;
-    bool lastSwitchState;
-    static const int switchDebounceMs = 50;
-    
+    unsigned long lastSwitchCheck;  ///< Last time manual switch was checked
+    bool lastSwitchState;           ///< Previous state of manual switch
+    static const int switchDebounceMs = 50; ///< Debounce delay in milliseconds
+
     // Configuration
-    unsigned int openTimeoutSeconds;
-    unsigned int closeTimeoutSeconds;
-    int sunriseOffsetMinutes;
-    int sunsetOffsetMinutes;
-    
+    unsigned int openTimeoutSeconds;   ///< Maximum time to wait for open (default: 30)
+    unsigned int closeTimeoutSeconds;  ///< Maximum time to wait for close (default: 30)
+    int sunriseOffsetMinutes;         ///< Minutes after sunrise to open door
+    int sunsetOffsetMinutes;          ///< Minutes after sunset to close door
+
     // Statistics
-    unsigned long totalOpenTime;
-    unsigned long totalCloseTime;
-    unsigned long totalCycles;
-    
+    unsigned long totalOpenTime;   ///< Cumulative time spent opening
+    unsigned long totalCloseTime;  ///< Cumulative time spent closing
+    unsigned long totalCycles;     ///< Number of complete open/close cycles
+
     // Static instance for ISR access
-    static DoorController* instance;
-    
-    // Internal methods
+    static DoorController* instance; ///< Static pointer for interrupt handlers
+
+    // ========================================================================
+    // INTERNAL METHODS
+    // ========================================================================
+
+    /**
+     * @brief Change door state and update timing
+     *
+     * Updates current state, records timestamp, and logs the transition.
+     *
+     * @param newState New DoorState to transition to
+     */
     void setState(DoorState newState);
+
+    /**
+     * @brief Set motor output pins for direction control
+     *
+     * Controls H-bridge motor driver pins.
+     *
+     * @param openPositive State for OPEN_POS pin
+     * @param openNegative State for OPEN_NEG pin
+     */
     void setMotorOutputs(bool openPositive, bool openNegative);
+
+    /**
+     * @brief Update door position based on hall sensors
+     *
+     * Reads hall sensor pins and updates currentPosition.
+     * Triggers buzzer alert if both sensors active (fault condition).
+     */
     void updatePosition();
+
+    /**
+     * @brief Check and debounce manual switch input
+     *
+     * Reads manual switch with debouncing and triggers open/close/stop.
+     * Implements direction reversal logic for momentary switch.
+     */
     void checkManualSwitch();
+
+    /**
+     * @brief Check for operation timeout and set fault if needed
+     *
+     * If door has been opening/closing too long, enters FAULT state.
+     */
     void checkTimeout();
+
+    /**
+     * @brief Check if door should operate based on schedule
+     *
+     * Compares current time with sunrise/sunset plus offsets.
+     * Only triggers if auto mode is enabled.
+     */
     void checkSchedule();
+
+    /**
+     * @brief Check if door should open by schedule
+     *
+     * @return true if current time is past sunrise + offset
+     */
     bool shouldOpenBySchedule() const;
+
+    /**
+     * @brief Check if door should close by schedule
+     *
+     * @return true if current time is past sunset + offset
+     */
     bool shouldCloseBySchedule() const;
+
+    /**
+     * @brief Get today's sunrise time as time_t
+     *
+     * @return Sunrise timestamp for today
+     */
     time_t getTodaySunrise() const;
+
+    /**
+     * @brief Get today's sunset time as time_t
+     *
+     * @return Sunset timestamp for today
+     */
     time_t getTodaySunset() const;
-    
-    // ISR-safe methods called from interrupt context
+
+    // ========================================================================
+    // ISR-SAFE METHODS
+    // ========================================================================
+
+    /**
+     * @brief Handle hall open sensor interrupt
+     *
+     * Called from ISR when hall open sensor triggers.
+     * Stops motor and sets position to OPEN.
+     */
     void handleHallOpenISR();
+
+    /**
+     * @brief Handle hall closed sensor interrupt
+     *
+     * Called from ISR when hall closed sensor triggers.
+     * Stops motor and sets position to CLOSED.
+     */
     void handleHallClosedISR();
 
 public:
+    /**
+     * @brief Default constructor
+     *
+     * Initializes door controller in default state.
+     * Must call begin() before use.
+     */
     DoorController();
-    
-    // Initialization
+
+    // ========================================================================
+    // INITIALIZATION
+    // ========================================================================
+
+    /**
+     * @brief Initialize door controller
+     *
+     * Configures GPIO pins and sets up interrupt handlers.
+     * Stores references to buzzer and sunrise/sunset calculator.
+     *
+     * @param buzzerController Pointer to buzzer controller for alerts
+     * @param sunriseSunset Pointer to sunrise/sunset calculator
+     */
     void begin(BuzzerController* buzzerController, SunriseSunsetCalculator* sunriseSunset);
-    
-    // Main update loop - call frequently (100ms recommended)
+
+    // ========================================================================
+    // MAIN UPDATE LOOP
+    // ========================================================================
+
+    /**
+     * @brief Update door controller state (call frequently)
+     *
+     * Handles all door operations including:
+     * - Manual switch checking
+     * - Timeout detection
+     * - Schedule checking
+     * - Position updates
+     *
+     * Recommended call interval: 100ms
+     */
     void update();
-    
-    // Manual control
+
+    // ========================================================================
+    // MANUAL CONTROL
+    // ========================================================================
+
+    /**
+     * @brief Start opening the door
+     *
+     * Activates motor to open door. Stops when hall open sensor triggers.
+     */
     void open();
+
+    /**
+     * @brief Start closing the door
+     *
+     * Activates motor to close door. Stops when hall closed sensor triggers.
+     */
     void close();
+
+    /**
+     * @brief Stop door movement
+     *
+     * Immediately stops the motor. Door remains in current position.
+     */
     void stop();
-    
-    // Automatic mode control
+
+    // ========================================================================
+    // AUTOMATIC MODE CONTROL
+    // ========================================================================
+
+    /**
+     * @brief Enable or disable automatic mode
+     *
+     * When enabled, door automatically opens/closes based on schedule.
+     *
+     * @param enabled true to enable auto mode, false to disable
+     */
     void setAutoMode(bool enabled);
+
+    /**
+     * @brief Check if automatic mode is enabled
+     *
+     * @return true if auto mode is enabled
+     */
     bool isAutoMode() const;
-    
-    // Test mode for UI testing without hardware
+
+    // ========================================================================
+    // TEST MODE
+    // ========================================================================
+
+    /**
+     * @brief Enable or disable test mode
+     *
+     * Test mode allows UI testing without hardware.
+     * Motor outputs are not activated in test mode.
+     *
+     * @param enabled true to enable test mode
+     */
     void setTestMode(bool enabled);
+
+    /**
+     * @brief Check if test mode is enabled
+     *
+     * @return true if test mode is enabled
+     */
     bool isTestMode() const;
-    
-    // State getters
+
+    // ========================================================================
+    // STATE GETTERS
+    // ========================================================================
+
+    /**
+     * @brief Get current door state
+     *
+     * @return Current DoorState
+     */
     DoorState getState() const;
+
+    /**
+     * @brief Get current door position
+     *
+     * @return Current DoorPosition
+     */
     DoorPosition getPosition() const;
+
+    /**
+     * @brief Get state as human-readable string
+     *
+     * @return String representation of current state
+     */
     String getStateString() const;
+
+    /**
+     * @brief Get position as human-readable string
+     *
+     * @return String representation of current position
+     */
     String getPositionString() const;
-    
-    // Progress calculation for UI
+
+    /**
+     * @brief Get door operation progress percentage
+     *
+     * Calculates progress based on time in current state vs timeout.
+     * Useful for UI progress bars.
+     *
+     * @return Progress percentage (0-100) or 0 if not moving
+     */
     int getProgressPercentage() const;
-    
-    // Configuration getters/setters
+
+    // ========================================================================
+    // CONFIGURATION GETTERS/SETTERS
+    // ========================================================================
+
+    /**
+     * @brief Get door open timeout
+     *
+     * @return Timeout in seconds
+     */
     unsigned int getOpenTimeoutSeconds() const;
+
+    /**
+     * @brief Set door open timeout
+     *
+     * @param seconds Timeout in seconds
+     */
     void setOpenTimeoutSeconds(unsigned int seconds);
+
+    /**
+     * @brief Get door close timeout
+     *
+     * @return Timeout in seconds
+     */
     unsigned int getCloseTimeoutSeconds() const;
+
+    /**
+     * @brief Set door close timeout
+     *
+     * @param seconds Timeout in seconds
+     */
     void setCloseTimeoutSeconds(unsigned int seconds);
+
+    /**
+     * @brief Get sunrise offset for door opening
+     *
+     * @return Offset in minutes (positive = after sunrise)
+     */
     int getSunriseOffsetMinutes() const;
+
+    /**
+     * @brief Set sunrise offset for door opening
+     *
+     * @param minutes Offset in minutes (positive = after sunrise)
+     */
     void setSunriseOffsetMinutes(int minutes);
+
+    /**
+     * @brief Get sunset offset for door closing
+     *
+     * @return Offset in minutes (positive = after sunset)
+     */
     int getSunsetOffsetMinutes() const;
+
+    /**
+     * @brief Set sunset offset for door closing
+     *
+     * @param minutes Offset in minutes (positive = after sunset)
+     */
     void setSunsetOffsetMinutes(int minutes);
-    
-    // Statistics
+
+    // ========================================================================
+    // STATISTICS
+    // ========================================================================
+
+    /**
+     * @brief Get total time spent opening door
+     *
+     * @return Total opening time in milliseconds
+     */
     unsigned long getTotalOpenTime() const;
+
+    /**
+     * @brief Get total time spent closing door
+     *
+     * @return Total closing time in milliseconds
+     */
     unsigned long getTotalCloseTime() const;
+
+    /**
+     * @brief Get total number of open/close cycles
+     *
+     * @return Total cycle count
+     */
     unsigned long getTotalCycles() const;
+
+    /**
+     * @brief Reset all statistics to zero
+     *
+     * Clears cumulative timing and cycle counters.
+     */
     void resetStatistics();
-    
-    // Status for API
+
+    // ========================================================================
+    // STATUS FOR API
+    // ========================================================================
+
+    /**
+     * @brief Serialize door status to JSON
+     *
+     * Populates JsonObject with current door state, position,
+     * configuration, and statistics.
+     *
+     * @param json JsonObject to populate
+     */
     void toJson(JsonObject& json) const;
+
+    /**
+     * @brief Get next scheduled action as string
+     *
+     * Returns human-readable description of next automatic action.
+     *
+     * @return String describing next scheduled action
+     */
     String getNextScheduledAction() const;
-    
-    // Fault handling
+
+    // ========================================================================
+    // FAULT HANDLING
+    // ========================================================================
+
+    /**
+     * @brief Check if door is in fault state
+     *
+     * @return true if current state is FAULT
+     */
     bool hasFault() const;
+
+    /**
+     * @brief Clear fault state and return to IDLE
+     *
+     * Resets door to normal operation after fault.
+     * Does not clear hardware sensor issues.
+     */
     void clearFault();
+
+    /**
+     * @brief Check if fault is hardware-related
+     *
+     * Hardware faults indicate sensor issues vs timeout faults.
+     *
+     * @return true if fault is due to hardware/sensor issue
+     */
     bool isHardwareFault() const;
-    
-    // Position memory
+
+    // ========================================================================
+    // POSITION MEMORY
+    // ========================================================================
+
+    /**
+     * @brief Save current position to persistent storage
+     *
+     * Stores door position for recovery after reboot.
+     */
     void notifyPosition() const;
+
+    /**
+     * @brief Restore saved position from persistent storage
+     *
+     * Recovers door position after system restart.
+     */
     void restorePosition();
 };
 

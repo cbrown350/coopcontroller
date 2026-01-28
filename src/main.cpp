@@ -1,3 +1,48 @@
+/**
+ * @file main.cpp
+ * @brief Main application entry point for ESP32 Chicken Coop Controller
+ *
+ * This file contains the setup() and loop() functions for the chicken coop
+ * controller system. All initialization and main loop logic is contained
+ * within setup() to use a single FreeRTOS task.
+ *
+ * System Components:
+ * - WiFi Controller: Manages network connectivity
+ * - Sensor Manager: Handles temperature and water flow sensors
+ * - Pump Controller: Controls water pump with temperature-based cycling
+ * - Light Controller: PWM light control with smooth fading
+ * - Door Controller: Automatic coop door based on sunrise/sunset
+ * - Buzzer Controller: Audible alerts for system conditions
+ * - Web Server: REST API and web UI
+ * - Settings Manager: Persistent configuration storage
+ * - Logger: System logging with multiple levels
+ * - Sunrise/Sunset: Astronomical calculations for scheduling
+ *
+ * Main Loop Responsibilities:
+ * - Feed task watchdog timer
+ * - Update all controllers at appropriate intervals
+ * - Monitor sensor readings and trigger alerts
+ * - Log system status periodically
+ * - Handle restart requests
+ * - Monitor memory and trigger low-memory alerts
+ *
+ * Timing Intervals:
+ * - Sensor update: Every 10 seconds (configurable)
+ * - Pump update: Every 1 second
+ * - Door update: Every 100ms
+ * - Light update: Every 100ms
+ * - Sunrise/Sunset: Every 1 minute (recalculates daily)
+ * - Web server: Every loop iteration
+ * - Status logging: Every 10 seconds
+ * - Temperature logging: Every 1 minute
+ *
+ * Watchdog:
+ * - Task watchdog timer initialized with configurable timeout
+ * - Watchdog fed at start of each loop iteration
+ * - Logs watchdog status every 1000 iterations (verbose mode)
+ * - System reset on watchdog timeout (indicates hang)
+ */
+
 #include <Arduino.h>
 #include "time.h"
 #include <stdint.h>
@@ -17,6 +62,41 @@
 #include "WifiController.h"
 
 
+/**
+ * @brief Main setup function - initializes all system components
+ *
+ * This function runs once on startup and contains the main application loop.
+ * All initialization and main loop logic is contained here to use a single
+ * FreeRTOS task on the ESP32.
+ *
+ * Initialization Sequence:
+ * 1. Initialize HAL (hardware abstraction layer)
+ * 2. Initialize Logger and load settings
+ * 3. Log system startup and firmware version
+ * 4. Check reset reason and log any watchdog resets
+ * 5. Initialize all controllers
+ * 6. Configure sunrise/sunset calculator
+ * 7. Initialize task watchdog timer
+ * 8. Start NTP time synchronization
+ * 9. Start web server
+ * 10. Enter main loop
+ *
+ * Main Loop:
+ * - Feed watchdog timer
+ * - Update WiFi controller (every iteration)
+ * - Update sensors (every 10 seconds)
+ * - Update pump controller (every 1 second)
+ * - Update door controller (every 100ms)
+ * - Update light controller (every 100ms)
+ * - Update sunrise/sunset (every minute)
+ * - Monitor for sensor errors and trigger alerts
+ * - Monitor pump flow errors and trigger alerts
+ * - Monitor memory usage and trigger alerts
+ * - Log system status (every 10 seconds)
+ * - Handle restart requests
+ *
+ * @note This function never returns - contains infinite while loop
+ */
 void setup() // NOSONAR - complexity ok
 {
     Serial.begin(SERIAL_BAUD);
