@@ -714,7 +714,7 @@ TEST_F(LightControllerTest, FadeInIncrementsFadeInTime) {
     mockHAL.millisValue = 1000 + fadeDuration + 1000;
     lightController->update();
     
-    EXPECT_GT(lightController->getTotalFadeInTime(), 0);
+    EXPECT_GT(lightController->getTotalFadeInTime(), 0UL);
 }
 
 TEST_F(LightControllerTest, FadeOutIncrementsFadeOutTime) {
@@ -728,7 +728,7 @@ TEST_F(LightControllerTest, FadeOutIncrementsFadeOutTime) {
     mockHAL.millisValue = 1000 + fadeDuration + 1000;
     lightController->update();
     
-    EXPECT_GT(lightController->getTotalFadeOutTime(), 0);
+    EXPECT_GT(lightController->getTotalFadeOutTime(), 0UL);
 }
 
 TEST_F(LightControllerTest, StateChangeToOnIncrementsCycles) {
@@ -1125,9 +1125,9 @@ TEST_F(LightControllerTest, StatisticsAccumulateCorrectly) {
         lightController->update();
     }
     
-    EXPECT_EQ(lightController->getTotalCycles(), 3);
-    EXPECT_GT(lightController->getTotalFadeInTime(), 0);
-    EXPECT_GT(lightController->getTotalFadeOutTime(), 0);
+    EXPECT_EQ(lightController->getTotalCycles(), 3UL);
+    EXPECT_GT(lightController->getTotalFadeInTime(), 0UL);
+    EXPECT_GT(lightController->getTotalFadeOutTime(), 0UL);
 }
 
 TEST_F(LightControllerTest, MultipleFadeOperations) {
