@@ -932,6 +932,9 @@ Features organized by priority and implementation status.
 
 ### Critical Priority - Core Functionality & Security
 
+#### PR Problems Found During Review
+- Github PR #2 has a number of problems that need to be fixed: "Refactor for unit test #2"
+
 #### Web Assets Security Refactoring
 - Move web assets into separate subdirectory within LittleFS
 - Adjust web server root path to serve from the new subdirectory
