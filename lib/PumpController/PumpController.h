@@ -42,6 +42,7 @@ private:
     // Timing variables
     unsigned long lastUpdateTime;
     unsigned long cycleStartTime;
+    bool cyclingActive;  // Flag to track if cycling has started (handles time=0 case)
     bool currentlyInOnPhase;
     unsigned long offPhaseStartTime;
     
@@ -54,6 +55,7 @@ private:
     bool pump_off_flow_monitoring_enabled; // Enable pump OFF flow monitoring
     int pump_off_flow_grace_period_seconds; // Grace period after pump turns off before monitoring starts
     unsigned long pump_turned_off_time; // Track when pump last turned off
+    bool pump_has_been_off; // Flag to track if pump was ever off (handles time=0 case)
     bool pump_off_flow_detected; // Flag for flow detected when pump should be off
     
     // Private methods

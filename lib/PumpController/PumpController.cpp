@@ -3,6 +3,8 @@
 #include "Logger.h"
 #include <Arduino.h>
 #include <stdint.h>
+#include <algorithm>
+#include <climits>
 
 
 void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSensor, uint8_t pin) {
@@ -19,6 +21,7 @@ void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSens
     status.temperature_f = 0.0f;
     status.temperature_below_threshold = false;
     status.flow_error = false;
+    status.time_until_retry = 0;
     status.total_on_time = 0;
     status.total_off_time = 0;
     status.total_cycles = 0;
@@ -26,6 +29,7 @@ void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSens
     // Initialize timing variables
     lastUpdateTime = 0;
     cycleStartTime = 0;
+    cyclingActive = false;
     currentlyInOnPhase = false;
     offPhaseStartTime = 0;
     
@@ -37,7 +41,10 @@ void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSens
     // Initialize pump off flow monitoring
     pump_off_flow_monitoring_enabled = settingsManager.getPumpOffFlowMonitoringEnabled();
     pump_off_flow_grace_period_seconds = settingsManager.getPumpOffFlowGracePeriodSeconds();
-    pump_turned_off_time = 0;
+    // Set pump_turned_off_time to now since pump starts in OFF state
+    // This allows pump-off flow monitoring to work from initialization
+    pump_turned_off_time = millis();
+    pump_has_been_off = true; // Pump starts in OFF state
     pump_off_flow_detected = false;
     status.pump_off_flow_detected = false;
 
@@ -113,7 +120,20 @@ void PumpController::update() {
     
     // Check for pump off flow monitoring
     checkPumpOffFlow(currentTime);
-    
+
+    // Update time until retry
+    if (status.flow_error && waitingForRetry && errorStartTime > 0) {
+        unsigned long retryDelayMs = (unsigned long)settingsManager.getWaterFlowErrorTimeoutSeconds() * 1000UL;
+        unsigned long timeSinceError = currentTime - errorStartTime;
+        if (timeSinceError < retryDelayMs) {
+            status.time_until_retry = retryDelayMs - timeSinceError;
+        } else {
+            status.time_until_retry = 0;
+        }
+    } else {
+        status.time_until_retry = 0;
+    }
+
     lastUpdateTime = currentTime;
 }
 
@@ -131,14 +151,14 @@ bool PumpController::checkFlowError() const {
     if (flowSensor_->getSensor1Type() == SensorType::WATER_METER) {
         hasWaterMeter = true;
         SensorData sensor1Data = flowSensor_->getSensor1Data();
-        lastPulseTime = max(lastPulseTime, sensor1Data.last_pulse_time.load());
+        lastPulseTime = std::max(lastPulseTime, sensor1Data.last_pulse_time.load());
     }
     
     // Check sensor 2
     if (flowSensor_->getSensor2Type() == SensorType::WATER_METER) {
         hasWaterMeter = true;
         SensorData sensor2Data = flowSensor_->getSensor2Data();
-        lastPulseTime = max(lastPulseTime, sensor2Data.last_pulse_time.load());
+        lastPulseTime = std::max(lastPulseTime, sensor2Data.last_pulse_time.load());
     }
     
     if (!hasWaterMeter) {
@@ -149,10 +169,12 @@ bool PumpController::checkFlowError() const {
     if (!status.is_active) {
         return false;
     }
-    
-    unsigned long pumpRunStart = getCurrentRunStartTime();
+
+    unsigned long pumpRunStart = status.current_cycle_start;
     unsigned long currentTimeMs = millis();
-    unsigned long pumpRunTime = (pumpRunStart > 0) ? (currentTimeMs - pumpRunStart) : 0;
+    // Calculate pump run time - we know pump is active from check above
+    // Handle the case where pump started at time 0
+    unsigned long pumpRunTime = currentTimeMs - pumpRunStart;
     int timeoutSeconds = settingsManager.getWaterFlowErrorTimeoutSeconds();
     unsigned long timeoutMs = (unsigned long)timeoutSeconds * 1000UL;
     
@@ -177,36 +199,38 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
                 setPumpState(false);
             }
             cycleStartTime = 0; // Reset cycle
+            cyclingActive = false;
             currentlyInOnPhase = false;
         }
         return;
     }
     float onThreshold = settingsManager.getTempThresholdOnF();
     float offThreshold = settingsManager.getTempThresholdOffF();
-    
+
     // If temperature is between ON and OFF thresholds, maintain current state (hysteresis)
     if (status.temperature_f < onThreshold) {
         status.temperature_below_threshold = true;
     }
-    
+
     // Check if temperature is below ON threshold to start cycling
     if (status.temperature_below_threshold) {
         // Temperature is below threshold - run cycling
-        if (cycleStartTime == 0) {
+        if (!cyclingActive) {
             // Start new cycle
             cycleStartTime = currentTime;
+            cyclingActive = true;
             currentlyInOnPhase = true;
             setPumpState(true);
             clearFlowError();
             status.total_cycles++;
-            
+
             logger.logfInfo("Temperature below ON threshold (%.1f°F < %.1f°F), starting pump cycle - ON phase", status.temperature_f, onThreshold);
         } else {
             // Check if we need to switch phases
             unsigned long cycleElapsed = currentTime - cycleStartTime;
-            int onTime = settingsManager.getPumpOnTimeSeconds() * 1000;
-            int offTime = settingsManager.getPumpOffTimeSeconds() * 1000;
-            
+            unsigned long onTime = settingsManager.getPumpOnTimeSeconds() * 1000UL;
+            unsigned long offTime = settingsManager.getPumpOffTimeSeconds() * 1000UL;
+
             if (currentlyInOnPhase) {
                 // In ON phase - check if it's time to switch to OFF
                 unsigned long timeUntilOff = onTime - cycleElapsed;
@@ -215,7 +239,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
                     currentlyInOnPhase = false;
                     offPhaseStartTime = currentTime;
                     setPumpState(false);
-                    logger.logfInfo("Pump cycle: switching to OFF phase for %d seconds", settingsManager.getPumpOffTimeSeconds());
+                    logger.logfInfo("Pump cycle: switching to OFF phase for %u seconds", settingsManager.getPumpOffTimeSeconds());
                 } else if (cycleElapsed % 10000 < 1000) {
                     // Log countdown every 10 seconds in debug mode
                     logger.logfDebug("Pump ON phase: %d seconds remaining until OFF", (timeUntilOff + 500) / 1000);
@@ -240,10 +264,11 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
     } 
     if (status.temperature_f > offThreshold) {
         // Temperature is above OFF threshold - turn off pump and reset cycle
-        if (status.is_active || cycleStartTime != 0) {
+        if (status.is_active || cyclingActive) {
             setPumpState(false);
             // no clearFlowError(); // don't clear, keep flow error flag so it's known it happened
             cycleStartTime = 0; // Reset cycle
+            cyclingActive = false;
             currentlyInOnPhase = false;
             logger.logfInfo("Temperature above OFF threshold (%.1f°F > %.1f°F), pump turned off and cycle reset", status.temperature_f, offThreshold);
         }
@@ -256,6 +281,10 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
         errorStartTime = currentTime;
         waitingForRetry = true;
         setPumpState(false); // Turn off pump but keep AUTO state
+        // Reset cycling state so it can restart fresh after error is cleared
+        cyclingActive = false;
+        currentlyInOnPhase = false;
+        cycleStartTime = 0;
         logger.logWarning("Flow error detected during pump operation, pump turned off but staying in AUTO state");
     }
 }
@@ -284,17 +313,20 @@ void PumpController::setPumpState(bool isOn) {
             logger.logfDebug("Pump turned OFF - cycle duration: %lu ms", (unsigned long)status.current_cycle_duration);
             // Record when pump turned off for flow monitoring
             pump_turned_off_time = millis();
+            pump_has_been_off = true;
         }
     }
 }
 
 void PumpController::updateStatistics() {
-    if (status.is_active && status.current_cycle_start > 0) {
-        // Update total on time
-        status.total_on_time = millis() - status.current_cycle_start;
-    } else if (!status.is_active && offPhaseStartTime > 0) {
-        // Update total off time when in off phase
-        status.total_off_time = millis() - offPhaseStartTime;
+    unsigned long currentTime = millis();
+    unsigned long elapsed = currentTime - lastUpdateTime;
+
+    // Accumulate time based on current pump state
+    if (status.is_active) {
+        status.total_on_time += elapsed;
+    } else {
+        status.total_off_time += elapsed;
     }
 }
 
@@ -306,6 +338,7 @@ void PumpController::turnOn() {
 void PumpController::turnOff() {
     status.state = PumpState::PUMP_OFF;
     cycleStartTime = 0; // Reset any auto cycle
+    cyclingActive = false;
     currentlyInOnPhase = false;
     setPumpState(false); // Force pump off immediately
     logger.logInfo("Pump set to manual OFF mode");
@@ -315,9 +348,11 @@ void PumpController::setAutoMode(bool enabled) {
     if (enabled) {
         status.state = PumpState::PUMP_AUTO;
         cycleStartTime = 0; // Reset cycle to start fresh
+        cyclingActive = false;
         logger.logInfo("Pump set to AUTO mode");
     } else {
         status.state = PumpState::PUMP_OFF;
+        cyclingActive = false;
         setPumpState(false);
         logger.logInfo("Pump AUTO mode disabled");
     }
@@ -330,33 +365,34 @@ void PumpController::setAutoMode(bool enabled) {
 void PumpController::forceCycle() {
     if (status.state == PumpState::PUMP_AUTO) {
         cycleStartTime = 0; // Reset to start new cycle immediately
+        cyclingActive = false;
         logger.logInfo("Pump cycle forced to restart");
     }
 }
 
 unsigned long PumpController::getCurrentRunStartTime() const {
-    if (status.is_active && status.current_cycle_start > 0) {
+    if (status.is_active) {
         return status.current_cycle_start;
     }
     return 0;
 }
 
 unsigned long PumpController::getCurrentCycleTime() const {
-    if (status.current_cycle_start > 0) {
+    if (status.is_active) {
         return millis() - status.current_cycle_start;
     }
     return 0;
 }
 
 unsigned long PumpController::getTimeUntilNextSwitch() const {
-    if (status.state != PumpState::PUMP_AUTO || cycleStartTime == 0) {
+    if (status.state != PumpState::PUMP_AUTO || !cyclingActive) {
         return 0;
     }
     
     unsigned long currentTime = millis();
     unsigned long cycleElapsed = currentTime - cycleStartTime;
-    int onTime = settingsManager.getPumpOnTimeSeconds() * 1000;
-    int offTime = settingsManager.getPumpOffTimeSeconds() * 1000;
+    unsigned long onTime = settingsManager.getPumpOnTimeSeconds() * 1000UL;
+    unsigned long offTime = settingsManager.getPumpOffTimeSeconds() * 1000UL;
     
     if (currentlyInOnPhase) {
         return (onTime - cycleElapsed) > 0 ? (onTime - cycleElapsed) : 0;
@@ -404,6 +440,7 @@ String PumpController::getStatusJson() const {
 
 void PumpController::resetStatistics() {
     status.total_on_time = 0;
+    status.total_off_time = 0;
     status.total_cycles = 0;
     status.current_cycle_start = 0;
     status.current_cycle_duration = 0;
@@ -434,8 +471,8 @@ void PumpController::checkPumpOffFlow(unsigned long currentTime) {
         return;
     }
     
-    // Check if grace period has elapsed
-    if (pump_turned_off_time == 0) {
+    // Check if pump has been off (handles time=0 case)
+    if (!pump_has_been_off) {
         return; // Pump hasn't turned off yet
     }
     

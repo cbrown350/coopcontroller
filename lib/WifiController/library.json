@@ -3,6 +3,5 @@
   "version": "1.0.0",
   "description": "WiFi connection management with AP fallback",
   "dependencies": {
-    "bblanchon/ArduinoJson": "^7.4.2"
   }
 }

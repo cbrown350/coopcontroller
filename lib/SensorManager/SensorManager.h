@@ -97,6 +97,9 @@ struct SensorData {  // NOSONAR - shouldn't warn about destructor since it's def
 };
 
 class SensorManager {
+public:
+    virtual ~SensorManager() = default;
+
 private:
     // OneWire and DallasTemperature instances
     uint8_t sensorPin1;
@@ -125,8 +128,7 @@ private:
     
 public:
     SensorManager();
-    ~SensorManager() = default;
-    
+
     // Initialization
     void begin(uint8_t sensorPin1, uint8_t sensorPin2 = 0);
     
@@ -134,49 +136,49 @@ public:
     void update();
     
     // Get sensor data
-    SensorData getSensor1Data() const { return sensor1; }
-    SensorData getSensor2Data() const { return sensor2; }
-    
+    virtual SensorData getSensor1Data() const { return sensor1; }
+    virtual SensorData getSensor2Data() const { return sensor2; }
+
     // Get specific values
-    float getTemperature1F() const { 
+    virtual float getTemperature1F() const {
         // Only return temperature if this is a Dallas sensor
         if (sensor1.type != SensorType::DALLAS_TEMP) {
             return NAN;  // Water meters don't have temperature
         }
-        
+
         // Check if sensor is actually detected and connected
         if (!sensor1.was_detected || !sensor1.is_connected) {
             return NAN;  // Sensor not available
         }
-        
-        return sensor1.temperature_f; 
+
+        return sensor1.temperature_f;
     }
-    float getTemperature2F() const { 
+    virtual float getTemperature2F() const {
         // Only return temperature if this is a Dallas sensor
         if (sensor2.type != SensorType::DALLAS_TEMP) {
             return NAN;  // Water meters don't have temperature
         }
-        
+
         // Check if sensor is actually detected and connected
         if (!sensor2.was_detected || !sensor2.is_connected) {
             return NAN;  // Sensor not available
         }
-        
-        return sensor2.temperature_f; 
+
+        return sensor2.temperature_f;
     }
-    bool isSensor1Connected() const { return sensor1.is_connected; }
-    bool isSensor2Connected() const { return sensor2.is_connected; }
-    SensorType getSensor1Type() const { return sensor1.type; }
-    SensorType getSensor2Type() const { return sensor2.type; }
-    
+    virtual bool isSensor1Connected() const { return sensor1.is_connected; }
+    virtual bool isSensor2Connected() const { return sensor2.is_connected; }
+    virtual SensorType getSensor1Type() const { return sensor1.type; }
+    virtual SensorType getSensor2Type() const { return sensor2.type; }
+
     // Detection state methods
-    bool isSensor1Detected() const { return sensor1.was_detected; }
-    bool isSensor2Detected() const { return sensor2.was_detected; }
-    
+    virtual bool isSensor1Detected() const { return sensor1.was_detected; }
+    virtual bool isSensor2Detected() const { return sensor2.was_detected; }
+
     // Water meter specific
-    float getFlowRate1() const { return sensor1.flow_rate; }
-    float getFlowRate2() const { return sensor2.flow_rate; }
-    unsigned long getPulseCount1() const { return sensor1.pulse_count; }
+    virtual float getFlowRate1() const { return sensor1.flow_rate; }
+    virtual float getFlowRate2() const { return sensor2.flow_rate; }
+    virtual unsigned long getPulseCount1() const { return sensor1.pulse_count; }
     unsigned long getPulseCount2() const { return sensor2.pulse_count; }
     
     // Utility methods

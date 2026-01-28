@@ -27,3 +27,5 @@ logs
 settings.local.json
 
 docs/temp_*.md
+.cache
+tmp/

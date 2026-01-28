@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Sunrise/sunset calculations with timezone support",
   "dependencies": {
-    "jpb10/SolarCalculator": "^2.0.2",
-    "bblanchon/ArduinoJson": "^7.4.2"
+    "jpb10/SolarCalculator": "^2.0.2"
   }
 }

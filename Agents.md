@@ -39,13 +39,32 @@
 The project uses Platform.io for firmware development and features a modern SolidJS web interface with Tailwind CSS styling. All settings are configurable through the web UI and persisted in LittleFS storage.
 
 **Implementation Status:**
+
 - Phase 3 (Hardware I/O): 100% complete
 - Phase 3.5 (Critical Refactoring): 100% complete - HAL refactoring complete, all ESP32-specific functions abstracted
 - Phase 3.5a (Sunrise/Sunset Integration): 100% complete with accurate UTC to local time conversion
 - Phase 3.5b (Light Control with Web UI): 100% complete
-- Core features: Sensors, Pump, Light, WiFi controllers fully implemented with complete web UI
+- Phase 3.5c (Desktop Unit Testing): 100% complete - All 452 desktop unit tests passing, all 10 core components covered
+- Core features: Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented
 - Current build: RAM 17.2% (56,436 bytes), Flash 82.5% (1,081,881 bytes)
-- HAL refactoring complete: Desktop unit testing now possible without ESP32 hardware
+- HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake
+- Actual functionality hasn't been checked for correctness
+
+**Current Test Coverage (January 2026):**
+
+- **Desktop Unit Tests:** 452/452 tests passing (100% pass rate) - 10 components covered:
+  - BuzzerController (3 tests)
+  - CoopControllerWebServer (15 tests)
+  - DoorController (59 tests)
+  - LightController (95 tests)
+  - Logger (12 tests)
+  - PumpController (77 tests)
+  - SensorManager (7 tests)
+  - SettingsManager (83 tests)
+  - SunriseSunset (35 tests)
+  - WifiController (66 tests)
+- **Embedded Unit Tests:** 1/1 passing - Logger singleton pattern test
+- **Test Infrastructure:** Complete mocking framework with MockHAL, MockSensorManager, MockBuzzerController
 
 **Key References:**
 - ESP32 pin functions defined in [`platformio.ini`](platformio.ini:45)
@@ -1146,6 +1165,16 @@ Features organized by priority and implementation status.
 - Test on various mobile screen sizes
 - Improve responsive breakpoints in Tailwind config
 
+#### Floating UI Elements for Settings Page
+- **Floating Notifications for Settings Changes** - Notifications when changes are made should float so they're visible wherever the user has scrolled on the screen (not fixed in one location under tabs)
+- **Floating Save Settings Button** - The save settings button should float so it's easy to click from anywhere on the page
+- **Floating Unsaved Changes Indicator** - A similarly floating notification that stays visible if there are unsaved settings changes, alerting the user that changes need to be saved
+- Use CSS fixed positioning with appropriate z-index to ensure visibility above other page elements
+- Position in bottom-right or bottom-left corner of viewport for easy access
+- Ensure floating elements don't obscure critical content or controls
+- Add smooth transitions for showing/hiding floating elements
+- Maintain visibility across all screen sizes (mobile, tablet, desktop)
+
 #### Historical Data Visualization
 - Add graphs showing past week of data (with 24-hour detailed view)
 - Temperature trends from both sensors
@@ -1869,6 +1898,100 @@ TEST_F(PumpControllerTest, TurnsOnWhenTemperatureBelowThreshold) {
     // Test implementation
 }
 ```
+
+### Desktop Unit Testing with ArduinoFake
+
+**CRITICAL REQUIREMENTS for ArduinoFake Mock Setup Order:**
+
+When writing desktop unit tests that use ArduinoFake to mock Arduino functions, the mock setup order is **critical** to prevent segmentation faults and runtime crashes. All tests MUST follow this exact pattern in their `SetUp()` method:
+
+**1. Mock Setup Order (MUST follow this sequence):**
+```cpp
+void SetUp() override {
+    // STEP 1: Create HAL mock first
+    mockHal = new MockHAL();
+
+    // STEP 2: Reset ArduinoFake
+    ArduinoFakeReset();
+
+    // STEP 3: Setup all Arduino function mocks BEFORE any component initialization
+    When(Method(ArduinoFake(), millis)).AlwaysDo([this]() { return currentMillis; });
+    When(Method(ArduinoFake(), micros)).AlwaysReturn(1000000);
+    When(Method(ArduinoFake(), delay)).AlwaysReturn();
+    When(Method(ArduinoFake(), delayMicroseconds)).AlwaysReturn();
+    When(Method(ArduinoFake(), pinMode)).AlwaysReturn();
+    When(Method(ArduinoFake(), digitalWrite)).AlwaysDo([this](uint8_t pin, uint8_t value) {
+        pinStates[pin] = value;
+    });
+    When(Method(ArduinoFake(), digitalRead)).AlwaysDo([this](uint8_t pin) -> int {
+        return pinStates[pin];
+    });
+
+    // STEP 4: CRITICAL - Mock interrupt functions to prevent segmentation faults
+    // ArduinoFake will cause Program error code 3221225477 (segfault) if these are not mocked
+    When(OverloadedMethod(ArduinoFake(), attachInterrupt, void(uint8_t, void(*)(), int))).AlwaysReturn();
+    When(Method(ArduinoFake(), detachInterrupt)).AlwaysReturn();
+
+    // STEP 5: Initialize Logger AFTER all Arduino function mocks are set up
+    // Logger instantiation may call millis() or other Arduino functions
+    Logger::getInstance().begin(mockHal);
+
+    // STEP 6: Create component mocks and instances
+    // ... create your mocks and test instances here
+}
+```
+
+**2. Why This Order Matters:**
+
+- **Arduino Function Mocks First**: Any component initialization (including Logger) may call Arduino functions like `millis()`, `digitalWrite()`, etc. These MUST be mocked before they are called.
+
+- **Logger After millis()**: `Logger::getInstance().begin(mockHal)` MUST be called AFTER `millis()` is mocked because Logger instantiation calls `millis()`. Calling it before will cause a crash.
+
+- **Interrupt Functions**: `attachInterrupt()` and `detachInterrupt()` are caught by ArduinoFake's FunctionFake.cpp. If not mocked, they will cause segmentation faults (Program errored with code 3221225477, or similar number, on Windows).
+
+- **All FunctionFake Functions**: Any function caught by ArduinoFake's FunctionFake.cpp must be mocked or it will cause runtime errors. Common ones include:
+  - `millis()`, `micros()`
+  - `delay()`, `delayMicroseconds()`
+  - `pinMode()`, `digitalWrite()`, `digitalRead()`, `analogRead()`, `analogWrite()`
+  - `attachInterrupt()`, `detachInterrupt()`
+  - `Serial.begin()`, `Serial.print()`, etc.
+
+**3. Common Pitfalls to Avoid:**
+
+❌ **WRONG - Logger before millis mock:**
+```cpp
+Logger::getInstance().begin(mockHal);  // WILL CRASH - millis not mocked yet
+When(Method(ArduinoFake(), millis)).AlwaysReturn(1000);
+```
+
+✅ **CORRECT - millis mock before Logger:**
+```cpp
+When(Method(ArduinoFake(), millis)).AlwaysReturn(1000);
+Logger::getInstance().begin(mockHal);  // Safe - millis is mocked
+```
+
+❌ **WRONG - Missing interrupt mocks:**
+```cpp
+// Interrupt functions not mocked
+doorController->begin();  // WILL SEGFAULT if DoorController uses interrupts
+```
+
+✅ **CORRECT - Interrupt functions mocked:**
+```cpp
+When(OverloadedMethod(ArduinoFake(), attachInterrupt, void(uint8_t, void(*)(), int))).AlwaysReturn();
+When(Method(ArduinoFake(), detachInterrupt)).AlwaysReturn();
+doorController->begin();  // Safe - interrupts are mocked
+```
+
+❌ **WRONG - HAL not set/is null, often in constructor or begin():**
+```
+Test fails with: Program errored with code 3
+Likely cause: HAL pointer is null or not set before use which is caught with an ASSERT in the code
+```
+
+**4. Reference Implementation:**
+
+See [test_DoorController.cpp](test/desktop/test_DoorController/test_DoorController.cpp) for a complete working example of proper ArduinoFake mock setup order.
 
 ### Integration Testing
 

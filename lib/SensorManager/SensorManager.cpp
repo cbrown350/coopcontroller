@@ -5,9 +5,14 @@
 #include <FunctionalInterrupt.h>
 #include <memory>
 #include <stdint.h>
+#include <algorithm>
 
 
+#ifdef ESP32
 void IRAM_ATTR SensorManager::sensor1PulseISR() {
+#else
+void SensorManager::sensor1PulseISR() {
+#endif
     unsigned long currentTime = millis();
     unsigned long prevPulseTime = sensor1.previous_pulse_time.load();
     
@@ -34,7 +39,11 @@ void IRAM_ATTR SensorManager::sensor1PulseISR() {
     sensor1.last_pulse_time = currentTime;
 }
 
+#ifdef ESP32
 void IRAM_ATTR SensorManager::sensor2PulseISR() {
+#else
+void SensorManager::sensor2PulseISR() {
+#endif
     unsigned long currentTime = millis();
     unsigned long prevPulseTime = sensor2.previous_pulse_time.load();
     
@@ -389,11 +398,11 @@ bool SensorManager::hasActiveWaterMeter() const {
 unsigned long SensorManager::getMostRecentPulseTime() const {
     unsigned long max_time = 0;
     if (sensor1.type == SensorType::WATER_METER) {
-        max_time = max(max_time, sensor1.last_pulse_time.load());
+        max_time = std::max(max_time, sensor1.last_pulse_time.load());
         logger.logDebug(String("Sensor 1 last pulse time: ") + String(sensor1.last_pulse_time.load()));
     }
     if (sensor2.type == SensorType::WATER_METER) {
-        max_time = max(max_time, sensor2.last_pulse_time.load());
+        max_time = std::max(max_time, sensor2.last_pulse_time.load());
         logger.logDebug(String("Sensor 2 last pulse time: ") + String(sensor2.last_pulse_time.load()));
     }
     return max_time;

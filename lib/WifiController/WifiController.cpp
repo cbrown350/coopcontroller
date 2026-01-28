@@ -4,6 +4,7 @@
 #include "BuzzerController.h"
 #include <Arduino.h>
 #include <stdint.h>
+#include <cstdint>
 
 // Define constants (from main.cpp)
 #define WIFI_CHECK_INTERVAL 30000     // Check WiFi every 30 seconds
@@ -19,8 +20,8 @@ void WifiController::begin(IHAL* hal, SettingsManager* settings, BuzzerControlle
 
     // Initialize WiFi LED if enabled
     if (settingsManager_->getWifiLedEnabled()) {
-        pinMode(WIFI_LED_B_PIN, OUTPUT);
-        digitalWrite(WIFI_LED_B_PIN, HIGH); // Turn off LED initially (assuming active LOW)
+        _hal->pinMode(WIFI_LED_B_PIN, OUTPUT);
+        _hal->digitalWrite(WIFI_LED_B_PIN, HIGH); // Turn off LED initially (assuming active LOW)
         logger.logInfo("WiFi status LED initialized on pin " + String(WIFI_LED_B_PIN));
     }
     
@@ -102,8 +103,8 @@ void WifiController::disconnect() { // NOSONAR - modifies state
 void WifiController::enableLed(bool enabled) {
     settingsManager_->setWifiLedEnabled(enabled);
     if (enabled) {
-        pinMode(WIFI_LED_B_PIN, OUTPUT);
-        digitalWrite(WIFI_LED_B_PIN, HIGH);
+        _hal->pinMode(WIFI_LED_B_PIN, OUTPUT);
+        _hal->digitalWrite(WIFI_LED_B_PIN, HIGH);
     }
 }
 
@@ -138,7 +139,7 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             _hal->wifiBeginAP(hostName_, apPasswd_);
             logger.logDebug("AP password set: " + String(apPasswd_));
         } else {
-            _hal->wifiBeginAP(hostName_, nullptr);
+            _hal->wifiBeginAP(hostName_, (const char*)nullptr);
         }
         // Note: WiFi.softAPsetHostname() not available in HAL - using hostname from wifiBeginAP
         logger.logInfo("AP mode started, IP address: " + _hal->wifiGetAPIP());
@@ -146,13 +147,13 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
         wifiAPModeStart = millis();
         
         // Add logging for WiFi task status
-        logger.logDebug("WiFi AP mode started on core " + String(xPortGetCoreID()));
-        logger.logDebug("Current WiFi task handle: " + String((uint32_t)xTaskGetCurrentTaskHandle(), HEX));
+        logger.logDebug("WiFi AP mode started on core " + String(_hal->getCoreID()));
+        logger.logDebug("Current WiFi task handle: " + String(static_cast<unsigned long>(reinterpret_cast<uintptr_t>(_hal->getCurrentTaskHandle())), 16));
     } else {
         String ssid = settingsManager_->getSSID();
         String password = settingsManager_->getPassword();
-        
-        if (ssid.isEmpty()) {
+
+        if (ssid.length() == 0) {
             logger.logWarning("No SSID configured, falling back to AP mode");
             settingsManager_->setAPMode(true);
             settingsManager_->save();
@@ -218,8 +219,8 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             }
             
             // Add logging for WiFi task status
-            logger.logDebug("WiFi connected on core " + String(xPortGetCoreID()));
-            logger.logDebug("Current WiFi task handle: " + String((uint32_t)xTaskGetCurrentTaskHandle(), HEX));
+            logger.logDebug("WiFi connected on core " + String(_hal->getCoreID()));
+            logger.logDebug("Current WiFi task handle: " + String((unsigned long)reinterpret_cast<uintptr_t>(_hal->getCurrentTaskHandle()), 16));
         } else {
             logger.logWarning("Failed to connect to WiFi after " + String(wifiRetryCount) + " attempts");
             failWifi();
@@ -231,7 +232,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
     // Check if we're in AP mode and need to retry WiFi connection
     if (isInAPMode_) {
         unsigned long apDuration = settingsManager_->getWifiAPDurationMinutes() * 60000; // Convert to milliseconds
-        if (millis() - wifiAPModeStart >= apDuration && !settingsManager_->getSSID().isEmpty()){ // NOSONAR - clearer declared above
+        if (millis() - wifiAPModeStart >= apDuration && settingsManager_->getSSID().length() == 0){ // NOSONAR - clearer declared above
           logger.logInfo("AP mode duration expired, attempting WiFi connection");
           settingsManager_->setAPMode(false);
           settingsManager_->save();
@@ -256,7 +257,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             String ssid = settingsManager_->getSSID();
             String password = settingsManager_->getPassword();
             
-            if (!ssid.isEmpty()) {
+            if (ssid.length() != 0) {
                 _hal->wifiBegin(ssid.c_str(), password.c_str());
                 wifiReconnectStart = millis();
                 isReconnecting = true;
@@ -269,10 +270,10 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             }
         } else {
             // Check if reconnection timeout has elapsed
-            int maxRetries = settingsManager_->getWifiMaxRetries();
-            int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
-            
-            if (millis() - wifiReconnectStart >= (retryDelay * 1000 * maxRetries)) {
+            unsigned int maxRetries = settingsManager_->getWifiMaxRetries();
+            unsigned int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
+
+            if (millis() - wifiReconnectStart >= (static_cast<unsigned long>(retryDelay) * 1000UL * maxRetries)) {
                 logger.logWarning("WiFi reconnection timeout, switching to AP mode");
                 settingsManager_->setAPMode(true);
                 settingsManager_->save();
@@ -318,24 +319,24 @@ void WifiController::updateWifiLed() {
 
     unsigned long currentMillis = millis();
 
-    if (_hal->wifiGetStatus() == WL_CONNECTED) {
+    if (_hal->wifiIsConnected()) {
         // Heartbeat pattern: 50ms ON, 1950ms OFF
         unsigned long interval = (!ledState) ? 50 : 1950;
         if (currentMillis - lastLedToggle >= interval) {
             lastLedToggle = currentMillis;
             ledState = !ledState;
-            digitalWrite(WIFI_LED_B_PIN, ledState ? LOW : HIGH); // LOW to turn on (active low)
+            _hal->digitalWrite(WIFI_LED_B_PIN, ledState ? LOW : HIGH); // LOW to turn on (active low)
         }
     } else if (isInAPMode_) {
         // AP mode: 250ms ON, 250ms OFF
         if (currentMillis - lastLedToggle >= 250) {
             lastLedToggle = currentMillis;
             ledState = !ledState;
-            digitalWrite(WIFI_LED_B_PIN, ledState ? LOW : HIGH); // LOW to turn on
+            _hal->digitalWrite(WIFI_LED_B_PIN, ledState ? LOW : HIGH); // LOW to turn on
         }
     } else {
         // Disconnected: Turn OFF (no toggle)
-        digitalWrite(WIFI_LED_B_PIN, HIGH); // HIGH to turn off (active low)
+        _hal->digitalWrite(WIFI_LED_B_PIN, HIGH); // HIGH to turn off (active low)
         ledState = false;
         lastLedToggle = currentMillis; // Prevent unnecessary checks
     }

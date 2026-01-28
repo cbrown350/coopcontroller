@@ -447,33 +447,33 @@ int DoorController::getProgressPercentage() const {
     if (currentState == DoorState::OPENING) {
         unsigned long elapsed = millis() - stateStartTime;
         int progress = (elapsed * 100) / (openTimeoutSeconds * 1000);
-        return min(progress, 95);
+        return std::min(progress, 95);
     } else if (currentState == DoorState::CLOSING) {
         unsigned long elapsed = millis() - stateStartTime;
         int progress = 100 - ((elapsed * 100) / (closeTimeoutSeconds * 1000));
-        return max(progress, 5);
+        return std::max(progress, 5);
     }
     
     return 50;
 }
 
 // Configuration
-int DoorController::getOpenTimeoutSeconds() const {
+unsigned int DoorController::getOpenTimeoutSeconds() const {
     return openTimeoutSeconds;
 }
 
-void DoorController::setOpenTimeoutSeconds(int seconds) {
-    openTimeoutSeconds = max(5, min(120, seconds));
-    logger.logfDebug("Door open timeout: %d seconds", openTimeoutSeconds);
+void DoorController::setOpenTimeoutSeconds(unsigned int seconds) {
+    openTimeoutSeconds = std::max(5u, std::min(120u, seconds));
+    logger.logfDebug("Door open timeout: %u seconds", openTimeoutSeconds);
 }
 
-int DoorController::getCloseTimeoutSeconds() const {
+unsigned int DoorController::getCloseTimeoutSeconds() const {
     return closeTimeoutSeconds;
 }
 
-void DoorController::setCloseTimeoutSeconds(int seconds) {
-    closeTimeoutSeconds = max(5, min(120, seconds));
-    logger.logfDebug("Door close timeout: %d seconds", closeTimeoutSeconds);
+void DoorController::setCloseTimeoutSeconds(unsigned int seconds) {
+    closeTimeoutSeconds = std::max(5u, std::min(120u, seconds));
+    logger.logfDebug("Door close timeout: %u seconds", closeTimeoutSeconds);
 }
 
 int DoorController::getSunriseOffsetMinutes() const {
@@ -481,7 +481,7 @@ int DoorController::getSunriseOffsetMinutes() const {
 }
 
 void DoorController::setSunriseOffsetMinutes(int minutes) {
-    sunriseOffsetMinutes = max(-60, min(60, minutes));
+    sunriseOffsetMinutes = std::max(-60, std::min(60, minutes));
     logger.logfDebug("Door sunrise offset: %d minutes", sunriseOffsetMinutes);
 }
 
@@ -490,7 +490,7 @@ int DoorController::getSunsetOffsetMinutes() const {
 }
 
 void DoorController::setSunsetOffsetMinutes(int minutes) {
-    sunsetOffsetMinutes = max(-60, min(60, minutes));
+    sunsetOffsetMinutes = std::max(-60, std::min(60, minutes));
     logger.logfDebug("Door sunset offset: %d minutes", sunsetOffsetMinutes);
 }
 
@@ -568,10 +568,16 @@ bool DoorController::shouldOpenBySchedule() const {
     time_t now = time(nullptr);
     if (now < 0) return false;
 
-    struct tm timeinfo {};                          // storage for localtime_r
-    if (localtime_r(&now, &timeinfo) == nullptr) {  // reentrant, thread-safe
-        return false;
-    }
+    struct tm timeinfo {};                          // storage for localtime
+    
+#if defined(_WIN32)
+    if (localtime_s(&timeinfo, &now) != 0) return false;
+#elif defined(ARDUINO) && !defined(ESP32)
+    timeinfo = *localtime(&now);
+    if (&timeinfo == nullptr) return false;
+#else
+    if (localtime_r(&now, &timeinfo) == nullptr) return false;
+#endif
     const struct tm* ti = &timeinfo;                // pointer-to-const
 
     int currentMinutes = ti->tm_hour * 60 + ti->tm_min;
@@ -585,7 +591,14 @@ bool DoorController::shouldCloseBySchedule() const {
     if (now < 0) return false;
 
     struct tm timeinfo{};
+#if defined(_WIN32)
+    if (localtime_s(&timeinfo, &now) != 0) return false;
+#elif defined(ARDUINO) && !defined(ESP32)
+    timeinfo = *localtime(&now);
+    if (&timeinfo == nullptr) return false;
+#else
     if (localtime_r(&now, &timeinfo) == nullptr) return false;
+#endif
     const struct tm* ti = &timeinfo;
 
     int currentMinutes = ti->tm_hour * 60 + ti->tm_min;
@@ -593,14 +606,22 @@ bool DoorController::shouldCloseBySchedule() const {
     int closeTime = sunriseSunset->getSunsetMinutes() + sunsetOffsetMinutes;
     if (settingsManager.getDoorAutoCloseAfterSunsetEnabled()) {
         int autoCloseTime = sunriseSunset->getSunsetMinutes() + settingsManager.getDoorAutoCloseAfterSunsetMinutes();
-        closeTime = max(closeTime, autoCloseTime);
+        closeTime = std::max(closeTime, autoCloseTime);
     }
     return (currentMinutes >= closeTime && currentPosition != DoorPosition::CLOSED);
 }
 time_t DoorController::getTodaySunrise() const {
     time_t now = time(nullptr);
     struct tm timeinfo{};
+    
+#if defined(_WIN32)
+    if (localtime_s(&timeinfo, &now) != 0) return (time_t)-1;
+#elif defined(ARDUINO) && !defined(ESP32)
+    timeinfo = *localtime(&now);
+    if (&timeinfo == nullptr) return (time_t)-1;
+#else
     if (localtime_r(&now, &timeinfo) == nullptr) return (time_t)-1;
+#endif
 
     struct tm sunrise = timeinfo;
     sunrise.tm_hour = 6;
@@ -612,7 +633,15 @@ time_t DoorController::getTodaySunrise() const {
 time_t DoorController::getTodaySunset() const {
     time_t now = time(nullptr);
     struct tm timeinfo{};
+    
+#if defined(_WIN32)
+    if (localtime_s(&timeinfo, &now) != 0) return (time_t)-1;
+#elif defined(ARDUINO) && !defined(ESP32)
+    timeinfo = *localtime(&now);
+    if (&timeinfo == nullptr) return (time_t)-1;
+#else
     if (localtime_r(&now, &timeinfo) == nullptr) return (time_t)-1;
+#endif
 
     struct tm sunset = timeinfo;
     sunset.tm_hour = 20;
@@ -622,7 +651,11 @@ time_t DoorController::getTodaySunset() const {
 }
 
 // ISR-safe methods - minimal processing in interrupt context
+#ifdef ESP32
 void IRAM_ATTR DoorController::handleHallOpenISR() { // NOSONAR - writes pins
+#else
+void DoorController::handleHallOpenISR() { // NOSONAR - writes pins
+#endif
     // Only act if we're currently opening AND the sensor is actually active (LOW)
     // This prevents false triggers from floating pin noise
     if (currentState == DoorState::OPENING && digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN) == LOW) {
@@ -633,7 +666,11 @@ void IRAM_ATTR DoorController::handleHallOpenISR() { // NOSONAR - writes pins
     }
 }
 
+#ifdef ESP32
 void IRAM_ATTR DoorController::handleHallClosedISR() { // NOSONAR - writes pins
+#else
+void DoorController::handleHallClosedISR() { // NOSONAR - writes pins
+#endif
     // Only act if we're currently closing AND the sensor is actually active (LOW)
     // This prevents false triggers from floating pin noise
     if (currentState == DoorState::CLOSING && digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN) == LOW) {

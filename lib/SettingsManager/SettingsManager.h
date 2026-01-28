@@ -18,8 +18,8 @@ struct user_settings // NOSONAR
     // Coop Controller specific settings
     float  temp_threshold_on_f = 34.0;     // Temperature threshold to turn ON pump in Fahrenheit (default 34F)
     float  temp_threshold_off_f = 36.0;    // Temperature threshold to turn OFF pump in Fahrenheit (default 36F)
-    int    pump_on_time_seconds = 300;    // Pump ON time in seconds (default 300)
-    int    pump_off_time_seconds = 600;   // Pump OFF time in seconds (default 600)
+    unsigned int pump_on_time_seconds = 300;    // Pump ON time in seconds (default 300)
+    unsigned int pump_off_time_seconds = 600;   // Pump OFF time in seconds (default 600)
     bool   pump_auto_mode = true;          // Enable automatic pump control based on temperature
     bool   light_auto_mode = false;         // Enable automatic light control
     int    light_on_minute = 0;           // Minute to turn on light (0-59)
@@ -34,11 +34,11 @@ struct user_settings // NOSONAR
     
     // Water meter calibration
     float  pulses_per_gallon = 450.0;       // Pulses per gallon for water meter calibration (default 450.0)
-    int    water_meter_timeout_seconds = 300; // Timeout in seconds before water meter considered disconnected (default 300)
+    unsigned int water_meter_timeout_seconds = 300; // Timeout in seconds before water meter considered disconnected (default 300)
     
     // WiFi connection settings
-    int    wifi_max_retries = 5;        // Maximum number of WiFi connection retries (default 5)
-    int    wifi_retry_delay_seconds = 30;  // Delay between WiFi retry attempts in seconds (default 30)
+    unsigned int wifi_max_retries = 5;        // Maximum number of WiFi connection retries (default 5)
+    unsigned int wifi_retry_delay_seconds = 30;  // Delay between WiFi retry attempts in seconds (default 30)
     int    wifi_ap_duration_minutes = 10;  // How long to stay in AP mode before retrying (default 10)
     int    watchdog_timeout_seconds = 30; // Watchdog timeout in seconds (default 30, range 10-120)
     bool   wifi_led_enabled = true;        // Enable WiFi status LED (default: true)
@@ -111,14 +111,14 @@ class SettingsManager // NOSONAR
     float  getTempThresholdOffF();
     int    getWaterFlowErrorTimeoutSeconds();
     int    getPumpErrorRetrySeconds();
-    int    getPumpOnTimeSeconds();
+    unsigned int getPumpOnTimeSeconds();
     int    getLightOnMinute() const;
     void   setLightOnMinute(int minute);
     String getLightOnMode() const;
     void   setLightOnMode(const String& mode);
     int    getLightOnSunsetOffsetMinutes() const;
     void   setLightOnSunsetOffsetMinutes(int minutes);
-    int    getPumpOffTimeSeconds();
+    unsigned int getPumpOffTimeSeconds();
     bool   getLightAutoMode() const;
     int    getLightOnHour();
     int    getLightOffHour();
@@ -130,7 +130,7 @@ class SettingsManager // NOSONAR
     float  getPulsesPerGallon() const;
     
     // Water meter timeout getter
-    int    getWaterMeterTimeoutSeconds() const;
+    unsigned int getWaterMeterTimeoutSeconds() const;
     
     // Water meter per-pulse calculation getter
     bool   getWaterMeterPerPulseCalculationEnabled() const;
@@ -140,8 +140,8 @@ class SettingsManager // NOSONAR
     int    getPumpOffFlowGracePeriodSeconds() const;
     
     // WiFi connection settings getters
-    int    getWifiMaxRetries();
-    int    getWifiRetryDelaySeconds();
+    unsigned int getWifiMaxRetries();
+    unsigned int getWifiRetryDelaySeconds();
     int    getWifiAPDurationMinutes();
     int    getWatchdogTimeoutSeconds();
     bool   getWifiLedEnabled() const;
@@ -232,6 +232,22 @@ class SettingsManager // NOSONAR
     void setFromJsonDoc(const JsonDocument &doc);
     String toJson(bool includePassword = true) const;
     JsonDocument toJsonDoc(bool includePassword = true) const;
+
+#ifdef UNIT_TEST_DESKTOP
+    // Test-only method to reset internal state
+    void resetForTesting() {
+        settings = user_settings{};
+        isLoaded = true; // Mark as loaded so getters don't trigger unwanted loads
+        wifiChanged = false;
+        requestRestartAt = 0;
+    }
+
+    // Test-only method to mark settings as not loaded (for testing load() itself)
+    void markAsNotLoadedForTesting() {
+        isLoaded = false;
+    }
+#endif
+
 };
 
 #define settingsManager SettingsManager::getInstance()
