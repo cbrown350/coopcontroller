@@ -39,13 +39,32 @@
 The project uses Platform.io for firmware development and features a modern SolidJS web interface with Tailwind CSS styling. All settings are configurable through the web UI and persisted in LittleFS storage.
 
 **Implementation Status:**
+
 - Phase 3 (Hardware I/O): 100% complete
 - Phase 3.5 (Critical Refactoring): 100% complete - HAL refactoring complete, all ESP32-specific functions abstracted
 - Phase 3.5a (Sunrise/Sunset Integration): 100% complete with accurate UTC to local time conversion
 - Phase 3.5b (Light Control with Web UI): 100% complete
-- Core features: Sensors, Pump, Light, WiFi controllers fully implemented with complete web UI
+- Phase 3.5c (Desktop Unit Testing): 100% complete - All 452 desktop unit tests passing, all 10 core components covered
+- Core features: Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented
 - Current build: RAM 17.2% (56,436 bytes), Flash 82.5% (1,081,881 bytes)
-- HAL refactoring complete: Desktop unit testing now possible without ESP32 hardware
+- HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake
+- Actual functionality hasn't been checked for correctness
+
+**Current Test Coverage (January 2026):**
+
+- **Desktop Unit Tests:** 452/452 tests passing (100% pass rate) - 10 components covered:
+  - BuzzerController (3 tests)
+  - CoopControllerWebServer (15 tests)
+  - DoorController (59 tests)
+  - LightController (95 tests)
+  - Logger (12 tests)
+  - PumpController (77 tests)
+  - SensorManager (7 tests)
+  - SettingsManager (83 tests)
+  - SunriseSunset (35 tests)
+  - WifiController (66 tests)
+- **Embedded Unit Tests:** 1/1 passing - Logger singleton pattern test
+- **Test Infrastructure:** Complete mocking framework with MockHAL, MockSensorManager, MockBuzzerController
 
 **Key References:**
 - ESP32 pin functions defined in [`platformio.ini`](platformio.ini:45)
