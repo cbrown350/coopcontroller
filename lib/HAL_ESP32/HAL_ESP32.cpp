@@ -301,16 +301,20 @@ public:
   const JsonVariant &jsonBody() const override { return jsonBody_; }
 
   String body() const override {
-    // AsyncWebServerRequest doesn't have a body() method
-    // For POST requests, we need to read the body differently
-    // This is a limitation - POST body access not fully supported in HAL
-    // abstraction
-
-    String msg;
-    if (hasParam("msg", true)) { // true = search in POST body
-      msg = param("msg", true);
+    // The JSON body was parsed by AsyncCallbackJsonWebHandler and stored in jsonBody_
+    // Serialize it back to a string for endpoints that need raw body access
+    if (!jsonBody_.isNull()) {
+      String bodyStr;
+      serializeJson(jsonBody_, bodyStr);
+      return bodyStr;
     }
-    return msg;
+
+    // Fallback: check for form-encoded "msg" parameter (legacy support)
+    if (hasParam("msg", true)) {
+      return param("msg", true);
+    }
+
+    return String();
   }
 };
 
