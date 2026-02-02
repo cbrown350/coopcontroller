@@ -22,10 +22,16 @@ namespace std {
     }
 }
 
-// Define interrupt mode constants (from ESP32 Arduino)
-#define RISING 3
+// Define interrupt mode constants (from ESP32 Arduino esp32-hal-gpio.h)
+#ifndef RISING
+#define RISING 1
+#endif
+#ifndef FALLING
 #define FALLING 2
-#define CHANGE 1
+#endif
+#ifndef CHANGE
+#define CHANGE 3
+#endif
 
 // Only define LOW/HIGH if not already defined by ArduinoFake
 #ifndef LOW

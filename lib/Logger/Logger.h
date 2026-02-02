@@ -57,7 +57,6 @@ struct LogEntry
 class Logger
 {
 private:
-  static Logger instance;                    ///< Singleton instance
   IHAL* hal;                                 ///< Hardware abstraction layer
   static const int MAX_LOG_ENTRIES = 150;    ///< Maximum number of log entries in buffer
   mutable LogEntry logBuffer[MAX_LOG_ENTRIES]; ///< Circular buffer for log entries

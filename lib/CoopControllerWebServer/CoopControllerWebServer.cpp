@@ -846,16 +846,14 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     }
     if (otaPasswd && strlen(otaPasswd) > 0) {
         ArduinoOTA.setPassword(otaPasswd); // Optional for authentication
-        String otaMsg = "OTA password set: " + String(otaPasswd);
-        logger.logInfo(otaMsg.c_str());
+        logger.logInfo("OTA password configured");
     }
     ArduinoOTA.begin();
-    
+
     // Setup ElegantOTA - Note: ElegantOTA is ESP32-specific, not part of HAL
     if (otaPasswd && strlen(otaPasswd) > 0) {
         ElegantOTA.setAuth("admin", otaPasswd); // Optional: add authentication
-        String elegantMsg = "ElegantOTA admin password set: " + String(otaPasswd);
-        logger.logInfo(elegantMsg.c_str());
+        logger.logInfo("ElegantOTA authentication configured");
     }
     // Configure ElegantOTA for filesystem updates
     ElegantOTA.onProgress([](unsigned int progress, unsigned int total) {

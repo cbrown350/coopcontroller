@@ -137,7 +137,7 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
         logger.logInfo("Starting AP mode for " + String(settingsManager_->getWifiAPDurationMinutes()) + " minutes");
         if (apPasswd_ && strlen(apPasswd_) > 0) {
             _hal->wifiBeginAP(hostName_, apPasswd_);
-            logger.logDebug("AP password set: " + String(apPasswd_));
+            logger.logDebug("AP password configured");
         } else {
             _hal->wifiBeginAP(hostName_, (const char*)nullptr);
         }
@@ -232,7 +232,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
     // Check if we're in AP mode and need to retry WiFi connection
     if (isInAPMode_) {
         unsigned long apDuration = settingsManager_->getWifiAPDurationMinutes() * 60000; // Convert to milliseconds
-        if (millis() - wifiAPModeStart >= apDuration && settingsManager_->getSSID().length() == 0){ // NOSONAR - clearer declared above
+        if (millis() - wifiAPModeStart >= apDuration && settingsManager_->getSSID().length() != 0){ // NOSONAR - clearer declared above
           logger.logInfo("AP mode duration expired, attempting WiFi connection");
           settingsManager_->setAPMode(false);
           settingsManager_->save();

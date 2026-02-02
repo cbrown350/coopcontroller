@@ -64,8 +64,8 @@ enum class DoorPosition {
  */
 class DoorController { // NOSONAR - complexity ok
 private:
-    BuzzerController* buzzerController;     ///< Buzzer for fault alerts
-    SunriseSunsetCalculator* sunriseSunset; ///< Sunrise/sunset time calculator
+    BuzzerController* buzzerController = nullptr;     ///< Buzzer for fault alerts
+    SunriseSunsetCalculator* sunriseSunset = nullptr; ///< Sunrise/sunset time calculator
 
     // State variables
     DoorState currentState;         ///< Current operational state

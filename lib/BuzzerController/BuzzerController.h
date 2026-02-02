@@ -242,22 +242,22 @@ public:
     void toJson(JsonObject& json) const;
 
 private:
-    uint8_t _pin;                           ///< GPIO pin for buzzer control
+    uint8_t _pin = 0;                       ///< GPIO pin for buzzer control
     bool _enabled = true;                   ///< Buzzer enabled flag
     BuzzerType _buzzerType = BuzzerType::ACTIVE; ///< Hardware buzzer type
 
     // Alert state
     bool _hasActiveAlert = false;           ///< Currently beeping flag
     AlertType _currentAlertType = AlertType::SYSTEM_ERROR; ///< Active alert type
-    unsigned long _silenceUntil;            ///< Timestamp when silence period ends
-    unsigned long _lastAlertTime;           ///< Timestamp of last alert trigger
+    unsigned long _silenceUntil = 0;        ///< Timestamp when silence period ends
+    unsigned long _lastAlertTime = 0;       ///< Timestamp of last alert trigger
 
     // Pattern execution state
-    AlertPattern _currentPattern;           ///< Currently executing pattern
-    unsigned int _currentCycle;             ///< Current pattern cycle count
-    unsigned int _currentBeep;              ///< Current beep in pattern
-    unsigned long _lastStateChange;         ///< Timestamp of last beep state change
-    bool _isBeeping;                        ///< Current beep output state
+    AlertPattern _currentPattern = {};      ///< Currently executing pattern
+    unsigned int _currentCycle = 0;         ///< Current pattern cycle count
+    unsigned int _currentBeep = 0;          ///< Current beep in pattern
+    unsigned long _lastStateChange = 0;     ///< Timestamp of last beep state change
+    bool _isBeeping = false;                ///< Current beep output state
 
     /**
      * @brief Default beep patterns for each alert type

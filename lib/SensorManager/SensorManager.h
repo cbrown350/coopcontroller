@@ -163,6 +163,7 @@ private:
     // Water meter calculation variables
     static const unsigned long FLOW_CALCULATION_INTERVAL = 60000; // 1 minute
     float pulsesPerGallon;  // Conversion factor for pulses to gallons
+    bool perPulseCalcEnabled_ = false;  // Cached setting for ISR-safe access
     
     // Private methods
     void sensor1PulseISR();

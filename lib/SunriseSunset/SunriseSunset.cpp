@@ -28,6 +28,7 @@ void SunriseSunsetCalculator::setCoordinates(double lat, double lon, int utcOffs
   latitude_ = lat;
   longitude_ = lon;
   utcOffset_ = utcOffset;
+  lastCalculation_ = 0; // Force recalculation on next update()
   logger.logInfo(String("SunriseSunsetCalculator coordinates updated: lat=") + String(lat, 4) +
          String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
 }

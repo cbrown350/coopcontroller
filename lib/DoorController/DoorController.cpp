@@ -573,8 +573,9 @@ bool DoorController::shouldOpenBySchedule() const {
 #if defined(_WIN32)
     if (localtime_s(&timeinfo, &now) != 0) return false;
 #elif defined(ARDUINO) && !defined(ESP32)
-    timeinfo = *localtime(&now);
-    if (&timeinfo == nullptr) return false;
+    struct tm* result = localtime(&now);
+    if (result == nullptr) return false;
+    timeinfo = *result;
 #else
     if (localtime_r(&now, &timeinfo) == nullptr) return false;
 #endif
@@ -594,8 +595,9 @@ bool DoorController::shouldCloseBySchedule() const {
 #if defined(_WIN32)
     if (localtime_s(&timeinfo, &now) != 0) return false;
 #elif defined(ARDUINO) && !defined(ESP32)
-    timeinfo = *localtime(&now);
-    if (&timeinfo == nullptr) return false;
+    struct tm* result = localtime(&now);
+    if (result == nullptr) return false;
+    timeinfo = *result;
 #else
     if (localtime_r(&now, &timeinfo) == nullptr) return false;
 #endif
@@ -613,12 +615,13 @@ bool DoorController::shouldCloseBySchedule() const {
 time_t DoorController::getTodaySunrise() const {
     time_t now = time(nullptr);
     struct tm timeinfo{};
-    
+
 #if defined(_WIN32)
     if (localtime_s(&timeinfo, &now) != 0) return (time_t)-1;
 #elif defined(ARDUINO) && !defined(ESP32)
-    timeinfo = *localtime(&now);
-    if (&timeinfo == nullptr) return (time_t)-1;
+    struct tm* result = localtime(&now);
+    if (result == nullptr) return (time_t)-1;
+    timeinfo = *result;
 #else
     if (localtime_r(&now, &timeinfo) == nullptr) return (time_t)-1;
 #endif
@@ -633,12 +636,13 @@ time_t DoorController::getTodaySunrise() const {
 time_t DoorController::getTodaySunset() const {
     time_t now = time(nullptr);
     struct tm timeinfo{};
-    
+
 #if defined(_WIN32)
     if (localtime_s(&timeinfo, &now) != 0) return (time_t)-1;
 #elif defined(ARDUINO) && !defined(ESP32)
-    timeinfo = *localtime(&now);
-    if (&timeinfo == nullptr) return (time_t)-1;
+    struct tm* result = localtime(&now);
+    if (result == nullptr) return (time_t)-1;
+    timeinfo = *result;
 #else
     if (localtime_r(&now, &timeinfo) == nullptr) return (time_t)-1;
 #endif

@@ -15,9 +15,10 @@ void SensorManager::sensor1PulseISR() {
 #endif
     unsigned long currentTime = millis();
     unsigned long prevPulseTime = sensor1.previous_pulse_time.load();
-    
+
     // Calculate per-pulse flow rate if enabled and we have a previous pulse
-    if (settingsManager.getWaterMeterPerPulseCalculationEnabled() && prevPulseTime != 0) {
+    // Note: Use cached perPulseCalcEnabled_ and pulsesPerGallon for ISR safety (no SettingsManager calls)
+    if (perPulseCalcEnabled_ && prevPulseTime != 0) {
         // Handle millis() rollover
         unsigned long timeDiff;
         if (currentTime >= prevPulseTime) {
@@ -25,15 +26,14 @@ void SensorManager::sensor1PulseISR() {
         } else {
             timeDiff = (ULONG_MAX - prevPulseTime) + currentTime;
         }
-        
+
         // Noise filtering: ignore very short pulses (< 10ms)
-        if (timeDiff >= 10) {
-            // Calculate instantaneous flow rate: GPM = (pulses_per_gallon * 60000) / time_between_pulses_ms
-            float pulsesPerGallon = settingsManager.getPulsesPerGallon();
-            sensor1.flow_rate = (pulsesPerGallon * 60000.0f) / static_cast<float>(timeDiff);
+        if (timeDiff >= 10 && pulsesPerGallon > 0.0f) {
+            // Calculate instantaneous flow rate: GPM = 60000 / (pulsesPerGallon * timeDiff_ms)
+            sensor1.flow_rate = 60000.0f / (pulsesPerGallon * static_cast<float>(timeDiff));
         }
     }
-    
+
     sensor1.pulse_count++;
     sensor1.previous_pulse_time.store(currentTime);
     sensor1.last_pulse_time = currentTime;
@@ -46,9 +46,10 @@ void SensorManager::sensor2PulseISR() {
 #endif
     unsigned long currentTime = millis();
     unsigned long prevPulseTime = sensor2.previous_pulse_time.load();
-    
+
     // Calculate per-pulse flow rate if enabled and we have a previous pulse
-    if (settingsManager.getWaterMeterPerPulseCalculationEnabled() && prevPulseTime != 0) {
+    // Note: Use cached perPulseCalcEnabled_ and pulsesPerGallon for ISR safety (no SettingsManager calls)
+    if (perPulseCalcEnabled_ && prevPulseTime != 0) {
         // Handle millis() rollover
         unsigned long timeDiff;
         if (currentTime >= prevPulseTime) {
@@ -56,15 +57,14 @@ void SensorManager::sensor2PulseISR() {
         } else {
             timeDiff = (ULONG_MAX - prevPulseTime) + currentTime;
         }
-        
+
         // Noise filtering: ignore very short pulses (< 10ms)
-        if (timeDiff >= 10) {
-            // Calculate instantaneous flow rate: GPM = (pulses_per_gallon * 60000) / time_between_pulses_ms
-            float pulsesPerGallon = settingsManager.getPulsesPerGallon();
-            sensor2.flow_rate = (pulsesPerGallon * 60000.0f) / static_cast<float>(timeDiff);
+        if (timeDiff >= 10 && pulsesPerGallon > 0.0f) {
+            // Calculate instantaneous flow rate: GPM = 60000 / (pulsesPerGallon * timeDiff_ms)
+            sensor2.flow_rate = 60000.0f / (pulsesPerGallon * static_cast<float>(timeDiff));
         }
     }
-    
+
     sensor2.pulse_count++;
     sensor2.previous_pulse_time.store(currentTime);
     sensor2.last_pulse_time = currentTime;
@@ -78,7 +78,8 @@ SensorManager::SensorManager()
         // Initialize sensor data in the initializer list to avoid assignment issues
         sensor1{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0, 0},
         sensor2{SensorType::NONE, 0.0f, false, false, 0, 0, 0.0f, 0, 0},
-        pulsesPerGallon(settingsManager.getPulsesPerGallon())
+        pulsesPerGallon(settingsManager.getPulsesPerGallon()),
+        perPulseCalcEnabled_(settingsManager.getWaterMeterPerPulseCalculationEnabled())
 {}
 
 void SensorManager::begin(uint8_t sensor_pin1, uint8_t sensor_pin2) {
@@ -131,6 +132,10 @@ void SensorManager::begin(uint8_t sensor_pin1, uint8_t sensor_pin2) {
 }
 
 void SensorManager::update() {
+    // Refresh cached settings for ISR-safe access (settings may have changed via web UI)
+    perPulseCalcEnabled_ = settingsManager.getWaterMeterPerPulseCalculationEnabled();
+    pulsesPerGallon = settingsManager.getPulsesPerGallon();
+
     // Update sensor 1
     if (sensor1.type == SensorType::DALLAS_TEMP) {
         readDallasTemperature(dallasTemp1.get(), sensor1);

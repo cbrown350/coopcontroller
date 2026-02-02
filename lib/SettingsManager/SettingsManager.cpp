@@ -27,8 +27,11 @@ SettingsManager &SettingsManager::getInstance() {
     return instance;
 }
 
-String SettingsManager::loadFile() {    
-    assert(_hal != nullptr && "IHAL pointer must be provided in SettingsManager::begin(&hal) call");
+String SettingsManager::loadFile() {
+    if (_hal == nullptr) {
+        logger.logError("IHAL pointer not initialized - call SettingsManager::begin(&hal) first");
+        return "";
+    }
 
     auto file = _hal->fsOpen(SETTINGS_FILE, "r");
     if (!file) {

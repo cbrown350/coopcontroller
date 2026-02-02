@@ -30,7 +30,7 @@
  */
 class SunriseSunsetCalculator {
 private:
-  IHAL* hal_;                  ///< Hardware abstraction layer for time
+  IHAL* hal_ = nullptr;        ///< Hardware abstraction layer for time
   double latitude_;            ///< Geographic latitude (decimal degrees)
   double longitude_;           ///< Geographic longitude (decimal degrees)
   int utcOffset_;              ///< UTC timezone offset in hours
