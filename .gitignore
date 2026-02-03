@@ -6,6 +6,7 @@
 compile_commands.json
 
 data/user_settings.json
+data/emulator_settings.json
 
 data_testbed/
 
