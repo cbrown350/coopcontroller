@@ -63,9 +63,10 @@ void setupWifi() {
         // Start in AP mode
         Serial.println("[WiFi] Starting AP mode...");
         WiFi.mode(WIFI_AP);
+        WiFi.softAPsetHostname(hostName);
         WiFi.softAP(hostName, apPasswd);
         Serial.printf("[WiFi] AP started: %s\n", hostName);
-        Serial.printf("[WiFi] AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+        Serial.printf("[WiFi] AP IP: %s, Hostname: %s\n", WiFi.softAPIP().toString().c_str(), hostName);
         wifiState = WifiState::AP_MODE;
     } else {
         // Connect to WiFi
@@ -87,7 +88,7 @@ void updateWifi() {
 
                 // Start mDNS
                 if (MDNS.begin(hostName)) {
-                    Serial.printf("[WiFi] mDNS started: %s.local\n", hostName);
+                    Serial.printf("[WiFi] mDNS started: http://%s.local\n", hostName);
                 }
 
                 wifiState = WifiState::CONNECTED;
@@ -100,6 +101,7 @@ void updateWifi() {
                 Serial.println("[WiFi] Connection timeout, starting AP mode...");
                 WiFi.disconnect();
                 WiFi.mode(WIFI_AP);
+                WiFi.softAPsetHostname(hostName);
                 WiFi.softAP(hostName, apPasswd);
                 wifiState = WifiState::AP_MODE;
                 emulatorSettings.setApMode(true);
