@@ -12,31 +12,31 @@
 #define TOSTRING(x) STRINGIFY(x)
 
 #ifdef FIRMWARE_VERSION_RAW
-static const char* firmwareVersion = TOSTRING(FIRMWARE_VERSION_RAW);
+__attribute__((unused)) static const char* firmwareVersion = TOSTRING(FIRMWARE_VERSION_RAW);
 #else
-static const char* firmwareVersion = "0.0.0-dev";
+__attribute__((unused)) static const char* firmwareVersion = "0.0.0-dev";
 #endif
 
 #ifdef CHIP_FAMILY_RAW
-static const char* chipFamily = TOSTRING(CHIP_FAMILY_RAW);
+__attribute__((unused)) static const char* chipFamily = TOSTRING(CHIP_FAMILY_RAW);
 #else
-static const char* chipFamily = "ESP32";
+__attribute__((unused)) static const char* chipFamily = "ESP32";
 #endif
 
 #ifdef HOST_NAME
-static const char* hostName = TOSTRING(HOST_NAME);
+__attribute__((unused)) static const char* hostName = TOSTRING(HOST_NAME);
 #else
-static const char* hostName = "HWEmulator";
+__attribute__((unused)) static const char* hostName = "HWEmulator";
 #endif
 
 #ifdef AP_PASSWD
-static const char* apPasswd = TOSTRING(AP_PASSWD);
+__attribute__((unused)) static const char* apPasswd = TOSTRING(AP_PASSWD);
 #else
-static const char* apPasswd = "";
+__attribute__((unused)) static const char* apPasswd = "";
 #endif
 
 // NTP Server
-static const char* ntpServer = "pool.ntp.org";
+__attribute__((unused)) static const char* ntpServer = "pool.ntp.org";
 
 // ============================================================================
 // PIN DEFINITIONS (from platformio.ini build flags)

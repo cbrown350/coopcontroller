@@ -267,7 +267,8 @@ void EmulatorWebServer::handleGetSystemStatus(AsyncWebServerRequest* request) {
     uint32_t uptime = millis() / 1000;
     char uptimeStr[32];
     snprintf(uptimeStr, sizeof(uptimeStr), "%lud %02lu:%02lu:%02lu",
-             uptime / 86400, (uptime / 3600) % 24, (uptime / 60) % 60, uptime % 60);
+             (unsigned long)(uptime / 86400), (unsigned long)((uptime / 3600) % 24),
+             (unsigned long)((uptime / 60) % 60), (unsigned long)(uptime % 60));
     obj["uptime_formatted"] = uptimeStr;
 
     // WiFi info

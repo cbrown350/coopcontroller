@@ -231,13 +231,13 @@ void loop() {
                       emulated.doorPosition,
                       monitored.buzzerActive ? "ON" : "OFF");
 
-        Serial.printf("[Status] Hall: Open=%s Close=%s | Pulses: Ch1=%lu Ch2=%lu\n",
+        Serial.printf("[Status] Hall: Open=%s Close=%s | Pulses: Ch1=%u Ch2=%u\n",
                       emulated.hallOpenActive ? "Y" : "N",
                       emulated.hallCloseActive ? "Y" : "N",
                       emulated.channel1PulseCount,
                       emulated.channel2PulseCount);
 
-        Serial.printf("[Status] Heap: %lu/%lu bytes (%.1f%% used)\n",
+        Serial.printf("[Status] Heap: %u/%u bytes (%.1f%% used)\n",
                       ESP.getFreeHeap(), ESP.getHeapSize(),
                       100.0f * (1.0f - (float)ESP.getFreeHeap() / ESP.getHeapSize()));
 

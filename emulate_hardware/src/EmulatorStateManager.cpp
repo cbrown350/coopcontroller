@@ -276,7 +276,7 @@ void EmulatorStateManager::updateManualSwitch() {
             _emulated.manualSwitch.autoReleaseTime = 0;
             Serial.printf("[EmulatorState] Manual switch auto-released (type: %s, duration: %lu ms)\n",
                           _emulated.manualSwitch.lastPressType == SwitchPressType::LONG ? "LONG" : "SHORT",
-                          _emulated.manualSwitch.pressDuration);
+                          (unsigned long)_emulated.manualSwitch.pressDuration);
         }
     }
 }
@@ -390,10 +390,10 @@ void EmulatorStateManager::releaseManualSwitch() {
 
     _emulated.manualSwitch.isPressed = false;
     _emulated.manualSwitch.autoReleaseTime = 0;
-    Serial.printf("[EmulatorState] Manual switch released (type: %s, duration: %lu ms)\n",
+    Serial.printf("[EmulatorState] Manual switch released (type: %s, duration: %u ms)\n",
                   _emulated.manualSwitch.lastPressType == SwitchPressType::LONG ? "LONG" :
                   (_emulated.manualSwitch.lastPressType == SwitchPressType::SHORT ? "SHORT" : "NONE"),
-                  duration);
+                  (unsigned int)duration);
 }
 
 void EmulatorStateManager::pulseManualSwitch(uint32_t durationMs) {
@@ -402,7 +402,7 @@ void EmulatorStateManager::pulseManualSwitch(uint32_t durationMs) {
     _emulated.manualSwitch.pressDuration = 0;
     _emulated.manualSwitch.autoReleaseTime = millis() + durationMs;
     _emulated.manualSwitch.lastPressType = SwitchPressType::SHORT;
-    Serial.printf("[EmulatorState] Manual switch pulsed for %lu ms (short press)\n", durationMs);
+    Serial.printf("[EmulatorState] Manual switch pulsed for %u ms (short press)\n", (unsigned int)durationMs);
 }
 
 void EmulatorStateManager::longPressManualSwitch(uint32_t durationMs) {
@@ -411,7 +411,7 @@ void EmulatorStateManager::longPressManualSwitch(uint32_t durationMs) {
     _emulated.manualSwitch.pressDuration = 0;
     _emulated.manualSwitch.autoReleaseTime = millis() + durationMs;
     _emulated.manualSwitch.lastPressType = SwitchPressType::LONG;
-    Serial.printf("[EmulatorState] Manual switch long-pressed for %lu ms\n", durationMs);
+    Serial.printf("[EmulatorState] Manual switch long-pressed for %u ms\n", (unsigned int)durationMs);
 }
 
 uint32_t EmulatorStateManager::getCurrentPressDuration() const {
@@ -426,7 +426,7 @@ void EmulatorStateManager::setManualSwitchThresholds(uint32_t shortMs, uint32_t 
     _emulated.manualSwitch.longPressThresholdMs = longMs;
     _config.shortPressMs = shortMs;
     _config.longPressMs = longMs;
-    Serial.printf("[EmulatorState] Manual switch thresholds: short=%lu ms, long=%lu ms\n", shortMs, longMs);
+    Serial.printf("[EmulatorState] Manual switch thresholds: short=%u ms, long=%u ms\n", (unsigned int)shortMs, (unsigned int)longMs);
 }
 
 void EmulatorStateManager::setDoorFault(bool fault) {
@@ -814,7 +814,7 @@ bool EmulatorStateManager::applyScenarioFromJson(const JsonObject& json) {
     Scenario scenario;
 
     // Check if this is a predefined scenario by ID
-    if (json.containsKey("id")) {
+    if (json["id"].is<int>()) {
         int id = json["id"].as<int>();
         if (id >= 0 && id < static_cast<int>(ScenarioId::CUSTOM)) {
             return applyScenario(static_cast<ScenarioId>(id));
@@ -824,13 +824,13 @@ bool EmulatorStateManager::applyScenarioFromJson(const JsonObject& json) {
     // Custom scenario
     scenario.id = ScenarioId::CUSTOM;
 
-    if (json.containsKey("name")) {
+    if (json["name"].is<const char*>()) {
         strncpy(scenario.name, json["name"].as<const char*>(), sizeof(scenario.name) - 1);
     } else {
         strncpy(scenario.name, "Custom", sizeof(scenario.name) - 1);
     }
 
-    if (json.containsKey("description")) {
+    if (json["description"].is<const char*>()) {
         strncpy(scenario.description, json["description"].as<const char*>(), sizeof(scenario.description) - 1);
     }
 
@@ -839,7 +839,7 @@ bool EmulatorStateManager::applyScenarioFromJson(const JsonObject& json) {
     scenario.simulateDoorStuck = json["simulate_door_stuck"] | false;
     scenario.doorPosition = json["door_position"] | 0;
 
-    if (json.containsKey("door_state")) {
+    if (json["door_state"].is<const char*>()) {
         const char* state = json["door_state"].as<const char*>();
         if (strcmp(state, "OPEN") == 0) scenario.initialDoorState = DoorState::OPEN;
         else if (strcmp(state, "CLOSED") == 0) scenario.initialDoorState = DoorState::CLOSED;

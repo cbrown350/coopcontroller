@@ -17,10 +17,11 @@
 14. [Component/Feature Creation Rules](#componentfeature-creation-rules)
 15. [Compilation and Testing Requirements](#compilation-and-testing-requirements)
 16. [Testing & Quality Assurance](#testing--quality-assurance)
-17. [Pull Request and Collaboration Guidelines](#pull-request-and-collaboration-guidelines)
-18. [Troubleshooting](#troubleshooting)
-19. [Restricted or Sensitive Files](#restricted-or-sensitive-files)
-20. [Additional Notes](#additional-notes)
+17. [Hardware Emulator](#hardware-emulator)
+18. [Pull Request and Collaboration Guidelines](#pull-request-and-collaboration-guidelines)
+19. [Troubleshooting](#troubleshooting)
+20. [Restricted or Sensitive Files](#restricted-or-sensitive-files)
+21. [Additional Notes](#additional-notes)
 
 ---
 
@@ -2037,6 +2038,945 @@ See [test_DoorController.cpp](test/desktop/test_DoorController/test_DoorControll
 - Code coverage requirements
 - No critical security vulnerabilities
 - Documentation must be updated
+
+---
+
+## Hardware Emulator
+
+The Hardware Emulator is a dedicated ESP32 DevKitC v4 module that physically connects to the main Coop Controller to simulate real hardware sensors and actuators for testing and development purposes. This allows comprehensive testing of signal paths, scenario-based testing, and remote debugging without requiring actual chicken coop hardware.
+
+### Overview
+
+The emulator acts as a hardware-in-the-loop testing platform, providing:
+- **Physical Signal Simulation** - Generates real electrical signals that the main controller reads (water pulses, hall sensors, manual switches, fault signals)
+- **Output Monitoring** - Reads output signals from the main controller (pump, door motor, light PWM, buzzer, WiFi LED)
+- **Scenario Testing** - Predefined test scenarios that simulate real-world conditions (freeze conditions, door faults, pump failures)
+- **Remote Control** - Web-based UI for controlling emulator state and monitoring signal interactions
+- **Development Aid** - Enables firmware development and testing without physical hardware installation
+
+**Implementation Status:** ✅ Complete (Sprints 1-6 finished)
+- Full firmware implementation with state management
+- Comprehensive web UI with all control pages
+- REST API for programmatic control
+- Persistent settings and configuration
+- 7 predefined test scenarios
+
+### Purpose & Use Cases
+
+**1. Development Without Real Hardware**
+- Develop and test firmware logic without physical sensors/actuators
+- Safe testing environment - no risk of hardware damage
+- Rapid iteration - change scenarios instantly via web UI
+- Independent development - each developer can have their own emulator
+
+**2. Automated Testing of Signal Paths**
+- Verify main controller correctly reads emulated sensor inputs
+- Confirm main controller outputs activate emulator monitoring
+- Test interrupt-driven water pulse detection
+- Validate door position sensor logic with hall effect simulation
+
+**3. Scenario-Based Testing**
+- **Freeze Condition** - Simulates sub-zero temperatures with water flow issues
+- **Door Stuck** - Tests fault handling when door won't open/close
+- **Motor Fault** - Verifies error detection when door motor fails
+- **Frozen Water Line** - Tests pump cycling with no flow detected
+- **Pump Failure** - Validates error handling when pump doesn't activate
+- **Normal Operation** - Baseline testing with all systems functional
+
+**4. Remote Debugging & Diagnostics**
+- Access emulator web UI from anywhere on network
+- Monitor real-time signal states and transitions
+- Inject faults manually to test edge cases
+- Record signal timing and behavior for analysis
+
+### Architecture
+
+The emulator firmware consists of three primary components working together:
+
+#### EmulatorStateManager
+**Purpose:** Central state machine managing door states and water pulse generation.
+
+**Key Responsibilities:**
+- Door state machine (CLOSED, OPENING, OPEN, CLOSING, STUCK_OPEN, STUCK_CLOSED, MOTOR_FAULT)
+- Water pulse generation when pump is active (configurable pulse rate)
+- Hall sensor output control based on door position
+- Manual switch state management
+- Fault signal injection and management
+- Scenario state execution and transitions
+
+**State Management:**
+- Maintains current door state with automatic transitions
+- Generates interrupt-compatible water meter pulses
+- Updates all output pins based on current state
+- Handles manual overrides and scenario activation
+
+#### EmulatorWebServer
+**Purpose:** REST API and static file serving for the control interface.
+
+**Key Responsibilities:**
+- HTTP server with JSON API endpoints
+- Status reporting (GET `/status`)
+- Door control (POST `/door/*`)
+- Water control (POST `/water/*`)
+- Scenario activation (POST `/scenario/*`)
+- Settings management (GET/POST `/settings`)
+- Static file serving for SolidJS web UI
+
+**API Features:**
+- Real-time status queries
+- Manual state control
+- Scenario activation and management
+- Persistent configuration via settings endpoints
+
+#### EmulatorSettings
+**Purpose:** Persistent configuration management using LittleFS.
+
+**Key Responsibilities:**
+- JSON-based settings storage in [`data/emulator_settings.json`](data/emulator_settings.json)
+- WiFi credentials (SSID, password, AP mode settings)
+- Water pulse rate configuration (pulses per minute)
+- Door operation timing (open/close duration, stuck delays)
+- Scenario-specific parameters
+- Settings validation and defaults
+
+**Settings Persistence:**
+- Automatic save on configuration changes
+- Load settings on startup
+- Factory reset capability
+- Example template for initial configuration
+
+### Emulated Signals
+
+The emulator provides bidirectional signal interfaces - it both monitors main controller outputs and provides simulated inputs.
+
+#### Emulator Input Pins (Reading Main Controller Outputs)
+
+These pins monitor what the main Coop Controller is commanding:
+
+| Pin | Constant | Main Controller Pin | Signal Type | Purpose |
+|-----|----------|---------------------|-------------|---------|
+| 34 | EMU_READ_PUMP_PIN | OUT_PUMP_PIN (26) | Digital Input | Monitors pump control signal |
+| 35 | EMU_READ_LIGHT_PIN | OUT_LIGHT_PIN (25) | PWM Input | Monitors light PWM output |
+| 36 | EMU_READ_DOOR_POS_PIN | OUT_DOOR_A_OPEN_POS (13) | Digital Input | Monitors door motor positive drive |
+| 39 | EMU_READ_DOOR_NEG_PIN | OUT_DOOR_A_OPEN_NEG (12) | Digital Input | Monitors door motor negative drive |
+| 32 | EMU_READ_BUZZER_PIN | BUZZER_B_PIN (15) | Digital Input | Monitors buzzer activation |
+| 33 | EMU_READ_LED_PIN | WIFI_LED_B_PIN (23) | Digital Input | Monitors WiFi LED status |
+
+**Note:** Pins 34, 35, 36, 39 are input-only GPIO pins on the ESP32, ideal for monitoring without interfering with main controller outputs.
+
+#### Emulator Output Pins (Driving Main Controller Inputs)
+
+These pins provide simulated sensor/switch signals to the main controller:
+
+| Pin | Constant | Main Controller Pin | Signal Type | Purpose |
+|-----|----------|---------------------|-------------|---------|
+| 26 | EMU_WATER_PULSE1_PIN | TEMP_METER_PIN (32) | Pulse Output | Generates water meter pulses for sensor 1 |
+| 25 | EMU_WATER_PULSE2_PIN | TEMP_METER_2_PIN (33) | Pulse Output | Generates water meter pulses for sensor 2 |
+| 13 | EMU_HALL_OPEN_PIN | DOOR_A_HALL_SENSOR_OPEN_B (36) | Digital Output | Simulates door fully open sensor (active LOW) |
+| 12 | EMU_HALL_CLOSE_PIN | DOOR_A_HALL_SENSOR_CLOSED_B (39) | Digital Output | Simulates door fully closed sensor (active LOW) |
+| 27 | EMU_MANUAL_SW_PIN | DOOR_MANUAL_SWITCH_B (16) | Digital Output | Simulates external manual door switch (active LOW) |
+| 14 | EMU_DOOR_FAULT_PIN | DOOR_A_FAULT_B (34) | Digital Output | Simulates DRV8833 motor fault signal (active LOW) |
+
+#### Emulator Status Pins
+
+| Pin | Constant | Purpose |
+|-----|----------|---------|
+| 2 | EMU_STATUS_LED_PIN | Built-in LED for emulator status indication |
+| 4 | EMU_WIFI_LED_PIN | Emulator WiFi connection status indicator |
+
+#### Signal Details
+
+**Pump Actuation Detection:**
+- Emulator monitors OUT_PUMP_PIN from main controller
+- When HIGH detected, emulator activates water pulse generation
+- Pulse rate configurable via settings (default ~440 pulses/min)
+- Simulates realistic water flow when pump is active
+
+**Water Meter Pulse Generation:**
+- Generates interrupt-compatible pulses on EMU_WATER_PULSE1_PIN and EMU_WATER_PULSE2_PIN
+- Pulse width: 50ms ON, 50ms OFF (configurable)
+- Only generates pulses when pump is detected as active
+- Supports scenario-based failures (frozen water line = no pulses despite pump ON)
+
+**Dallas Temperature Sensor Emulation:**
+- **Status:** Future implementation (not yet available)
+- Planned to provide simulated 1-Wire Dallas DS18B20 responses
+- Will support configurable temperature values per scenario
+- Requires 1-Wire protocol implementation
+
+**Door Motor Control Detection:**
+- Monitors both EMU_READ_DOOR_POS_PIN and EMU_READ_DOOR_NEG_PIN
+- Detects motor direction based on polarity:
+  - POS=HIGH, NEG=LOW → Door opening
+  - POS=LOW, NEG=HIGH → Door closing
+  - Both LOW → Motor stopped
+- Updates internal door state machine based on detected commands
+- Simulates realistic door movement timing
+
+**Door Hall Effect Sensors:**
+- EMU_HALL_OPEN_PIN driven LOW when door reaches fully open state
+- EMU_HALL_CLOSE_PIN driven LOW when door reaches fully closed state
+- Both pins HIGH during door movement (between positions)
+- Supports stuck scenarios (pin never goes LOW)
+
+**Manual External Door Switch:**
+- EMU_MANUAL_SW_PIN normally HIGH (inactive)
+- Web UI button triggers momentary LOW pulse (active)
+- Simulates physical switch press by user
+- Useful for testing manual door control logic
+
+**Door Fault Signal:**
+- EMU_DOOR_FAULT_PIN normally HIGH (no fault)
+- Pulled LOW when motor fault scenario is active
+- Simulates DRV8833 driver fault detection
+- Tests main controller fault handling logic
+
+**Buzzer Detection:**
+- Monitors EMU_READ_BUZZER_PIN for active LOW signal
+- Web UI displays buzzer state in real-time
+- Verifies main controller activates buzzer for alerts
+
+**WiFi LED Detection:**
+- Monitors EMU_READ_LED_PIN for heartbeat patterns
+- Web UI displays LED state for connection monitoring
+- Helps verify main controller WiFi status indication
+
+### Wiring Diagram
+
+**Physical Connections Between Main Controller and Emulator:**
+
+```
+Main Controller ESP32          Emulator ESP32
+====================          ================
+
+Outputs → Emulator Inputs:
+--------------------------
+GPIO 26 (OUT_PUMP_PIN)     →  GPIO 34 (EMU_READ_PUMP_PIN)
+GPIO 25 (OUT_LIGHT_PIN)    →  GPIO 35 (EMU_READ_LIGHT_PIN)
+GPIO 13 (OUT_DOOR_POS)     →  GPIO 36 (EMU_READ_DOOR_POS_PIN)
+GPIO 12 (OUT_DOOR_NEG)     →  GPIO 39 (EMU_READ_DOOR_NEG_PIN)
+GPIO 15 (BUZZER_B_PIN)     →  GPIO 32 (EMU_READ_BUZZER_PIN)
+GPIO 23 (WIFI_LED_B_PIN)   →  GPIO 33 (EMU_READ_LED_PIN)
+
+Inputs ← Emulator Outputs:
+--------------------------
+GPIO 32 (TEMP_METER_PIN)   ←  GPIO 26 (EMU_WATER_PULSE1_PIN)
+GPIO 33 (TEMP_METER_2_PIN) ←  GPIO 25 (EMU_WATER_PULSE2_PIN)
+GPIO 36 (HALL_OPEN_B)      ←  GPIO 13 (EMU_HALL_OPEN_PIN)
+GPIO 39 (HALL_CLOSED_B)    ←  GPIO 12 (EMU_HALL_CLOSE_PIN)
+GPIO 16 (DOOR_MANUAL_SW_B) ←  GPIO 27 (EMU_MANUAL_SW_PIN)
+GPIO 34 (DOOR_FAULT_B)     ←  GPIO 14 (EMU_DOOR_FAULT_PIN)
+
+Common:
+-------
+GND  ←→  GND (shared ground essential)
+```
+
+**Wiring Notes:**
+- **Shared Ground:** Both ESP32 boards MUST share a common ground connection
+- **Power:** Each ESP32 powered independently via USB or dedicated 5V supply
+- **Signal Levels:** All GPIO signals are 3.3V logic - direct connection safe
+- **No Level Shifting Required:** Both ESP32 boards operate at 3.3V
+- **Wire Gauge:** 22-26 AWG hookup wire suitable for breadboard/jumper connections
+- **Cable Length:** Keep signal wires under 12 inches to minimize noise/capacitance
+- **Isolation:** Emulator can be disconnected without affecting main controller operation
+
+**Pin Configuration Reference:**
+- Main Controller pins: [`platformio.ini`](platformio.ini:37) lines 37-48
+- Emulator pins: [`platformio.ini`](platformio.ini:156) lines 156-179
+
+### Web UI Pages
+
+The emulator provides a comprehensive SolidJS-based web interface for control and monitoring.
+
+#### Status Page
+**Purpose:** Real-time display of emulator and main controller states.
+
+**Displays:**
+- Door current state (CLOSED, OPENING, OPEN, CLOSING, STUCK, FAULT)
+- Water pulse generation status (active/inactive, current rate)
+- Main controller output monitoring (pump, light PWM level, door motor direction)
+- Hall sensor current states (open/closed detected)
+- Fault injection status (door fault, manual switch)
+- Buzzer and WiFi LED detection status
+- System information (IP address, uptime, firmware version)
+
+**Features:**
+- Auto-refresh every 2 seconds for real-time updates
+- Visual indicators for active signals
+- Color-coded state displays (green=normal, yellow=transitioning, red=fault)
+
+#### Door Control Page
+**Purpose:** Manual control of door state for testing.
+
+**Controls:**
+- **Manual State Selection** - Directly set door to specific states:
+  - Closed
+  - Opening (simulates transition)
+  - Open
+  - Closing (simulates transition)
+  - Stuck Open (fault scenario)
+  - Stuck Closed (fault scenario)
+  - Motor Fault
+- **Timing Configuration** - Adjust door operation parameters:
+  - Open duration (time to fully open)
+  - Close duration (time to fully close)
+  - Stuck delay (time before stuck state activates)
+
+**Use Cases:**
+- Test door controller logic independently
+- Verify hall sensor reading accuracy
+- Test fault detection and recovery
+- Measure door operation timing requirements
+
+#### Water Control Page
+**Purpose:** Configuration of water pulse generation for flow simulation.
+
+**Controls:**
+- **Pulse Rate Adjustment** - Set pulses per minute (0-1000 range)
+- **Enable/Disable Toggle** - Start/stop pulse generation
+- **Pulse Pattern Selection:**
+  - Continuous (constant pulse rate while pump active)
+  - Intermittent (simulates flow variations)
+  - No Flow (pump active but no pulses - frozen line scenario)
+- **Pulse Width Configuration** - Adjust ON/OFF timing (default 50ms/50ms)
+
+**Features:**
+- Real-time pulse count display
+- Pulse rate calculation (GPM equivalent)
+- Visual pulse indicator (LED flash on pulse)
+- Separate control for sensor 1 and sensor 2 if needed
+
+**Use Cases:**
+- Calibrate water meter detection sensitivity
+- Test flow error detection logic
+- Simulate frozen water lines
+- Verify pulse counting accuracy
+
+#### Manual Controls Page
+**Purpose:** Direct manipulation of individual output pins for advanced testing.
+
+**Controls:**
+- **Pin State Overrides:**
+  - Hall Open Sensor (force HIGH/LOW)
+  - Hall Close Sensor (force HIGH/LOW)
+  - Door Fault Signal (force HIGH/LOW)
+  - Manual Switch Signal (momentary LOW pulse)
+  - Water Pulse 1 (force ON/OFF)
+  - Water Pulse 2 (force ON/OFF)
+
+- **Input Monitoring:**
+  - Pump signal (current state from main controller)
+  - Light PWM (current level, 0-255)
+  - Door Motor Positive (HIGH/LOW)
+  - Door Motor Negative (HIGH/LOW)
+  - Buzzer (active/inactive)
+  - WiFi LED (active/inactive)
+
+**Features:**
+- Real-time pin state visualization
+- Manual override of automated behavior
+- Signal injection for edge case testing
+- Diagnostic mode for troubleshooting wiring
+
+**Use Cases:**
+- Test individual signal paths
+- Verify wiring connections
+- Debug communication issues
+- Inject specific fault conditions
+- Bypass automatic scenarios for custom tests
+
+#### Scenarios Page
+**Purpose:** Predefined test scenarios that simulate real-world conditions.
+
+**Available Scenarios:**
+
+1. **Normal Operation**
+   - All systems functional
+   - Pump activates water pulses
+   - Door opens/closes normally
+   - All sensors respond correctly
+   - Baseline for comparison testing
+
+2. **Freeze Condition**
+   - Temperature below threshold (simulated)
+   - Pump cycles ON/OFF
+   - Water pulses generated during pump ON
+   - Tests freeze prevention logic
+   - Validates temperature-based pump control
+
+3. **Door Stuck Open**
+   - Door receives close command
+   - Hall Open sensor remains active (LOW)
+   - Hall Close sensor never activates
+   - Simulates mechanical failure or obstruction
+   - Tests timeout and fault detection
+
+4. **Door Stuck Closed**
+   - Door receives open command
+   - Hall Close sensor remains active (LOW)
+   - Hall Open sensor never activates
+   - Simulates locked or jammed door
+   - Tests error handling and user notification
+
+5. **Motor Fault**
+   - Motor receives open/close command
+   - Door Fault signal activates (LOW)
+   - Door does not move (no hall sensor changes)
+   - Simulates DRV8833 driver fault detection
+   - Tests hardware fault reporting
+
+6. **Frozen Water Line**
+   - Pump signal active (HIGH)
+   - No water pulses generated
+   - Simulates completely frozen water system
+   - Tests flow error detection
+   - Validates pump shutdown logic
+
+7. **Pump Failure**
+   - Temperature below threshold
+   - Pump output never activates
+   - No water pulses (no flow)
+   - Simulates pump relay failure or power loss
+   - Tests pump fault detection and alerts
+
+**Features:**
+- One-click scenario activation
+- Automatic state configuration
+- Scenario duration display
+- Reset to normal operation button
+- Scenario status indicators
+
+**Use Cases:**
+- Regression testing - verify scenarios still work after code changes
+- Integration testing - test complete system response to scenarios
+- Customer demonstration - show how system handles various conditions
+- Documentation - capture screenshots of system response to scenarios
+
+#### Settings Page
+**Purpose:** Configuration persistence and system settings.
+
+**Settings Categories:**
+
+**WiFi Configuration:**
+- SSID (network name)
+- Password (hidden input)
+- AP Mode enable/disable
+- AP Mode SSID (fallback network name)
+- WiFi retry attempts and delays
+
+**Water Emulation:**
+- Default pulse rate (pulses per minute)
+- Pulse width (milliseconds)
+- Separate enable for sensor 1 and sensor 2
+- Noise simulation (random variation)
+- Flow calculation interval
+
+**Door Emulation:**
+- Open duration (seconds)
+- Close duration (seconds)
+- Stuck delay (seconds)
+- Fault injection enable/disable
+- Hall sensor debounce time
+
+**System Settings:**
+- Hostname (mDNS name)
+- Debug logging enable/disable
+- Syslog server address and port
+- NTP server for time synchronization
+- Status LED brightness
+
+**Features:**
+- Save settings button with confirmation
+- Reset to defaults option
+- Import/export settings as JSON
+- Settings validation before save
+- Restart required indicator
+
+**Use Cases:**
+- Configure emulator for specific test environment
+- Save test configurations for reuse
+- Share settings between multiple emulators
+- Restore known-good configuration
+
+### API Documentation
+
+The emulator provides a REST API for programmatic control and status queries. All endpoints return JSON unless otherwise specified.
+
+#### GET `/status`
+Get current emulator state and main controller signal monitoring.
+
+**Response:**
+```json
+{
+  "door": {
+    "state": "OPEN",
+    "hall_open": false,
+    "hall_close": true,
+    "motor_fault": false
+  },
+  "water": {
+    "pulse1_rate": 440,
+    "pulse1_count": 15680,
+    "pulse1_active": true,
+    "pulse2_rate": 440,
+    "pulse2_count": 15680,
+    "pulse2_active": true
+  },
+  "main_controller": {
+    "pump_active": true,
+    "light_pwm": 128,
+    "door_pos": false,
+    "door_neg": false,
+    "buzzer_active": false,
+    "wifi_led_active": true
+  },
+  "system": {
+    "uptime_seconds": 3625,
+    "free_heap": 125648,
+    "ip_address": "192.168.1.100"
+  }
+}
+```
+
+#### POST `/door/state`
+Set door to specific state.
+
+**Request Body:**
+```json
+{
+  "state": "OPEN"
+}
+```
+
+**Valid States:** "CLOSED", "OPENING", "OPEN", "CLOSING", "STUCK_OPEN", "STUCK_CLOSED", "MOTOR_FAULT"
+
+**Response:** `200 OK` with updated status
+
+#### POST `/door/manual_switch`
+Trigger manual door switch press (momentary activation).
+
+**Response:** `200 OK` with "Manual switch activated" text
+
+#### POST `/water/pulse_rate`
+Configure water pulse generation rate.
+
+**Request Body:**
+```json
+{
+  "sensor": 1,
+  "rate": 440,
+  "enabled": true
+}
+```
+
+**Parameters:**
+- `sensor`: 1 or 2 (which sensor to configure)
+- `rate`: Pulses per minute (0-1000)
+- `enabled`: Start/stop pulse generation
+
+**Response:** `200 OK` with updated water status
+
+#### POST `/water/reset`
+Reset pulse counters.
+
+**Request Body:**
+```json
+{
+  "sensor": 1
+}
+```
+
+**Response:** `200 OK` with "Water meter X reset" text
+
+#### POST `/scenario/activate`
+Activate predefined test scenario.
+
+**Request Body:**
+```json
+{
+  "scenario": "freeze_condition"
+}
+```
+
+**Valid Scenarios:**
+- `normal_operation`
+- `freeze_condition`
+- `door_stuck_open`
+- `door_stuck_closed`
+- `motor_fault`
+- `frozen_water_line`
+- `pump_failure`
+
+**Response:** `200 OK` with scenario confirmation
+
+#### GET `/settings`
+Get current emulator configuration.
+
+**Response:**
+```json
+{
+  "ssid": "TestNetwork",
+  "water_pulse_rate": 440,
+  "door_open_duration": 15,
+  "door_close_duration": 12,
+  "debug_enabled": false
+}
+```
+
+#### POST `/settings`
+Update emulator configuration.
+
+**Request Body:**
+```json
+{
+  "ssid": "NewNetwork",
+  "passwd": "NewPassword",
+  "water_pulse_rate": 500
+}
+```
+
+**Response:** `200 OK` with "Settings saved" text
+
+**Note:** WiFi settings (ssid, passwd) trigger system restart after save.
+
+### Building and Deploying
+
+The emulator uses a dedicated PlatformIO environment configuration for building and deployment.
+
+**Build Commands:**
+
+```bash
+# Build emulator firmware
+pio run -e esp32-emulate-hardware
+
+# Upload firmware to emulator ESP32
+pio run -e esp32-emulate-hardware --target upload
+
+# Build web UI for emulator
+cd emulate_hardware/web && npm run build
+
+# Upload filesystem (web UI) to emulator
+pio run -e esp32-emulate-hardware --target uploadfs
+
+# Monitor serial output from emulator
+pio device monitor
+```
+
+**Build Configuration:**
+
+The emulator environment is defined in [`platformio.ini`](platformio.ini:137) starting at line 137:
+
+```ini
+[env:esp32-emulate-hardware]
+board = esp32dev
+framework = arduino
+build_type = debug
+build_src_filter =
+    -<*>
+    +<../emulate_hardware/src>
+custom_WEB_SRC_DIR = emulate_hardware/web
+```
+
+**Key Settings:**
+- **Source Filter:** Only builds files in `emulate_hardware/src/` directory
+- **Custom Web Directory:** Uses `emulate_hardware/web` for web UI build
+- **Pin Definitions:** Lines 156-179 define all emulator pins as build flags
+- **Build Scripts:** Automatically builds and deploys web UI via `build_web.py`
+
+**Development Workflow:**
+
+1. **Firmware Development:**
+   - Edit files in [`emulate_hardware/src/`](emulate_hardware/src/)
+   - Build with `pio run -e esp32-emulate-hardware`
+   - Upload with `pio run -e esp32-emulate-hardware --target upload`
+
+2. **Web UI Development:**
+   - Edit files in [`emulate_hardware/web/src/`](emulate_hardware/web/src/)
+   - Test with `cd emulate_hardware/web && npm run dev`
+   - Build with `npm run build`
+   - Upload filesystem with `pio run -e esp32-emulate-hardware --target uploadfs`
+
+3. **Testing:**
+   - Connect main controller and emulator via wiring diagram
+   - Upload main controller firmware
+   - Upload emulator firmware
+   - Access emulator web UI at `http://hwemulator.local`
+   - Access main controller web UI at `http://coopcontroller.local`
+   - Run test scenarios and verify behavior
+
+**Port Configuration:**
+
+Set serial port in [`platformio.ini`](platformio.ini:195):
+```ini
+upload_port = COM22        # Adjust for your system
+monitor_port = COM22
+```
+
+**File Structure:**
+```
+emulate_hardware/
+├── src/
+│   ├── main.cpp                  # Main entry point
+│   ├── config.h                  # Pin and constant definitions
+│   ├── EmulatorStateManager.cpp  # State machine implementation
+│   ├── EmulatorStateManager.h
+│   ├── EmulatorWebServer.cpp     # REST API implementation
+│   ├── EmulatorWebServer.h
+│   ├── EmulatorSettings.cpp      # Settings persistence
+│   └── EmulatorSettings.h
+└── web/
+    ├── src/
+    │   ├── App.tsx               # Main app component
+    │   ├── Status.tsx            # Status page
+    │   ├── DoorControl.tsx       # Door control page
+    │   ├── WaterControl.tsx      # Water control page
+    │   ├── ManualControls.tsx    # Manual controls page
+    │   ├── Scenarios.tsx         # Scenarios page
+    │   └── Settings.tsx          # Settings page
+    ├── package.json              # Node dependencies
+    └── vite.config.ts            # Vite build config
+```
+
+### Test Scenarios
+
+The emulator provides 7 predefined test scenarios for comprehensive system testing.
+
+#### 1. Normal Operation
+**Purpose:** Baseline testing with all systems functional.
+
+**Configuration:**
+- Door: Opens and closes normally with proper hall sensor feedback
+- Water: Pulses generated when pump is active
+- Pump: Responds to temperature control logic
+- Faults: None injected
+
+**Expected Main Controller Behavior:**
+- Temperature monitoring operational
+- Pump cycles based on temperature thresholds
+- Water flow detected during pump cycles
+- Door operates normally with position confirmation
+- All sensors report correctly
+
+**Validation:**
+- Verify pump ON triggers water pulses
+- Confirm door reaches open/closed positions
+- Check hall sensors indicate correct positions
+- Monitor pump cycle timing matches settings
+
+#### 2. Freeze Condition
+**Purpose:** Simulate sub-zero temperatures requiring pump cycling.
+
+**Configuration:**
+- Simulated temperature: Below threshold (implied by emulator state)
+- Water: Continuous pulse generation while pump active
+- Pump: Should cycle ON/OFF per configuration
+- Door: Normal operation
+
+**Expected Main Controller Behavior:**
+- Pump activates in cycling mode (5 min ON, 10 min OFF by default)
+- Water flow detected during pump ON periods
+- Flow error NOT triggered (pulses present)
+- Temperature readings trigger pump activation
+
+**Validation:**
+- Confirm pump cycling behavior
+- Verify water pulses generated during pump ON
+- Check pump OFF periods have no pulses (emulator stops generating)
+- Monitor total pump runtime accumulation
+
+#### 3. Door Stuck Open
+**Purpose:** Test timeout and fault detection when door won't close.
+
+**Configuration:**
+- Door: Receives close command but hall open sensor stays active (LOW)
+- Hall Close Sensor: Never activates
+- Motor: Responds to command but door doesn't move
+- Timeout: Should trigger after configured close duration + buffer
+
+**Expected Main Controller Behavior:**
+- Initiates door close sequence
+- Monitors for hall close sensor activation
+- Timeout occurs after expected close duration
+- Fault logged and user notified
+- Automatic retry or manual intervention required
+
+**Validation:**
+- Verify timeout detection accuracy
+- Check fault logging and notification
+- Confirm door state reported as "STUCK" or error
+- Test recovery after manual intervention
+
+#### 4. Door Stuck Closed
+**Purpose:** Test fault handling when door won't open.
+
+**Configuration:**
+- Door: Receives open command but hall close sensor stays active (LOW)
+- Hall Open Sensor: Never activates
+- Motor: Responds to command but door doesn't move
+- Timeout: Should trigger after configured open duration + buffer
+
+**Expected Main Controller Behavior:**
+- Initiates door open sequence
+- Monitors for hall open sensor activation
+- Timeout occurs after expected open duration
+- Fault logged and user notified
+- System prevents chickens from being locked out
+
+**Validation:**
+- Verify timeout detection timing
+- Check fault reporting mechanisms
+- Confirm safety features engage (door stays closed if can't open)
+- Test manual override functionality
+
+#### 5. Motor Fault
+**Purpose:** Test DRV8833 driver fault detection.
+
+**Configuration:**
+- Door: Receives open/close command
+- Motor Fault Signal: Active (LOW) from emulator
+- Hall Sensors: No position changes
+- Motor: Simulates driver fault condition
+
+**Expected Main Controller Behavior:**
+- Detects fault signal immediately
+- Stops motor command sequence
+- Logs hardware fault
+- Notifies user of motor driver issue
+- Prevents repeated attempts that could damage hardware
+
+**Validation:**
+- Confirm immediate fault detection (not timeout-based)
+- Verify motor commands cease when fault active
+- Check error message clarity
+- Test recovery after fault cleared
+
+#### 6. Frozen Water Line
+**Purpose:** Test flow error detection when pump runs but no flow.
+
+**Configuration:**
+- Pump: Active (HIGH) from main controller
+- Water Pulses: None generated (emulator stops pulses)
+- Temperature: Below threshold (pump should be ON)
+- Flow Error Timeout: Should trigger after configured duration (default 120s)
+
+**Expected Main Controller Behavior:**
+- Activates pump due to low temperature
+- Monitors water flow via pulse counting
+- No pulses detected despite pump running
+- Flow error triggered after timeout period
+- Pump shut down to prevent damage
+- Automatic retry after configured delay
+
+**Validation:**
+- Verify flow error timeout accuracy
+- Confirm pump shutdown on error
+- Check retry logic and timing
+- Monitor error logging and notifications
+- Test manual flow error clear function
+
+#### 7. Pump Failure
+**Purpose:** Test detection when pump doesn't activate despite command.
+
+**Configuration:**
+- Temperature: Below threshold (pump command should be sent)
+- Pump Output: Never goes HIGH (emulator detects no signal)
+- Water Pulses: None (no pump = no flow)
+- Fault: Simulates relay failure or power loss
+
+**Expected Main Controller Behavior:**
+- Temperature controller sends pump ON command
+- Monitors for flow indication
+- Flow error timeout triggers (no pulses)
+- System identifies pump not responding
+- Logs pump failure
+- Alerts user to hardware issue
+
+**Validation:**
+- Verify pump command sent by main controller
+- Confirm flow error detection
+- Check error reporting indicates pump (not water system) fault
+- Test that system doesn't repeatedly retry broken pump
+- Validate notification systems engage
+
+**Scenario Testing Workflow:**
+
+1. **Preparation:**
+   - Connect main controller and emulator
+   - Upload latest firmware to both devices
+   - Access emulator web UI
+   - Access main controller web UI (separate browser tab)
+
+2. **Execution:**
+   - Navigate to emulator Scenarios page
+   - Click scenario to activate
+   - Monitor main controller Status page
+   - Observe emulator Status page for signal states
+   - Check main controller Logs page for errors/warnings
+
+3. **Validation:**
+   - Compare actual behavior to expected behavior
+   - Verify all required signals generated correctly
+   - Check timing meets specifications
+   - Confirm error handling and notifications
+   - Document any deviations from expected behavior
+
+4. **Reset:**
+   - Click "Normal Operation" scenario
+   - Verify system returns to baseline state
+   - Ready for next scenario test
+
+### Build Statistics
+
+**Firmware Size (esp32-emulate-hardware environment):**
+- **RAM Usage:** 46,780 bytes (14.3% of 327,680 bytes available)
+- **Flash Usage:** 1,041,829 bytes (79.5% of 1,310,720 bytes available)
+
+**Memory Breakdown:**
+- **Code:** ~800KB (state machine, web server, settings management)
+- **Static Data:** ~40KB (strings, constants, web UI assets)
+- **Stack:** ~6KB per task (FreeRTOS)
+- **Heap:** ~280KB available for dynamic allocation
+
+**Comparison to Main Controller:**
+- Main Controller RAM: 56,436 bytes (17.2%)
+- Main Controller Flash: 1,081,881 bytes (82.5%)
+- Emulator uses less RAM due to simpler logic
+- Emulator uses less flash due to fewer external library dependencies
+
+**Build Performance:**
+- Typical build time: 15-25 seconds (clean build)
+- Incremental build time: 3-8 seconds
+- Web UI build time: 8-12 seconds
+- Filesystem upload time: 20-30 seconds
+
+**Optimization Notes:**
+- Debug build includes full symbol tables and logging
+- Release build could reduce flash usage by ~150KB
+- Further optimization possible by removing unused library code
+- Current sizes leave comfortable margins for future features
+
+### Usage Tips
+
+**Development Best Practices:**
+1. **Start with Normal Operation** - Always verify baseline functionality before testing fault scenarios
+2. **Monitor Both UIs** - Keep main controller and emulator web UIs open side-by-side for real-time correlation
+3. **Check Serial Logs** - Serial monitor provides detailed timing and state transition information not visible in web UI
+4. **Use Manual Controls Sparingly** - Automated scenarios are more reliable for regression testing
+5. **Document Custom Scenarios** - If creating custom test cases, document pin states and timing in comments
+
+**Troubleshooting:**
+- **No Signal Detection:** Check wiring connections and ground continuity
+- **Erratic Behavior:** Verify both devices sharing common ground
+- **Web UI Not Loading:** Check WiFi connection, verify IP address, restart emulator
+- **Main Controller Not Responding:** Verify emulator outputs driving correct voltage levels (3.3V)
+- **Timing Issues:** Adjust scenario timing parameters in settings to match main controller expectations
+
+**Advanced Features:**
+- **Programmatic Control:** Use REST API from automation scripts for CI/CD integration
+- **Signal Recording:** Log all pin states to file for post-analysis
+- **Batch Testing:** Run multiple scenarios sequentially via API for automated regression testing
+- **Remote Access:** Expose emulator web UI via VPN or port forwarding for remote debugging
 
 ---
 
