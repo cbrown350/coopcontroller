@@ -173,6 +173,32 @@ void EmulatorWebServer::setupRoutes() {
              size_t total) { handleApplyCustomScenario(request, data, len); });
 
   // ========================================================================
+  // CUSTOM SCENARIOS
+  // ========================================================================
+
+  _server.on("/emulator/scenarios/custom", HTTP_GET,
+             [this](AsyncWebServerRequest *request) {
+               handleGetCustomScenarios(request);
+             });
+
+  _server.on(
+      "/emulator/scenarios/custom/save", HTTP_POST,
+      [](AsyncWebServerRequest *request) {}, nullptr,
+      [this](AsyncWebServerRequest *request, uint8_t *data, size_t len,
+             size_t index,
+             size_t total) { handleSaveCustomScenario(request, data, len); });
+
+  _server.on("/emulator/scenarios/custom/delete", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleDeleteCustomScenario(request);
+             });
+
+  _server.on("/emulator/scenarios/custom/apply", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleApplyCustomScenarioByName(request);
+             });
+
+  // ========================================================================
   // FAULT INJECTION
   // ========================================================================
 
@@ -183,6 +209,101 @@ void EmulatorWebServer::setupRoutes() {
   _server.on("/emulator/fault/clear_all", HTTP_POST,
              [this](AsyncWebServerRequest *request) {
                handleClearAllFaults(request);
+             });
+
+  // ========================================================================
+  // RECORDINGS
+  // ========================================================================
+
+  _server.on("/emulator/recordings", HTTP_GET,
+             [this](AsyncWebServerRequest *request) {
+               handleGetRecordings(request);
+             });
+
+  _server.on("/emulator/recordings/status", HTTP_GET,
+             [this](AsyncWebServerRequest *request) {
+               handleGetRecordingStatus(request);
+             });
+
+  _server.on("/emulator/recordings/start", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleStartRecording(request);
+             });
+
+  _server.on("/emulator/recordings/stop", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleStopRecording(request);
+             });
+
+  _server.on("/emulator/recordings/pause", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleToggleRecordingPause(request);
+             });
+
+  _server.on("/emulator/recordings/play", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleStartPlayback(request);
+             });
+
+  _server.on("/emulator/recordings/playback/stop", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleStopPlayback(request);
+             });
+
+  _server.on("/emulator/recordings/playback/pause", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleTogglePlaybackPause(request);
+             });
+
+  _server.on("/emulator/recordings/playback/speed", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleSetPlaybackSpeed(request);
+             });
+
+  _server.on("/emulator/recordings/delete", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleDeleteRecording(request);
+             });
+
+  _server.on("/emulator/recordings/delete_all", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleDeleteAllRecordings(request);
+             });
+
+  _server.on("/emulator/recordings/download", HTTP_GET,
+             [this](AsyncWebServerRequest *request) {
+               handleDownloadRecording(request);
+             });
+
+  // ========================================================================
+  // TEMPERATURE SENSORS
+  // ========================================================================
+
+  _server.on("/emulator/temperature", HTTP_GET,
+             [this](AsyncWebServerRequest *request) {
+               handleGetTemperature(request);
+             });
+
+  _server.on(
+      "/emulator/temperature/set", HTTP_POST,
+      [](AsyncWebServerRequest *request) {}, nullptr,
+      [this](AsyncWebServerRequest *request, uint8_t *data, size_t len,
+             size_t index,
+             size_t total) { handleSetTemperature(request, data, len); });
+
+  _server.on("/emulator/temperature/enable", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleSetTempSensorEnabled(request);
+             });
+
+  _server.on("/emulator/temperature/disconnect", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleSetTempDisconnected(request);
+             });
+
+  _server.on("/emulator/temperature/drift", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               handleSetTempDrift(request);
              });
 
   // ========================================================================
@@ -601,6 +722,101 @@ void EmulatorWebServer::handleApplyCustomScenario(
 }
 
 // ============================================================================
+// CUSTOM SCENARIO HANDLERS
+// ============================================================================
+
+void EmulatorWebServer::handleGetCustomScenarios(
+    AsyncWebServerRequest *request) {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  customScenarioManager.toJsonArray(arr);
+  sendJsonResponse(request, doc);
+}
+
+void EmulatorWebServer::handleSaveCustomScenario(AsyncWebServerRequest *request,
+                                                 uint8_t *data, size_t len) {
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, data, len);
+
+  if (error) {
+    sendErrorResponse(request, "Invalid JSON");
+    return;
+  }
+
+  JsonObject obj = doc.as<JsonObject>();
+
+  Scenario scenario;
+  if (!CustomScenarioManager::fromJson(obj, scenario)) {
+    sendErrorResponse(request, "Failed to parse scenario - name is required");
+    return;
+  }
+
+  if (strlen(scenario.name) == 0) {
+    sendErrorResponse(request, "Scenario name cannot be empty");
+    return;
+  }
+
+  if (customScenarioManager.saveCustomScenario(scenario)) {
+    JsonDocument response;
+    response["success"] = true;
+    response["message"] = "Custom scenario saved";
+    response["scenario_name"] = scenario.name;
+    response["total_custom"] = customScenarioManager.getCount();
+    sendJsonResponse(request, response);
+  } else {
+    sendErrorResponse(request,
+                      "Failed to save custom scenario (max limit reached?)");
+  }
+}
+
+void EmulatorWebServer::handleDeleteCustomScenario(
+    AsyncWebServerRequest *request) {
+  // Support deletion by name or index
+  if (request->hasParam("name", true)) {
+    String name = request->getParam("name", true)->value();
+    if (customScenarioManager.deleteByName(name.c_str())) {
+      sendSuccessResponse(request, "Custom scenario deleted");
+    } else {
+      sendErrorResponse(request, "Custom scenario not found");
+    }
+  } else if (request->hasParam("index", true)) {
+    int index = request->getParam("index", true)->value().toInt();
+    if (index >= 0 &&
+        customScenarioManager.deleteByIndex(static_cast<size_t>(index))) {
+      sendSuccessResponse(request, "Custom scenario deleted");
+    } else {
+      sendErrorResponse(request, "Invalid index or scenario not found");
+    }
+  } else {
+    sendErrorResponse(request, "Missing 'name' or 'index' parameter");
+  }
+}
+
+void EmulatorWebServer::handleApplyCustomScenarioByName(
+    AsyncWebServerRequest *request) {
+  if (!request->hasParam("name", true)) {
+    sendErrorResponse(request, "Missing 'name' parameter");
+    return;
+  }
+
+  String name = request->getParam("name", true)->value();
+  const Scenario *scenario = customScenarioManager.getByName(name.c_str());
+
+  if (!scenario) {
+    sendErrorResponse(request, "Custom scenario not found");
+    return;
+  }
+
+  _stateManager->applyScenario(*scenario);
+
+  JsonDocument response;
+  response["success"] = true;
+  response["message"] = "Custom scenario applied";
+  response["scenario_name"] = _stateManager->getActiveScenarioName();
+  sendJsonResponse(request, response);
+}
+
+// ============================================================================
 // FAULT INJECTION HANDLERS
 // ============================================================================
 
@@ -738,6 +954,205 @@ void EmulatorWebServer::handleFactoryReset(AsyncWebServerRequest *request) {
   sendSuccessResponse(request, "Factory reset complete. Rebooting...");
   delay(500);
   ESP.restart();
+}
+
+// ============================================================================
+// RECORDING HANDLERS
+// ============================================================================
+
+void EmulatorWebServer::handleGetRecordings(AsyncWebServerRequest *request) {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  logRecorder.recordingsToJson(arr);
+  sendJsonResponse(request, doc);
+}
+
+void EmulatorWebServer::handleGetRecordingStatus(AsyncWebServerRequest *request) {
+  JsonDocument doc;
+  JsonObject obj = doc.to<JsonObject>();
+  logRecorder.statusToJson(obj);
+  sendJsonResponse(request, doc);
+}
+
+void EmulatorWebServer::handleStartRecording(AsyncWebServerRequest *request) {
+  const char* label = "Recording";
+  if (request->hasParam("label", true)) {
+    label = request->getParam("label", true)->value().c_str();
+  }
+
+  if (logRecorder.startRecording(label)) {
+    sendSuccessResponse(request, "Recording started");
+  } else {
+    sendErrorResponse(request, "Failed to start recording");
+  }
+}
+
+void EmulatorWebServer::handleStopRecording(AsyncWebServerRequest *request) {
+  if (logRecorder.stopRecording()) {
+    sendSuccessResponse(request, "Recording saved");
+  } else {
+    sendErrorResponse(request, "Failed to stop recording or no samples captured");
+  }
+}
+
+void EmulatorWebServer::handleToggleRecordingPause(AsyncWebServerRequest *request) {
+  logRecorder.togglePause();
+  sendSuccessResponse(request, "Recording pause toggled");
+}
+
+void EmulatorWebServer::handleStartPlayback(AsyncWebServerRequest *request) {
+  if (!request->hasParam("id", true)) {
+    sendErrorResponse(request, "Missing 'id' parameter");
+    return;
+  }
+
+  uint16_t speed = 100;
+  if (request->hasParam("speed", true)) {
+    speed = request->getParam("speed", true)->value().toInt();
+  }
+
+  String id = request->getParam("id", true)->value();
+  if (logRecorder.startPlayback(id.c_str(), speed)) {
+    sendSuccessResponse(request, "Playback started");
+  } else {
+    sendErrorResponse(request, "Failed to start playback");
+  }
+}
+
+void EmulatorWebServer::handleStopPlayback(AsyncWebServerRequest *request) {
+  logRecorder.stopPlayback();
+  sendSuccessResponse(request, "Playback stopped");
+}
+
+void EmulatorWebServer::handleTogglePlaybackPause(AsyncWebServerRequest *request) {
+  logRecorder.togglePlaybackPause();
+  sendSuccessResponse(request, "Playback pause toggled");
+}
+
+void EmulatorWebServer::handleSetPlaybackSpeed(AsyncWebServerRequest *request) {
+  if (!request->hasParam("speed", true)) {
+    sendErrorResponse(request, "Missing 'speed' parameter");
+    return;
+  }
+
+  uint16_t speed = request->getParam("speed", true)->value().toInt();
+  logRecorder.setPlaybackSpeed(speed);
+  sendSuccessResponse(request, "Playback speed updated");
+}
+
+void EmulatorWebServer::handleDeleteRecording(AsyncWebServerRequest *request) {
+  if (!request->hasParam("id", true)) {
+    sendErrorResponse(request, "Missing 'id' parameter");
+    return;
+  }
+
+  String id = request->getParam("id", true)->value();
+  if (logRecorder.deleteRecording(id.c_str())) {
+    sendSuccessResponse(request, "Recording deleted");
+  } else {
+    sendErrorResponse(request, "Recording not found");
+  }
+}
+
+void EmulatorWebServer::handleDeleteAllRecordings(AsyncWebServerRequest *request) {
+  logRecorder.deleteAllRecordings();
+  sendSuccessResponse(request, "All recordings deleted");
+}
+
+void EmulatorWebServer::handleDownloadRecording(AsyncWebServerRequest *request) {
+  if (!request->hasParam("id")) {
+    sendErrorResponse(request, "Missing 'id' parameter");
+    return;
+  }
+
+  String id = request->getParam("id")->value();
+  String content;
+  if (!logRecorder.getRecordingContent(id.c_str(), content)) {
+    request->send(404, "text/plain", "Recording not found");
+    return;
+  }
+
+  String filename = "recording_" + id + ".json";
+  AsyncWebServerResponse *response =
+      request->beginResponse(200, "application/json", content);
+  response->addHeader("Content-Disposition",
+                      ("attachment; filename=\"" + filename + "\"").c_str());
+  response->addHeader("Cache-Control", "no-cache");
+  request->send(response);
+}
+
+// ============================================================================
+// TEMPERATURE SENSOR HANDLERS
+// ============================================================================
+
+void EmulatorWebServer::handleGetTemperature(AsyncWebServerRequest *request) {
+  JsonDocument doc;
+  JsonObject obj = doc.to<JsonObject>();
+  tempSensorEmulator.toJson(obj);
+  sendJsonResponse(request, doc);
+}
+
+void EmulatorWebServer::handleSetTemperature(AsyncWebServerRequest *request,
+                                             uint8_t *data, size_t len) {
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, data, len);
+
+  if (error) {
+    sendErrorResponse(request, "Invalid JSON");
+    return;
+  }
+
+  JsonObject obj = doc.as<JsonObject>();
+  tempSensorEmulator.fromJson(obj);
+  sendSuccessResponse(request, "Temperature settings updated");
+}
+
+void EmulatorWebServer::handleSetTempSensorEnabled(AsyncWebServerRequest *request) {
+  if (!request->hasParam("sensor", true) || !request->hasParam("enabled", true)) {
+    sendErrorResponse(request, "Missing 'sensor' and 'enabled' parameters");
+    return;
+  }
+
+  uint8_t sensor = request->getParam("sensor", true)->value().toInt();
+  bool enabled = request->getParam("enabled", true)->value() == "true";
+  tempSensorEmulator.setSensorEnabled(sensor, enabled);
+  sendSuccessResponse(request, "Sensor enabled state updated");
+}
+
+void EmulatorWebServer::handleSetTempDisconnected(AsyncWebServerRequest *request) {
+  if (!request->hasParam("sensor", true) || !request->hasParam("disconnected", true)) {
+    sendErrorResponse(request, "Missing 'sensor' and 'disconnected' parameters");
+    return;
+  }
+
+  uint8_t sensor = request->getParam("sensor", true)->value().toInt();
+  bool disconnected = request->getParam("disconnected", true)->value() == "true";
+  tempSensorEmulator.setDisconnected(sensor, disconnected);
+  sendSuccessResponse(request, "Sensor disconnect state updated");
+}
+
+void EmulatorWebServer::handleSetTempDrift(AsyncWebServerRequest *request) {
+  if (!request->hasParam("sensor", true)) {
+    sendErrorResponse(request, "Missing 'sensor' parameter");
+    return;
+  }
+
+  uint8_t sensor = request->getParam("sensor", true)->value().toInt();
+
+  if (request->hasParam("enabled", true)) {
+    bool enabled = request->getParam("enabled", true)->value() == "true";
+    tempSensorEmulator.setDriftEnabled(sensor, enabled);
+  }
+  if (request->hasParam("amplitude", true)) {
+    float amplitude = request->getParam("amplitude", true)->value().toFloat();
+    tempSensorEmulator.setDriftAmplitude(sensor, amplitude);
+  }
+  if (request->hasParam("period_ms", true)) {
+    uint32_t period = request->getParam("period_ms", true)->value().toInt();
+    tempSensorEmulator.setDriftPeriod(sensor, period);
+  }
+
+  sendSuccessResponse(request, "Drift settings updated");
 }
 
 // ============================================================================

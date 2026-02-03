@@ -182,4 +182,74 @@ export interface Scenario {
   override_hall_close?: boolean;
   override_door_fault?: boolean;
   override_manual_switch?: boolean;
+  // Custom scenario fields
+  is_custom?: boolean;
+  index?: number;
+}
+
+/**
+ * Custom scenario for creation/editing
+ */
+export interface CustomScenarioInput {
+  name: string;
+  description: string;
+  auto_simulate_door: boolean;
+  simulate_door_stuck: boolean;
+  door_position: number;
+  door_state: string;
+  auto_generate_pulses: boolean;
+  simulate_frozen_line: boolean;
+  flow_rate_gpm: number;
+  inject_door_fault: boolean;
+  enable_override: boolean;
+  override_hall_open?: boolean;
+  override_hall_close?: boolean;
+  override_door_fault?: boolean;
+  override_manual_switch?: boolean;
+}
+
+// ============================================================================
+// Log Recording & Playback types
+// ============================================================================
+
+export interface RecordingMetadata {
+  id: string;
+  filename: string;
+  duration_ms: number;
+  sample_count: number;
+  created_at: number;
+  label: string;
+}
+
+export interface RecordingStatus {
+  recording: {
+    state: 'IDLE' | 'RECORDING' | 'PAUSED';
+    sample_count: number;
+    duration_ms: number;
+  };
+  playback: {
+    state: 'IDLE' | 'PLAYING' | 'PAUSED';
+    id: string;
+    position_ms: number;
+    duration_ms: number;
+    speed_percent: number;
+  };
+}
+
+// ============================================================================
+// Temperature Sensor Emulation types
+// ============================================================================
+
+export interface TempSensorConfig {
+  enabled: boolean;
+  temperature_c: number;
+  disconnected: boolean;
+  drift_enabled: boolean;
+  drift_amplitude_c: number;
+  drift_period_ms: number;
+}
+
+export interface TempSensorState {
+  sensor1: TempSensorConfig;
+  sensor2: TempSensorConfig;
 }
