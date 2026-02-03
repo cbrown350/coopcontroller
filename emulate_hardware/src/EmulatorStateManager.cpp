@@ -123,7 +123,7 @@ void EmulatorStateManager::sampleInputs() {
                       motorDirectionToString(_monitored.motorDirection));
     }
 
-    // Read buzzer state (active low)
+    // Read buzzer state (active low) with pattern tracking
     bool newBuzzerState = digitalRead(EMU_READ_BUZZER_PIN) == LOW;
     if (newBuzzerState != _monitored.buzzerActive) {
         _monitored.buzzerActive = newBuzzerState;
@@ -135,12 +135,14 @@ void EmulatorStateManager::sampleInputs() {
     if (_monitored.buzzerActive) {
         _monitored.buzzerOnDuration = now - _buzzerOnTime;
     }
+    updateBuzzerPattern(newBuzzerState);
 
-    // Read WiFi LED state (active low)
+    // Read WiFi LED state (active low) with pattern tracking
     bool newLedState = digitalRead(EMU_READ_LED_PIN) == LOW;
     if (newLedState != _monitored.wifiLedActive) {
         _monitored.wifiLedActive = newLedState;
     }
+    updateLedPattern(newLedState);
 }
 
 void EmulatorStateManager::updateDoorSimulation() {
@@ -253,22 +255,52 @@ void EmulatorStateManager::updateHallSensors() {
 }
 
 void EmulatorStateManager::updateManualSwitch() {
-    if (_emulated.manualSwitchPressed && _manualSwitchReleaseTime > 0) {
-        if (millis() >= _manualSwitchReleaseTime) {
-            _emulated.manualSwitchPressed = false;
-            _manualSwitchReleaseTime = 0;
-            Serial.println("[EmulatorState] Manual switch released");
+    uint32_t now = millis();
+
+    // Update press duration while pressed
+    if (_emulated.manualSwitch.isPressed && _emulated.manualSwitch.pressStartTime > 0) {
+        _emulated.manualSwitch.pressDuration = now - _emulated.manualSwitch.pressStartTime;
+
+        // Determine press type based on duration
+        if (_emulated.manualSwitch.pressDuration >= _emulated.manualSwitch.longPressThresholdMs) {
+            _emulated.manualSwitch.lastPressType = SwitchPressType::LONG;
+        } else if (_emulated.manualSwitch.pressDuration >= _emulated.manualSwitch.shortPressThresholdMs) {
+            _emulated.manualSwitch.lastPressType = SwitchPressType::SHORT;
+        }
+    }
+
+    // Handle auto-release
+    if (_emulated.manualSwitch.isPressed && _emulated.manualSwitch.autoReleaseTime > 0) {
+        if (now >= _emulated.manualSwitch.autoReleaseTime) {
+            _emulated.manualSwitch.isPressed = false;
+            _emulated.manualSwitch.autoReleaseTime = 0;
+            Serial.printf("[EmulatorState] Manual switch auto-released (type: %s, duration: %lu ms)\n",
+                          _emulated.manualSwitch.lastPressType == SwitchPressType::LONG ? "LONG" : "SHORT",
+                          _emulated.manualSwitch.pressDuration);
         }
     }
 }
 
 void EmulatorStateManager::outputEmulatedSignals() {
+    // Check if manual override mode is enabled
+    if (_config.manualOverrideEnabled) {
+        // In manual override mode, use override states directly
+        digitalWrite(EMU_HALL_OPEN_PIN, _config.overrideHallOpen ? LOW : HIGH);
+        digitalWrite(EMU_HALL_CLOSE_PIN, _config.overrideHallClose ? LOW : HIGH);
+        digitalWrite(EMU_MANUAL_SW_PIN, _config.overrideManualSwitch ? LOW : HIGH);
+        digitalWrite(EMU_DOOR_FAULT_PIN, _config.overrideDoorFault ? LOW : HIGH);
+        digitalWrite(EMU_WATER_PULSE1_PIN, _config.overrideWaterPulse1 ? LOW : HIGH);
+        digitalWrite(EMU_WATER_PULSE2_PIN, _config.overrideWaterPulse2 ? LOW : HIGH);
+        return;
+    }
+
+    // Normal mode - use emulated states
     // Hall sensors (active low - LOW means magnet detected)
     digitalWrite(EMU_HALL_OPEN_PIN, _emulated.hallOpenActive ? LOW : HIGH);
     digitalWrite(EMU_HALL_CLOSE_PIN, _emulated.hallCloseActive ? LOW : HIGH);
 
     // Manual switch (active low)
-    digitalWrite(EMU_MANUAL_SW_PIN, _emulated.manualSwitchPressed ? LOW : HIGH);
+    digitalWrite(EMU_MANUAL_SW_PIN, _emulated.manualSwitch.isPressed ? LOW : HIGH);
 
     // Door fault (active low)
     bool faultOutput = _emulated.doorFaultActive || _config.injectDoorFault;
@@ -338,26 +370,249 @@ void EmulatorStateManager::resetPulseCounters() {
 }
 
 void EmulatorStateManager::pressManualSwitch() {
-    _emulated.manualSwitchPressed = true;
-    _manualSwitchReleaseTime = 0;  // Stay pressed until released
+    _emulated.manualSwitch.isPressed = true;
+    _emulated.manualSwitch.pressStartTime = millis();
+    _emulated.manualSwitch.pressDuration = 0;
+    _emulated.manualSwitch.autoReleaseTime = 0;  // Stay pressed until released
+    _emulated.manualSwitch.lastPressType = SwitchPressType::NONE;
     Serial.println("[EmulatorState] Manual switch pressed");
 }
 
 void EmulatorStateManager::releaseManualSwitch() {
-    _emulated.manualSwitchPressed = false;
-    _manualSwitchReleaseTime = 0;
-    Serial.println("[EmulatorState] Manual switch released");
+    uint32_t duration = _emulated.manualSwitch.pressDuration;
+
+    // Determine final press type
+    if (duration >= _emulated.manualSwitch.longPressThresholdMs) {
+        _emulated.manualSwitch.lastPressType = SwitchPressType::LONG;
+    } else if (duration >= _emulated.manualSwitch.shortPressThresholdMs) {
+        _emulated.manualSwitch.lastPressType = SwitchPressType::SHORT;
+    }
+
+    _emulated.manualSwitch.isPressed = false;
+    _emulated.manualSwitch.autoReleaseTime = 0;
+    Serial.printf("[EmulatorState] Manual switch released (type: %s, duration: %lu ms)\n",
+                  _emulated.manualSwitch.lastPressType == SwitchPressType::LONG ? "LONG" :
+                  (_emulated.manualSwitch.lastPressType == SwitchPressType::SHORT ? "SHORT" : "NONE"),
+                  duration);
 }
 
 void EmulatorStateManager::pulseManualSwitch(uint32_t durationMs) {
-    _emulated.manualSwitchPressed = true;
-    _manualSwitchReleaseTime = millis() + durationMs;
-    Serial.printf("[EmulatorState] Manual switch pulsed for %lu ms\n", durationMs);
+    _emulated.manualSwitch.isPressed = true;
+    _emulated.manualSwitch.pressStartTime = millis();
+    _emulated.manualSwitch.pressDuration = 0;
+    _emulated.manualSwitch.autoReleaseTime = millis() + durationMs;
+    _emulated.manualSwitch.lastPressType = SwitchPressType::SHORT;
+    Serial.printf("[EmulatorState] Manual switch pulsed for %lu ms (short press)\n", durationMs);
+}
+
+void EmulatorStateManager::longPressManualSwitch(uint32_t durationMs) {
+    _emulated.manualSwitch.isPressed = true;
+    _emulated.manualSwitch.pressStartTime = millis();
+    _emulated.manualSwitch.pressDuration = 0;
+    _emulated.manualSwitch.autoReleaseTime = millis() + durationMs;
+    _emulated.manualSwitch.lastPressType = SwitchPressType::LONG;
+    Serial.printf("[EmulatorState] Manual switch long-pressed for %lu ms\n", durationMs);
+}
+
+uint32_t EmulatorStateManager::getCurrentPressDuration() const {
+    if (!_emulated.manualSwitch.isPressed) {
+        return _emulated.manualSwitch.pressDuration;  // Return last duration
+    }
+    return millis() - _emulated.manualSwitch.pressStartTime;
+}
+
+void EmulatorStateManager::setManualSwitchThresholds(uint32_t shortMs, uint32_t longMs) {
+    _emulated.manualSwitch.shortPressThresholdMs = shortMs;
+    _emulated.manualSwitch.longPressThresholdMs = longMs;
+    _config.shortPressMs = shortMs;
+    _config.longPressMs = longMs;
+    Serial.printf("[EmulatorState] Manual switch thresholds: short=%lu ms, long=%lu ms\n", shortMs, longMs);
 }
 
 void EmulatorStateManager::setDoorFault(bool fault) {
     _emulated.doorFaultActive = fault;
     Serial.printf("[EmulatorState] Door fault: %s\n", fault ? "ACTIVE" : "CLEARED");
+}
+
+// ============================================================================
+// MANUAL OVERRIDE METHODS
+// ============================================================================
+
+void EmulatorStateManager::setManualOverrideEnabled(bool enabled) {
+    _config.manualOverrideEnabled = enabled;
+    Serial.printf("[EmulatorState] Manual override mode: %s\n", enabled ? "ENABLED" : "DISABLED");
+
+    if (!enabled) {
+        // Clear all overrides when disabling
+        clearAllOverrides();
+    }
+}
+
+void EmulatorStateManager::setOverrideHallOpen(bool state) {
+    _config.overrideHallOpen = state;
+    if (_config.manualOverrideEnabled) {
+        Serial.printf("[EmulatorState] Override hall open: %s\n", state ? "ACTIVE" : "INACTIVE");
+    }
+}
+
+void EmulatorStateManager::setOverrideHallClose(bool state) {
+    _config.overrideHallClose = state;
+    if (_config.manualOverrideEnabled) {
+        Serial.printf("[EmulatorState] Override hall close: %s\n", state ? "ACTIVE" : "INACTIVE");
+    }
+}
+
+void EmulatorStateManager::setOverrideDoorFault(bool state) {
+    _config.overrideDoorFault = state;
+    if (_config.manualOverrideEnabled) {
+        Serial.printf("[EmulatorState] Override door fault: %s\n", state ? "ACTIVE" : "INACTIVE");
+    }
+}
+
+void EmulatorStateManager::setOverrideManualSwitch(bool state) {
+    _config.overrideManualSwitch = state;
+    if (_config.manualOverrideEnabled) {
+        Serial.printf("[EmulatorState] Override manual switch: %s\n", state ? "PRESSED" : "RELEASED");
+    }
+}
+
+void EmulatorStateManager::setOverrideWaterPulse(uint8_t channel, bool state) {
+    if (channel == 1) {
+        _config.overrideWaterPulse1 = state;
+    } else if (channel == 2) {
+        _config.overrideWaterPulse2 = state;
+    }
+    if (_config.manualOverrideEnabled) {
+        Serial.printf("[EmulatorState] Override water pulse %d: %s\n", channel, state ? "LOW" : "HIGH");
+    }
+}
+
+void EmulatorStateManager::clearAllOverrides() {
+    _config.overrideHallOpen = false;
+    _config.overrideHallClose = false;
+    _config.overrideDoorFault = false;
+    _config.overrideManualSwitch = false;
+    _config.overrideWaterPulse1 = false;
+    _config.overrideWaterPulse2 = false;
+    Serial.println("[EmulatorState] All overrides cleared");
+}
+
+// ============================================================================
+// PATTERN TRACKING METHODS
+// ============================================================================
+
+void EmulatorStateManager::updateBuzzerPattern(bool currentState) {
+    uint32_t now = millis();
+
+    // Check for pattern timeout (reset if idle too long)
+    if (now - _buzzerLastTransition > PATTERN_TIMEOUT_MS) {
+        _monitored.buzzerPattern.isBlinking = false;
+        _monitored.buzzerPattern.cycleCount = 0;
+        _buzzerPatternIndex = 0;
+    }
+
+    if (currentState != _lastBuzzerState) {
+        uint32_t duration = now - _buzzerLastTransition;
+        _buzzerLastTransition = now;
+        _lastBuzzerState = currentState;
+
+        if (currentState) {
+            // Buzzer turned ON - record previous OFF duration
+            if (_buzzerPatternIndex < PATTERN_HISTORY_SIZE) {
+                _buzzerOffDurations[_buzzerPatternIndex] = duration;
+            }
+            _monitored.buzzerPattern.totalOffTime += duration;
+        } else {
+            // Buzzer turned OFF - record previous ON duration
+            if (_buzzerPatternIndex < PATTERN_HISTORY_SIZE) {
+                _buzzerOnDurations[_buzzerPatternIndex] = duration;
+                _buzzerPatternIndex++;
+                if (_buzzerPatternIndex >= PATTERN_HISTORY_SIZE) {
+                    _buzzerPatternIndex = 0;  // Wrap around
+                }
+            }
+            _monitored.buzzerPattern.totalOnTime += duration;
+            _monitored.buzzerPattern.cycleCount++;
+
+            // Calculate pattern after a few cycles
+            if (_monitored.buzzerPattern.cycleCount >= 2) {
+                calculatePattern(_monitored.buzzerPattern, _buzzerOnDurations, _buzzerOffDurations,
+                                 min((uint8_t)_monitored.buzzerPattern.cycleCount, (uint8_t)PATTERN_HISTORY_SIZE));
+            }
+        }
+    }
+}
+
+void EmulatorStateManager::updateLedPattern(bool currentState) {
+    uint32_t now = millis();
+
+    // Check for pattern timeout (reset if idle too long)
+    if (now - _ledLastTransition > PATTERN_TIMEOUT_MS) {
+        _monitored.ledPattern.isBlinking = false;
+        _monitored.ledPattern.cycleCount = 0;
+        _ledPatternIndex = 0;
+    }
+
+    if (currentState != _lastLedState) {
+        uint32_t duration = now - _ledLastTransition;
+        _ledLastTransition = now;
+        _lastLedState = currentState;
+
+        if (currentState) {
+            // LED turned ON - record previous OFF duration
+            if (_ledPatternIndex < PATTERN_HISTORY_SIZE) {
+                _ledOffDurations[_ledPatternIndex] = duration;
+            }
+            _monitored.ledPattern.totalOffTime += duration;
+        } else {
+            // LED turned OFF - record previous ON duration
+            if (_ledPatternIndex < PATTERN_HISTORY_SIZE) {
+                _ledOnDurations[_ledPatternIndex] = duration;
+                _ledPatternIndex++;
+                if (_ledPatternIndex >= PATTERN_HISTORY_SIZE) {
+                    _ledPatternIndex = 0;  // Wrap around
+                }
+            }
+            _monitored.ledPattern.totalOnTime += duration;
+            _monitored.ledPattern.cycleCount++;
+
+            // Calculate pattern after a few cycles
+            if (_monitored.ledPattern.cycleCount >= 2) {
+                calculatePattern(_monitored.ledPattern, _ledOnDurations, _ledOffDurations,
+                                 min((uint8_t)_monitored.ledPattern.cycleCount, (uint8_t)PATTERN_HISTORY_SIZE));
+            }
+        }
+    }
+}
+
+void EmulatorStateManager::calculatePattern(SignalPattern& pattern, uint32_t* onDurations, uint32_t* offDurations, uint8_t count) {
+    if (count < 2) {
+        pattern.isBlinking = false;
+        return;
+    }
+
+    // Calculate averages
+    uint32_t totalOn = 0;
+    uint32_t totalOff = 0;
+    for (uint8_t i = 0; i < count; i++) {
+        totalOn += onDurations[i];
+        totalOff += offDurations[i];
+    }
+
+    pattern.onTimeMs = totalOn / count;
+    pattern.offTimeMs = totalOff / count;
+    pattern.periodMs = pattern.onTimeMs + pattern.offTimeMs;
+
+    // Calculate frequency and duty cycle
+    if (pattern.periodMs > 0) {
+        pattern.frequencyHz = 1000.0f / pattern.periodMs;
+        pattern.dutyCycle = (pattern.onTimeMs * 100) / pattern.periodMs;
+        pattern.isBlinking = (pattern.periodMs >= MIN_BLINK_PERIOD_MS * 2);
+    } else {
+        pattern.frequencyHz = 0;
+        pattern.dutyCycle = pattern.onTimeMs > 0 ? 100 : 0;
+        pattern.isBlinking = false;
+    }
 }
 
 // ============================================================================
@@ -417,6 +672,18 @@ void EmulatorStateManager::toJson(JsonObject& obj) const {
     config["inject_door_fault"] = _config.injectDoorFault;
     config["simulate_frozen_line"] = _config.simulateFrozenLine;
     config["simulate_door_stuck"] = _config.simulateDoorStuck;
+    config["short_press_ms"] = _config.shortPressMs;
+    config["long_press_ms"] = _config.longPressMs;
+
+    // Manual override configuration
+    JsonObject override = obj["override"].to<JsonObject>();
+    override["enabled"] = _config.manualOverrideEnabled;
+    override["hall_open"] = _config.overrideHallOpen;
+    override["hall_close"] = _config.overrideHallClose;
+    override["door_fault"] = _config.overrideDoorFault;
+    override["manual_switch"] = _config.overrideManualSwitch;
+    override["water_pulse_1"] = _config.overrideWaterPulse1;
+    override["water_pulse_2"] = _config.overrideWaterPulse2;
 }
 
 void EmulatorStateManager::monitoredToJson(JsonObject& obj) const {
@@ -429,6 +696,34 @@ void EmulatorStateManager::monitoredToJson(JsonObject& obj) const {
     obj["buzzer_active"] = _monitored.buzzerActive;
     obj["buzzer_duration_ms"] = _monitored.buzzerOnDuration;
     obj["wifi_led_active"] = _monitored.wifiLedActive;
+
+    // Buzzer pattern
+    JsonObject buzzerPattern = obj["buzzer_pattern"].to<JsonObject>();
+    buzzerPattern["is_blinking"] = _monitored.buzzerPattern.isBlinking;
+    buzzerPattern["frequency_hz"] = _monitored.buzzerPattern.frequencyHz;
+    buzzerPattern["period_ms"] = _monitored.buzzerPattern.periodMs;
+    buzzerPattern["on_time_ms"] = _monitored.buzzerPattern.onTimeMs;
+    buzzerPattern["off_time_ms"] = _monitored.buzzerPattern.offTimeMs;
+    buzzerPattern["duty_cycle"] = _monitored.buzzerPattern.dutyCycle;
+    buzzerPattern["cycle_count"] = _monitored.buzzerPattern.cycleCount;
+
+    // LED pattern
+    JsonObject ledPattern = obj["led_pattern"].to<JsonObject>();
+    ledPattern["is_blinking"] = _monitored.ledPattern.isBlinking;
+    ledPattern["frequency_hz"] = _monitored.ledPattern.frequencyHz;
+    ledPattern["period_ms"] = _monitored.ledPattern.periodMs;
+    ledPattern["on_time_ms"] = _monitored.ledPattern.onTimeMs;
+    ledPattern["off_time_ms"] = _monitored.ledPattern.offTimeMs;
+    ledPattern["duty_cycle"] = _monitored.ledPattern.dutyCycle;
+    ledPattern["cycle_count"] = _monitored.ledPattern.cycleCount;
+}
+
+static const char* switchPressTypeToString(SwitchPressType type) {
+    switch (type) {
+        case SwitchPressType::SHORT: return "SHORT";
+        case SwitchPressType::LONG: return "LONG";
+        default: return "NONE";
+    }
 }
 
 void EmulatorStateManager::emulatedToJson(JsonObject& obj) const {
@@ -440,6 +735,16 @@ void EmulatorStateManager::emulatedToJson(JsonObject& obj) const {
     obj["door_position"] = _emulated.doorPosition;
     obj["hall_open_active"] = _emulated.hallOpenActive;
     obj["hall_close_active"] = _emulated.hallCloseActive;
-    obj["manual_switch_pressed"] = _emulated.manualSwitchPressed;
     obj["door_fault_active"] = _emulated.doorFaultActive;
+
+    // Enhanced manual switch state
+    JsonObject manualSwitch = obj["manual_switch"].to<JsonObject>();
+    manualSwitch["is_pressed"] = _emulated.manualSwitch.isPressed;
+    manualSwitch["press_type"] = switchPressTypeToString(_emulated.manualSwitch.lastPressType);
+    manualSwitch["press_duration_ms"] = _emulated.manualSwitch.pressDuration;
+    manualSwitch["short_threshold_ms"] = _emulated.manualSwitch.shortPressThresholdMs;
+    manualSwitch["long_threshold_ms"] = _emulated.manualSwitch.longPressThresholdMs;
+
+    // Keep backward compatibility
+    obj["manual_switch_pressed"] = _emulated.manualSwitch.isPressed;
 }

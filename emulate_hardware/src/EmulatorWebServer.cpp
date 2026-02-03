@@ -107,6 +107,34 @@ void EmulatorWebServer::setupRoutes() {
         handleManualSwitchPulse(request);
     });
 
+    _server.on("/emulator/manual_switch/long_press", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleManualSwitchLongPress(request);
+    });
+
+    _server.on("/emulator/manual_switch/config", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleManualSwitchConfig(request);
+    });
+
+    // ========================================================================
+    // MANUAL OVERRIDE MODE
+    // ========================================================================
+
+    _server.on("/emulator/override/enable", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleOverrideEnable(request);
+    });
+
+    _server.on("/emulator/override/disable", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleOverrideDisable(request);
+    });
+
+    _server.on("/emulator/override/set", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleOverrideSetState(request);
+    });
+
+    _server.on("/emulator/override/clear_all", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleOverrideClearAll(request);
+    });
+
     // ========================================================================
     // FAULT INJECTION
     // ========================================================================
@@ -357,6 +385,79 @@ void EmulatorWebServer::handleManualSwitchPulse(AsyncWebServerRequest* request) 
 
     _stateManager->pulseManualSwitch(duration);
     sendSuccessResponse(request, "Manual switch pulsed");
+}
+
+void EmulatorWebServer::handleManualSwitchLongPress(AsyncWebServerRequest* request) {
+    uint32_t duration = DEFAULT_LONG_PRESS_MS;
+    if (request->hasParam("duration_ms", true)) {
+        duration = request->getParam("duration_ms", true)->value().toInt();
+    }
+
+    _stateManager->longPressManualSwitch(duration);
+    sendSuccessResponse(request, "Manual switch long pressed");
+}
+
+void EmulatorWebServer::handleManualSwitchConfig(AsyncWebServerRequest* request) {
+    uint32_t shortMs = DEFAULT_SHORT_PRESS_MS;
+    uint32_t longMs = DEFAULT_LONG_PRESS_MS;
+
+    if (request->hasParam("short_press_ms", true)) {
+        shortMs = request->getParam("short_press_ms", true)->value().toInt();
+    }
+    if (request->hasParam("long_press_ms", true)) {
+        longMs = request->getParam("long_press_ms", true)->value().toInt();
+    }
+
+    _stateManager->setManualSwitchThresholds(shortMs, longMs);
+    sendSuccessResponse(request, "Manual switch config updated");
+}
+
+// ============================================================================
+// MANUAL OVERRIDE HANDLERS
+// ============================================================================
+
+void EmulatorWebServer::handleOverrideEnable(AsyncWebServerRequest* request) {
+    _stateManager->setManualOverrideEnabled(true);
+    sendSuccessResponse(request, "Manual override mode enabled");
+}
+
+void EmulatorWebServer::handleOverrideDisable(AsyncWebServerRequest* request) {
+    _stateManager->setManualOverrideEnabled(false);
+    sendSuccessResponse(request, "Manual override mode disabled");
+}
+
+void EmulatorWebServer::handleOverrideSetState(AsyncWebServerRequest* request) {
+    if (!_stateManager->isManualOverrideEnabled()) {
+        sendErrorResponse(request, "Manual override mode is not enabled");
+        return;
+    }
+
+    // Parse which signals to set
+    if (request->hasParam("hall_open", true)) {
+        _stateManager->setOverrideHallOpen(request->getParam("hall_open", true)->value() == "true");
+    }
+    if (request->hasParam("hall_close", true)) {
+        _stateManager->setOverrideHallClose(request->getParam("hall_close", true)->value() == "true");
+    }
+    if (request->hasParam("door_fault", true)) {
+        _stateManager->setOverrideDoorFault(request->getParam("door_fault", true)->value() == "true");
+    }
+    if (request->hasParam("manual_switch", true)) {
+        _stateManager->setOverrideManualSwitch(request->getParam("manual_switch", true)->value() == "true");
+    }
+    if (request->hasParam("water_pulse_1", true)) {
+        _stateManager->setOverrideWaterPulse(1, request->getParam("water_pulse_1", true)->value() == "true");
+    }
+    if (request->hasParam("water_pulse_2", true)) {
+        _stateManager->setOverrideWaterPulse(2, request->getParam("water_pulse_2", true)->value() == "true");
+    }
+
+    sendSuccessResponse(request, "Override states updated");
+}
+
+void EmulatorWebServer::handleOverrideClearAll(AsyncWebServerRequest* request) {
+    _stateManager->clearAllOverrides();
+    sendSuccessResponse(request, "All overrides cleared");
 }
 
 // ============================================================================

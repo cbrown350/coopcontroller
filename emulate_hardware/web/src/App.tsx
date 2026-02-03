@@ -32,6 +32,10 @@ function App(props: ParentProps) {
           Water
         </A>
 
+        <A href="/controls" class={`tab ${isActive('/controls') ? 'tab-active' : ''}`}>
+          Controls
+        </A>
+
         <A href="/settings" class={`tab ${isActive('/settings') ? 'tab-active' : ''}`}>
           Settings
         </A>

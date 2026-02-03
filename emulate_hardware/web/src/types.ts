@@ -4,6 +4,44 @@
 
 export type MotorDirection = 'STOPPED' | 'OPENING' | 'CLOSING' | 'BRAKE';
 export type DoorState = 'OPEN' | 'CLOSED' | 'OPENING' | 'CLOSING' | 'STOPPED' | 'UNKNOWN';
+export type SwitchPressType = 'NONE' | 'SHORT' | 'LONG';
+
+/**
+ * Signal pattern tracking for buzzer or LED
+ */
+export interface SignalPattern {
+  is_blinking: boolean;
+  frequency_hz: number;
+  period_ms: number;
+  on_time_ms: number;
+  off_time_ms: number;
+  duty_cycle: number;  // 0-100
+  cycle_count: number;
+}
+
+/**
+ * Enhanced manual switch state
+ */
+export interface ManualSwitchState {
+  is_pressed: boolean;
+  press_type: SwitchPressType;
+  press_duration_ms: number;
+  short_threshold_ms: number;
+  long_threshold_ms: number;
+}
+
+/**
+ * Manual override configuration
+ */
+export interface OverrideConfig {
+  enabled: boolean;
+  hall_open: boolean;
+  hall_close: boolean;
+  door_fault: boolean;
+  manual_switch: boolean;
+  water_pulse_1: boolean;
+  water_pulse_2: boolean;
+}
 
 /**
  * Monitored signals from the main controller
@@ -18,6 +56,8 @@ export interface MonitoredSignals {
   buzzer_active: boolean;
   buzzer_duration_ms: number;
   wifi_led_active: boolean;
+  buzzer_pattern?: SignalPattern;
+  led_pattern?: SignalPattern;
 }
 
 /**
@@ -32,7 +72,8 @@ export interface EmulatedOutputs {
   door_position: number;  // 0-100
   hall_open_active: boolean;
   hall_close_active: boolean;
-  manual_switch_pressed: boolean;
+  manual_switch_pressed: boolean;  // Legacy compatibility
+  manual_switch?: ManualSwitchState;  // Enhanced state
   door_fault_active: boolean;
 }
 
@@ -48,6 +89,8 @@ export interface EmulatorConfig {
   inject_door_fault: boolean;
   simulate_frozen_line: boolean;
   simulate_door_stuck: boolean;
+  short_press_ms?: number;
+  long_press_ms?: number;
 }
 
 /**
@@ -57,6 +100,7 @@ export interface EmulatorStatus {
   monitored: MonitoredSignals;
   emulated: EmulatedOutputs;
   config: EmulatorConfig;
+  override?: OverrideConfig;
 }
 
 /**

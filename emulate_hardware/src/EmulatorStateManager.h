@@ -28,6 +28,44 @@ enum class MotorDirection {
 };
 
 /**
+ * @brief Pattern tracking for buzzer or LED signals
+ */
+struct SignalPattern {
+    bool isBlinking = false;           // True if signal is blinking (periodic)
+    float frequencyHz = 0.0f;          // Blink frequency in Hz
+    uint32_t periodMs = 0;             // Blink period in ms
+    uint32_t onTimeMs = 0;             // Last measured on-time
+    uint32_t offTimeMs = 0;            // Last measured off-time
+    uint8_t dutyCycle = 0;             // Duty cycle 0-100%
+    uint32_t cycleCount = 0;           // Number of complete cycles detected
+    uint32_t totalOnTime = 0;          // Total time signal has been on
+    uint32_t totalOffTime = 0;         // Total time signal has been off
+};
+
+/**
+ * @brief Manual switch press type
+ */
+enum class SwitchPressType {
+    NONE,
+    SHORT,
+    LONG
+};
+
+/**
+ * @brief Manual switch emulation state
+ */
+struct ManualSwitchState {
+    bool isPressed = false;
+    SwitchPressType lastPressType = SwitchPressType::NONE;
+    uint32_t pressStartTime = 0;       // When current press started
+    uint32_t pressDuration = 0;        // Duration of current/last press
+    uint32_t shortPressThresholdMs = DEFAULT_SHORT_PRESS_MS;
+    uint32_t longPressThresholdMs = DEFAULT_LONG_PRESS_MS;
+    uint32_t debounceMs = SWITCH_DEBOUNCE_MS;
+    uint32_t autoReleaseTime = 0;      // When to auto-release (0 = manual release)
+};
+
+/**
  * @brief Monitored signal states from main controller
  */
 struct MonitoredSignals {
@@ -46,10 +84,12 @@ struct MonitoredSignals {
     // Buzzer
     bool buzzerActive = false;
     uint32_t buzzerOnDuration = 0;  // ms since buzzer turned on
+    SignalPattern buzzerPattern;     // Pattern tracking for buzzer
 
     // WiFi LED
     bool wifiLedActive = false;
-    uint32_t ledBlinkPeriod = 0;  // Estimated blink period in ms
+    uint32_t ledBlinkPeriod = 0;     // Estimated blink period in ms
+    SignalPattern ledPattern;         // Pattern tracking for LED
 };
 
 /**
@@ -68,8 +108,8 @@ struct EmulatedOutputs {
     bool hallOpenActive = false;
     bool hallCloseActive = false;
 
-    // Manual switch
-    bool manualSwitchPressed = false;
+    // Manual switch (enhanced state)
+    ManualSwitchState manualSwitch;
 
     // Door fault
     bool doorFaultActive = false;
@@ -92,6 +132,22 @@ struct EmulatorConfig {
     bool injectDoorFault = false;
     bool simulateFrozenLine = false;  // No water flow despite pump
     bool simulateDoorStuck = false;   // Hall sensors never trigger
+
+    // Manual switch settings
+    uint32_t shortPressMs = DEFAULT_SHORT_PRESS_MS;
+    uint32_t longPressMs = DEFAULT_LONG_PRESS_MS;
+
+    // Global manual override mode
+    // When enabled, auto behaviors are bypassed and all outputs are directly controllable
+    bool manualOverrideEnabled = false;
+
+    // Manual override output states (only used when manualOverrideEnabled = true)
+    bool overrideHallOpen = false;       // Force hall open sensor state
+    bool overrideHallClose = false;      // Force hall close sensor state
+    bool overrideDoorFault = false;      // Force door fault state
+    bool overrideManualSwitch = false;   // Force manual switch state
+    bool overrideWaterPulse1 = false;    // Force water pulse channel 1
+    bool overrideWaterPulse2 = false;    // Force water pulse channel 2
 };
 
 /**
@@ -145,10 +201,29 @@ public:
     void triggerSinglePulse(uint8_t channel);  // 1 or 2
     void resetPulseCounters();
 
-    // Manual switch
+    // Manual switch (enhanced)
     void pressManualSwitch();
     void releaseManualSwitch();
     void pulseManualSwitch(uint32_t durationMs = 200);
+    void longPressManualSwitch(uint32_t durationMs = DEFAULT_LONG_PRESS_MS);
+    bool isManualSwitchPressed() const { return _emulated.manualSwitch.isPressed; }
+    SwitchPressType getLastPressType() const { return _emulated.manualSwitch.lastPressType; }
+    uint32_t getCurrentPressDuration() const;
+    void setManualSwitchThresholds(uint32_t shortMs, uint32_t longMs);
+
+    // Pattern tracking accessors
+    const SignalPattern& getBuzzerPattern() const { return _monitored.buzzerPattern; }
+    const SignalPattern& getLedPattern() const { return _monitored.ledPattern; }
+
+    // Manual override mode
+    void setManualOverrideEnabled(bool enabled);
+    bool isManualOverrideEnabled() const { return _config.manualOverrideEnabled; }
+    void setOverrideHallOpen(bool state);
+    void setOverrideHallClose(bool state);
+    void setOverrideDoorFault(bool state);
+    void setOverrideManualSwitch(bool state);
+    void setOverrideWaterPulse(uint8_t channel, bool state);
+    void clearAllOverrides();
 
     // Fault injection
     void setDoorFault(bool fault);
@@ -198,8 +273,23 @@ private:
     uint32_t _lastLightChange = 0;
     bool _lastLightState = false;
 
-    // Buzzer timing
+    // Buzzer timing and pattern tracking
     uint32_t _buzzerOnTime = 0;
+    uint32_t _buzzerOffTime = 0;
+    bool _lastBuzzerState = false;
+    uint32_t _buzzerLastTransition = 0;
+    uint32_t _buzzerOnDurations[PATTERN_HISTORY_SIZE] = {0};
+    uint32_t _buzzerOffDurations[PATTERN_HISTORY_SIZE] = {0};
+    uint8_t _buzzerPatternIndex = 0;
+
+    // LED timing and pattern tracking
+    uint32_t _ledOnTime = 0;
+    uint32_t _ledOffTime = 0;
+    bool _lastLedState = false;
+    uint32_t _ledLastTransition = 0;
+    uint32_t _ledOnDurations[PATTERN_HISTORY_SIZE] = {0};
+    uint32_t _ledOffDurations[PATTERN_HISTORY_SIZE] = {0};
+    uint8_t _ledPatternIndex = 0;
 
     // Manual switch timing
     uint32_t _manualSwitchReleaseTime = 0;
@@ -211,6 +301,11 @@ private:
     void updateHallSensors();
     void updateManualSwitch();
     void outputEmulatedSignals();
+
+    // Pattern tracking helpers
+    void updateBuzzerPattern(bool currentState);
+    void updateLedPattern(bool currentState);
+    void calculatePattern(SignalPattern& pattern, uint32_t* onDurations, uint32_t* offDurations, uint8_t count);
 
     // Helper for motor direction
     MotorDirection calculateMotorDirection(bool pos, bool neg);

@@ -6,6 +6,7 @@ import App from './App'
 import Status from './Status'
 import DoorControl from './DoorControl'
 import WaterControl from './WaterControl'
+import ManualControls from './ManualControls'
 import Settings from './Settings'
 
 const root = document.getElementById('root')
@@ -16,6 +17,7 @@ render(() => (
     <Route path="/status" component={Status} />
     <Route path="/door" component={DoorControl} />
     <Route path="/water" component={WaterControl} />
+    <Route path="/controls" component={ManualControls} />
     <Route path="/settings" component={Settings} />
   </Router>
 ), root!)

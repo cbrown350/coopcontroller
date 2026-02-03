@@ -120,6 +120,16 @@ constexpr uint32_t PULSE_DURATION_MS = 50;      // Duration of each pulse
 constexpr uint32_t SIGNAL_SAMPLE_INTERVAL_MS = 50;   // How often to sample input signals
 constexpr uint32_t PWM_SAMPLE_WINDOW_MS = 100;       // Window for PWM measurement
 
+// Manual switch simulation
+constexpr uint32_t DEFAULT_SHORT_PRESS_MS = 200;     // Short press duration
+constexpr uint32_t DEFAULT_LONG_PRESS_MS = 2000;     // Long press duration threshold
+constexpr uint32_t SWITCH_DEBOUNCE_MS = 50;          // Debounce delay
+
+// Buzzer/LED pattern tracking
+constexpr uint32_t PATTERN_HISTORY_SIZE = 10;        // Number of on/off cycles to track
+constexpr uint32_t PATTERN_TIMEOUT_MS = 5000;        // Reset pattern after this idle time
+constexpr uint32_t MIN_BLINK_PERIOD_MS = 50;         // Minimum period to consider as blinking
+
 // WebSocket/Status update
 constexpr uint32_t STATUS_UPDATE_INTERVAL_MS = 250;  // How often to send status updates
 

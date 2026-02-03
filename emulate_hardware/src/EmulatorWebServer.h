@@ -75,6 +75,14 @@ private:
     void handleManualSwitchPress(AsyncWebServerRequest* request);
     void handleManualSwitchRelease(AsyncWebServerRequest* request);
     void handleManualSwitchPulse(AsyncWebServerRequest* request);
+    void handleManualSwitchLongPress(AsyncWebServerRequest* request);
+    void handleManualSwitchConfig(AsyncWebServerRequest* request);
+
+    // Manual override mode
+    void handleOverrideEnable(AsyncWebServerRequest* request);
+    void handleOverrideDisable(AsyncWebServerRequest* request);
+    void handleOverrideSetState(AsyncWebServerRequest* request);
+    void handleOverrideClearAll(AsyncWebServerRequest* request);
 
     // Fault injection
     void handleSetDoorStuck(AsyncWebServerRequest* request);
