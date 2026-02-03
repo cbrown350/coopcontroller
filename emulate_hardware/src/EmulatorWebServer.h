@@ -98,6 +98,8 @@ private:
     // Settings
     void handleGetSettings(AsyncWebServerRequest* request);
     void handleUpdateSettings(AsyncWebServerRequest* request, uint8_t* data, size_t len);
+    void handleExportSettings(AsyncWebServerRequest* request);
+    void handleImportSettings(AsyncWebServerRequest* request, uint8_t* data, size_t len);
 
     // System
     void handleReboot(AsyncWebServerRequest* request);

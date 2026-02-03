@@ -4,6 +4,7 @@ import { EmulatorSettings } from './types'
 function Settings() {
   const [loading, setLoading] = createSignal(true)
   const [saving, setSaving] = createSignal(false)
+  const [importing, setImporting] = createSignal(false)
   const [error, setError] = createSignal('')
   const [success, setSuccess] = createSignal('')
 
@@ -24,6 +25,9 @@ function Settings() {
   // Device info
   const [hostname, setHostname] = createSignal('')
   const [firmwareVersion, setFirmwareVersion] = createSignal('')
+
+  // File input reference for import
+  let fileInputRef: HTMLInputElement | undefined
 
   const loadSettings = async () => {
     try {
@@ -94,6 +98,102 @@ function Settings() {
       setError(`Error saving settings: ${err.message}`)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleBackupSettings = async () => {
+    try {
+      setError('')
+      // Fetch the export endpoint - it returns JSON with Content-Disposition header
+      const response = await fetch('/emulator/settings/export')
+      if (!response.ok) {
+        throw new Error(`Failed to export settings: ${response.status}`)
+      }
+
+      // Get the JSON content
+      const blob = await response.blob()
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `emulator_settings_backup_${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      setSuccess('Settings backup downloaded!')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(`Error backing up settings: ${err.message}`)
+    }
+  }
+
+  const handleRestoreSettings = () => {
+    // Trigger file input click
+    fileInputRef?.click()
+  }
+
+  const handleFileSelect = async (event: Event) => {
+    const input = event.target as HTMLInputElement
+    const file = input.files?.[0]
+    
+    if (!file) return
+
+    // Confirm before overwriting
+    if (!confirm('This will overwrite all current settings. Are you sure you want to restore from this backup?')) {
+      input.value = ''  // Reset file input
+      return
+    }
+
+    try {
+      setImporting(true)
+      setError('')
+
+      // Read file content
+      const content = await file.text()
+      
+      // Validate it's valid JSON
+      try {
+        JSON.parse(content)
+      } catch {
+        throw new Error('Invalid JSON file')
+      }
+
+      // Send to import endpoint
+      const response = await fetch('/emulator/settings/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: content
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to import settings')
+      }
+
+      setSuccess('Settings restored successfully! Reloading...')
+      
+      // Reload settings to show new values
+      await loadSettings()
+
+      // If WiFi settings changed, may need to reboot
+      if (data.requires_reboot) {
+        setTimeout(() => {
+          if (confirm('WiFi settings may have changed. Reboot emulator now?')) {
+            fetch('/reboot', { method: 'POST' })
+          }
+        }, 1000)
+      }
+
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(`Error restoring settings: ${err.message}`)
+    } finally {
+      setImporting(false)
+      input.value = ''  // Reset file input
     }
   }
 
@@ -327,6 +427,56 @@ function Settings() {
           >
             Reload
           </button>
+        </div>
+
+        {/* Backup & Restore */}
+        <div class="card bg-base-200 card-sm shadow-sm">
+          <div class="card-body">
+            <h3 class="card-title">Backup & Restore</h3>
+            <p class="text-sm text-base-content/60 mb-4">
+              Download a backup of all settings or restore from a previously saved backup file.
+            </p>
+
+            {/* Hidden file input for restore */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".json"
+              class="hidden"
+              onChange={handleFileSelect}
+            />
+
+            <div class="flex gap-2 flex-wrap">
+              <button
+                class="btn btn-outline btn-info"
+                onClick={handleBackupSettings}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download Backup
+              </button>
+              <button
+                class="btn btn-outline btn-success"
+                onClick={handleRestoreSettings}
+                disabled={importing()}
+              >
+                {importing() ? (
+                  <>
+                    <span class="loading loading-spinner loading-sm"></span>
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Restore from Backup
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Danger Zone */}

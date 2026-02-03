@@ -96,7 +96,7 @@ void EmulatorSettings::toJson(JsonObject& obj, bool includePassword) const {
     // WiFi settings
     obj["ssid"] = _wifiSsid;
     if (includePassword) {
-        obj["password"] = _wifiPassword;
+        obj["passwd"] = _wifiPassword;
     }
     obj["ap_mode"] = _apMode;
 
@@ -120,8 +120,8 @@ bool EmulatorSettings::fromJson(const JsonObject& obj) {
     if (obj["ssid"].is<const char*>()) {
         _wifiSsid = obj["ssid"].as<String>();
     }
-    if (obj["password"].is<const char*>()) {
-        _wifiPassword = obj["password"].as<String>();
+    if (obj["passwd"].is<const char*>()) {
+        _wifiPassword = obj["passwd"].as<String>();
     }
     if (obj["ap_mode"].is<bool>()) {
         _apMode = obj["ap_mode"].as<bool>();

@@ -55,6 +55,13 @@ WifiState wifiState = WifiState::DISCONNECTED;
 uint32_t lastWifiAttempt = 0;
 uint32_t wifiConnectStart = 0;
 
+
+void setupMDNS() {
+    if (MDNS.begin(hostName)) {
+        Serial.printf("[WiFi] mDNS started: http://%s.local\n", hostName);
+    }
+}
+
 void setupWifi() {
     const String& ssid = emulatorSettings.getWifiSsid();
     const String& password = emulatorSettings.getWifiPassword();
@@ -68,11 +75,14 @@ void setupWifi() {
         Serial.printf("[WiFi] AP started: %s\n", hostName);
         Serial.printf("[WiFi] AP IP: %s, Hostname: %s\n", WiFi.softAPIP().toString().c_str(), hostName);
         wifiState = WifiState::AP_MODE;
+        setupMDNS();
     } else {
         // Connect to WiFi
-        Serial.printf("[WiFi] Connecting to: %s\n", ssid.c_str());
+        Serial.printf("[WiFi] Connecting to: %s using password: %s\n", ssid.c_str(), password.c_str());
         WiFi.mode(WIFI_STA);
         WiFi.setHostname(hostName);
+        WiFi.persistent(false);
+        WiFi.setAutoReconnect(false);// Disable auto-reconnect, we handle it manually
         WiFi.begin(ssid.c_str(), password.c_str());
         wifiState = WifiState::CONNECTING;
         wifiConnectStart = millis();
@@ -86,12 +96,8 @@ void updateWifi() {
                 Serial.println("[WiFi] Connected!");
                 Serial.printf("[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
 
-                // Start mDNS
-                if (MDNS.begin(hostName)) {
-                    Serial.printf("[WiFi] mDNS started: http://%s.local\n", hostName);
-                }
-
                 wifiState = WifiState::CONNECTED;
+                setupMDNS();
 
                 // Update settings to remember we're not in AP mode
                 emulatorSettings.setApMode(false);
