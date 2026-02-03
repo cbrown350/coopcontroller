@@ -36,6 +36,10 @@ function App(props: ParentProps) {
           Controls
         </A>
 
+        <A href="/scenarios" class={`tab ${isActive('/scenarios') ? 'tab-active' : ''}`}>
+          Scenarios
+        </A>
+
         <A href="/settings" class={`tab ${isActive('/settings') ? 'tab-active' : ''}`}>
           Settings
         </A>

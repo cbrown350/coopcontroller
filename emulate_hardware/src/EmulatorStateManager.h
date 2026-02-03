@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <vector>
 #include "config.h"
 
 /**
@@ -15,6 +16,51 @@ enum class DoorState {
     CLOSING,
     STOPPED,
     UNKNOWN
+};
+
+// Maximum number of custom scenarios that can be saved
+constexpr uint8_t MAX_CUSTOM_SCENARIOS = 8;
+
+// Predefined scenario IDs
+enum class ScenarioId : uint8_t {
+    NORMAL = 0,
+    FREEZE_CONDITION,
+    DOOR_STUCK_OPEN,
+    DOOR_STUCK_CLOSED,
+    MOTOR_FAULT,
+    FROZEN_WATER_LINE,
+    PUMP_FAILURE,
+    CUSTOM  // Custom scenarios use this ID with a name
+};
+
+/**
+ * @brief Scenario configuration - captures all emulator settings
+ */
+struct Scenario {
+    ScenarioId id = ScenarioId::NORMAL;
+    char name[32] = "Normal";
+    char description[128] = "Normal operation - all systems working";
+
+    // Door behavior
+    bool autoSimulateDoor = true;
+    bool simulateDoorStuck = false;
+    uint8_t doorPosition = 50;
+    DoorState initialDoorState = DoorState::UNKNOWN;
+
+    // Water behavior
+    bool autoGeneratePulses = true;
+    bool simulateFrozenLine = false;
+    float flowRateGPM = DEFAULT_FLOW_RATE_GPM;
+
+    // Fault injection
+    bool injectDoorFault = false;
+
+    // Override mode (for specific scenarios)
+    bool enableOverride = false;
+    bool overrideHallOpen = false;
+    bool overrideHallClose = false;
+    bool overrideDoorFault = false;
+    bool overrideManualSwitch = false;
 };
 
 /**
@@ -236,6 +282,50 @@ public:
     void setConfig(const EmulatorConfig& config) { _config = config; }
 
     // ========================================================================
+    // SCENARIO MANAGEMENT
+    // ========================================================================
+
+    /**
+     * @brief Get list of predefined scenarios
+     */
+    static const std::vector<Scenario>& getPredefinedScenarios();
+
+    /**
+     * @brief Get the currently active scenario
+     */
+    const Scenario& getActiveScenario() const { return _activeScenario; }
+
+    /**
+     * @brief Get the name of the active scenario
+     */
+    const char* getActiveScenarioName() const { return _activeScenario.name; }
+
+    /**
+     * @brief Apply a predefined scenario by ID
+     */
+    bool applyScenario(ScenarioId id);
+
+    /**
+     * @brief Apply a custom scenario
+     */
+    void applyScenario(const Scenario& scenario);
+
+    /**
+     * @brief Apply scenario from JSON
+     */
+    bool applyScenarioFromJson(const JsonObject& json);
+
+    /**
+     * @brief Serialize active scenario to JSON
+     */
+    void scenarioToJson(JsonObject& obj) const;
+
+    /**
+     * @brief Serialize all predefined scenarios to JSON array
+     */
+    static void predefinedScenariosToJson(JsonArray& arr);
+
+    // ========================================================================
     // JSON SERIALIZATION
     // ========================================================================
 
@@ -258,6 +348,7 @@ private:
     MonitoredSignals _monitored;
     EmulatedOutputs _emulated;
     EmulatorConfig _config;
+    Scenario _activeScenario;
 
     // Timing
     uint32_t _lastSampleTime = 0;

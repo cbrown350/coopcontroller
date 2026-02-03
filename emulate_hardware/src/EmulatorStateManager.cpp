@@ -653,6 +653,271 @@ const char* EmulatorStateManager::motorDirectionToString(MotorDirection dir) {
 }
 
 // ============================================================================
+// SCENARIO METHODS
+// ============================================================================
+
+// Static predefined scenarios
+static std::vector<Scenario> createPredefinedScenarios() {
+    std::vector<Scenario> scenarios;
+
+    // Normal operation
+    Scenario normal;
+    normal.id = ScenarioId::NORMAL;
+    strncpy(normal.name, "Normal", sizeof(normal.name) - 1);
+    strncpy(normal.description, "Normal operation - all systems working correctly", sizeof(normal.description) - 1);
+    normal.autoSimulateDoor = true;
+    normal.simulateDoorStuck = false;
+    normal.autoGeneratePulses = true;
+    normal.simulateFrozenLine = false;
+    normal.injectDoorFault = false;
+    normal.doorPosition = 0;  // Start closed
+    normal.initialDoorState = DoorState::CLOSED;
+    scenarios.push_back(normal);
+
+    // Freeze condition - pump cycling, water flowing
+    Scenario freezeCondition;
+    freezeCondition.id = ScenarioId::FREEZE_CONDITION;
+    strncpy(freezeCondition.name, "Freeze Condition", sizeof(freezeCondition.name) - 1);
+    strncpy(freezeCondition.description, "Simulates freezing weather - pump cycles, water flows, door stays closed", sizeof(freezeCondition.description) - 1);
+    freezeCondition.autoSimulateDoor = true;
+    freezeCondition.simulateDoorStuck = false;
+    freezeCondition.autoGeneratePulses = true;
+    freezeCondition.simulateFrozenLine = false;
+    freezeCondition.injectDoorFault = false;
+    freezeCondition.doorPosition = 0;
+    freezeCondition.initialDoorState = DoorState::CLOSED;
+    freezeCondition.flowRateGPM = 0.5f;  // Lower flow for freeze protection
+    scenarios.push_back(freezeCondition);
+
+    // Door stuck open
+    Scenario doorStuckOpen;
+    doorStuckOpen.id = ScenarioId::DOOR_STUCK_OPEN;
+    strncpy(doorStuckOpen.name, "Door Stuck Open", sizeof(doorStuckOpen.name) - 1);
+    strncpy(doorStuckOpen.description, "Door at open position but hall sensor never triggers - simulates sensor failure or obstruction", sizeof(doorStuckOpen.description) - 1);
+    doorStuckOpen.autoSimulateDoor = false;
+    doorStuckOpen.simulateDoorStuck = true;
+    doorStuckOpen.autoGeneratePulses = true;
+    doorStuckOpen.simulateFrozenLine = false;
+    doorStuckOpen.injectDoorFault = false;
+    doorStuckOpen.doorPosition = 100;  // Fully open
+    doorStuckOpen.initialDoorState = DoorState::OPEN;
+    scenarios.push_back(doorStuckOpen);
+
+    // Door stuck closed
+    Scenario doorStuckClosed;
+    doorStuckClosed.id = ScenarioId::DOOR_STUCK_CLOSED;
+    strncpy(doorStuckClosed.name, "Door Stuck Closed", sizeof(doorStuckClosed.name) - 1);
+    strncpy(doorStuckClosed.description, "Door at closed position but hall sensor never triggers - simulates sensor failure", sizeof(doorStuckClosed.description) - 1);
+    doorStuckClosed.autoSimulateDoor = false;
+    doorStuckClosed.simulateDoorStuck = true;
+    doorStuckClosed.autoGeneratePulses = true;
+    doorStuckClosed.simulateFrozenLine = false;
+    doorStuckClosed.injectDoorFault = false;
+    doorStuckClosed.doorPosition = 0;  // Fully closed
+    doorStuckClosed.initialDoorState = DoorState::CLOSED;
+    scenarios.push_back(doorStuckClosed);
+
+    // Motor fault during movement
+    Scenario motorFault;
+    motorFault.id = ScenarioId::MOTOR_FAULT;
+    strncpy(motorFault.name, "Motor Fault", sizeof(motorFault.name) - 1);
+    strncpy(motorFault.description, "Door motor controller reports fault - door fault signal active", sizeof(motorFault.description) - 1);
+    motorFault.autoSimulateDoor = true;
+    motorFault.simulateDoorStuck = false;
+    motorFault.autoGeneratePulses = true;
+    motorFault.simulateFrozenLine = false;
+    motorFault.injectDoorFault = true;
+    motorFault.doorPosition = 50;  // Halfway
+    motorFault.initialDoorState = DoorState::STOPPED;
+    scenarios.push_back(motorFault);
+
+    // Frozen water line
+    Scenario frozenLine;
+    frozenLine.id = ScenarioId::FROZEN_WATER_LINE;
+    strncpy(frozenLine.name, "Frozen Water Line", sizeof(frozenLine.name) - 1);
+    strncpy(frozenLine.description, "Water pump runs but no flow detected - simulates frozen or blocked pipe", sizeof(frozenLine.description) - 1);
+    frozenLine.autoSimulateDoor = true;
+    frozenLine.simulateDoorStuck = false;
+    frozenLine.autoGeneratePulses = false;
+    frozenLine.simulateFrozenLine = true;
+    frozenLine.injectDoorFault = false;
+    frozenLine.doorPosition = 0;
+    frozenLine.initialDoorState = DoorState::CLOSED;
+    scenarios.push_back(frozenLine);
+
+    // Pump failure
+    Scenario pumpFailure;
+    pumpFailure.id = ScenarioId::PUMP_FAILURE;
+    strncpy(pumpFailure.name, "Pump Failure", sizeof(pumpFailure.name) - 1);
+    strncpy(pumpFailure.description, "Pump cannot prime - no water flow despite pump running", sizeof(pumpFailure.description) - 1);
+    pumpFailure.autoSimulateDoor = true;
+    pumpFailure.simulateDoorStuck = false;
+    pumpFailure.autoGeneratePulses = false;
+    pumpFailure.simulateFrozenLine = true;
+    pumpFailure.injectDoorFault = false;
+    pumpFailure.doorPosition = 0;
+    pumpFailure.initialDoorState = DoorState::CLOSED;
+    scenarios.push_back(pumpFailure);
+
+    return scenarios;
+}
+
+const std::vector<Scenario>& EmulatorStateManager::getPredefinedScenarios() {
+    static std::vector<Scenario> predefined = createPredefinedScenarios();
+    return predefined;
+}
+
+bool EmulatorStateManager::applyScenario(ScenarioId id) {
+    const auto& scenarios = getPredefinedScenarios();
+    for (const auto& scenario : scenarios) {
+        if (scenario.id == id) {
+            applyScenario(scenario);
+            return true;
+        }
+    }
+    Serial.printf("[EmulatorState] Scenario ID %d not found\n", static_cast<int>(id));
+    return false;
+}
+
+void EmulatorStateManager::applyScenario(const Scenario& scenario) {
+    // Store active scenario
+    _activeScenario = scenario;
+
+    // Apply configuration
+    _config.autoSimulateDoor = scenario.autoSimulateDoor;
+    _config.simulateDoorStuck = scenario.simulateDoorStuck;
+    _config.autoGeneratePulses = scenario.autoGeneratePulses;
+    _config.simulateFrozenLine = scenario.simulateFrozenLine;
+    _config.injectDoorFault = scenario.injectDoorFault;
+    _config.flowRateGPM = scenario.flowRateGPM;
+
+    // Apply door state
+    _emulated.doorPosition = scenario.doorPosition;
+    _emulated.doorState = scenario.initialDoorState;
+    updateHallSensors();
+
+    // Apply override mode if specified
+    if (scenario.enableOverride) {
+        _config.manualOverrideEnabled = true;
+        _config.overrideHallOpen = scenario.overrideHallOpen;
+        _config.overrideHallClose = scenario.overrideHallClose;
+        _config.overrideDoorFault = scenario.overrideDoorFault;
+        _config.overrideManualSwitch = scenario.overrideManualSwitch;
+    } else {
+        _config.manualOverrideEnabled = false;
+    }
+
+    Serial.printf("[EmulatorState] Applied scenario: %s\n", scenario.name);
+}
+
+bool EmulatorStateManager::applyScenarioFromJson(const JsonObject& json) {
+    Scenario scenario;
+
+    // Check if this is a predefined scenario by ID
+    if (json.containsKey("id")) {
+        int id = json["id"].as<int>();
+        if (id >= 0 && id < static_cast<int>(ScenarioId::CUSTOM)) {
+            return applyScenario(static_cast<ScenarioId>(id));
+        }
+    }
+
+    // Custom scenario
+    scenario.id = ScenarioId::CUSTOM;
+
+    if (json.containsKey("name")) {
+        strncpy(scenario.name, json["name"].as<const char*>(), sizeof(scenario.name) - 1);
+    } else {
+        strncpy(scenario.name, "Custom", sizeof(scenario.name) - 1);
+    }
+
+    if (json.containsKey("description")) {
+        strncpy(scenario.description, json["description"].as<const char*>(), sizeof(scenario.description) - 1);
+    }
+
+    // Door settings
+    scenario.autoSimulateDoor = json["auto_simulate_door"] | true;
+    scenario.simulateDoorStuck = json["simulate_door_stuck"] | false;
+    scenario.doorPosition = json["door_position"] | 0;
+
+    if (json.containsKey("door_state")) {
+        const char* state = json["door_state"].as<const char*>();
+        if (strcmp(state, "OPEN") == 0) scenario.initialDoorState = DoorState::OPEN;
+        else if (strcmp(state, "CLOSED") == 0) scenario.initialDoorState = DoorState::CLOSED;
+        else if (strcmp(state, "OPENING") == 0) scenario.initialDoorState = DoorState::OPENING;
+        else if (strcmp(state, "CLOSING") == 0) scenario.initialDoorState = DoorState::CLOSING;
+        else if (strcmp(state, "STOPPED") == 0) scenario.initialDoorState = DoorState::STOPPED;
+        else scenario.initialDoorState = DoorState::UNKNOWN;
+    }
+
+    // Water settings
+    scenario.autoGeneratePulses = json["auto_generate_pulses"] | true;
+    scenario.simulateFrozenLine = json["simulate_frozen_line"] | false;
+    scenario.flowRateGPM = json["flow_rate_gpm"] | DEFAULT_FLOW_RATE_GPM;
+
+    // Fault settings
+    scenario.injectDoorFault = json["inject_door_fault"] | false;
+
+    // Override settings
+    scenario.enableOverride = json["enable_override"] | false;
+    scenario.overrideHallOpen = json["override_hall_open"] | false;
+    scenario.overrideHallClose = json["override_hall_close"] | false;
+    scenario.overrideDoorFault = json["override_door_fault"] | false;
+    scenario.overrideManualSwitch = json["override_manual_switch"] | false;
+
+    applyScenario(scenario);
+    return true;
+}
+
+void EmulatorStateManager::scenarioToJson(JsonObject& obj) const {
+    obj["id"] = static_cast<int>(_activeScenario.id);
+    obj["name"] = _activeScenario.name;
+    obj["description"] = _activeScenario.description;
+    obj["auto_simulate_door"] = _activeScenario.autoSimulateDoor;
+    obj["simulate_door_stuck"] = _activeScenario.simulateDoorStuck;
+    obj["door_position"] = _activeScenario.doorPosition;
+    obj["door_state"] = doorStateToString(_activeScenario.initialDoorState);
+    obj["auto_generate_pulses"] = _activeScenario.autoGeneratePulses;
+    obj["simulate_frozen_line"] = _activeScenario.simulateFrozenLine;
+    obj["flow_rate_gpm"] = _activeScenario.flowRateGPM;
+    obj["inject_door_fault"] = _activeScenario.injectDoorFault;
+    obj["enable_override"] = _activeScenario.enableOverride;
+    obj["override_hall_open"] = _activeScenario.overrideHallOpen;
+    obj["override_hall_close"] = _activeScenario.overrideHallClose;
+    obj["override_door_fault"] = _activeScenario.overrideDoorFault;
+    obj["override_manual_switch"] = _activeScenario.overrideManualSwitch;
+}
+
+void EmulatorStateManager::predefinedScenariosToJson(JsonArray& arr) {
+    const auto& scenarios = getPredefinedScenarios();
+    for (const auto& scenario : scenarios) {
+        JsonObject obj = arr.add<JsonObject>();
+        obj["id"] = static_cast<int>(scenario.id);
+        obj["name"] = scenario.name;
+        obj["description"] = scenario.description;
+        obj["auto_simulate_door"] = scenario.autoSimulateDoor;
+        obj["simulate_door_stuck"] = scenario.simulateDoorStuck;
+        obj["door_position"] = scenario.doorPosition;
+
+        const char* stateStr;
+        switch (scenario.initialDoorState) {
+            case DoorState::OPEN: stateStr = "OPEN"; break;
+            case DoorState::CLOSED: stateStr = "CLOSED"; break;
+            case DoorState::OPENING: stateStr = "OPENING"; break;
+            case DoorState::CLOSING: stateStr = "CLOSING"; break;
+            case DoorState::STOPPED: stateStr = "STOPPED"; break;
+            default: stateStr = "UNKNOWN"; break;
+        }
+        obj["door_state"] = stateStr;
+
+        obj["auto_generate_pulses"] = scenario.autoGeneratePulses;
+        obj["simulate_frozen_line"] = scenario.simulateFrozenLine;
+        obj["flow_rate_gpm"] = scenario.flowRateGPM;
+        obj["inject_door_fault"] = scenario.injectDoorFault;
+        obj["enable_override"] = scenario.enableOverride;
+    }
+}
+
+// ============================================================================
 // JSON SERIALIZATION
 // ============================================================================
 
@@ -684,6 +949,10 @@ void EmulatorStateManager::toJson(JsonObject& obj) const {
     override["manual_switch"] = _config.overrideManualSwitch;
     override["water_pulse_1"] = _config.overrideWaterPulse1;
     override["water_pulse_2"] = _config.overrideWaterPulse2;
+
+    // Active scenario info
+    JsonObject scenario = obj["scenario"].to<JsonObject>();
+    scenarioToJson(scenario);
 }
 
 void EmulatorStateManager::monitoredToJson(JsonObject& obj) const {

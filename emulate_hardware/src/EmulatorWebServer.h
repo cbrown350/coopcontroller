@@ -84,6 +84,13 @@ private:
     void handleOverrideSetState(AsyncWebServerRequest* request);
     void handleOverrideClearAll(AsyncWebServerRequest* request);
 
+    // Scenarios
+    void handleGetScenarios(AsyncWebServerRequest* request);
+    void handleGetActiveScenario(AsyncWebServerRequest* request);
+    void handleApplyScenario(AsyncWebServerRequest* request);
+    void handleApplyScenarioById(AsyncWebServerRequest* request);
+    void handleApplyCustomScenario(AsyncWebServerRequest* request, uint8_t* data, size_t len);
+
     // Fault injection
     void handleSetDoorStuck(AsyncWebServerRequest* request);
     void handleClearAllFaults(AsyncWebServerRequest* request);

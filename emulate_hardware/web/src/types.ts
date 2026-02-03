@@ -101,6 +101,7 @@ export interface EmulatorStatus {
   emulated: EmulatedOutputs;
   config: EmulatorConfig;
   override?: OverrideConfig;
+  scenario?: Scenario;
 }
 
 /**
@@ -145,4 +146,40 @@ export interface ApiResponse {
   success: boolean;
   message?: string;
   error?: string;
+}
+
+/**
+ * Predefined scenario IDs
+ */
+export enum ScenarioId {
+  NORMAL = 0,
+  FREEZE_CONDITION = 1,
+  DOOR_STUCK_OPEN = 2,
+  DOOR_STUCK_CLOSED = 3,
+  MOTOR_FAULT = 4,
+  FROZEN_WATER_LINE = 5,
+  PUMP_FAILURE = 6,
+  CUSTOM = 7
+}
+
+/**
+ * Scenario configuration
+ */
+export interface Scenario {
+  id: ScenarioId;
+  name: string;
+  description: string;
+  auto_simulate_door: boolean;
+  simulate_door_stuck: boolean;
+  door_position: number;
+  door_state: DoorState;
+  auto_generate_pulses: boolean;
+  simulate_frozen_line: boolean;
+  flow_rate_gpm: number;
+  inject_door_fault: boolean;
+  enable_override: boolean;
+  override_hall_open?: boolean;
+  override_hall_close?: boolean;
+  override_door_fault?: boolean;
+  override_manual_switch?: boolean;
 }

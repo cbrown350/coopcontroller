@@ -136,6 +136,30 @@ void EmulatorWebServer::setupRoutes() {
     });
 
     // ========================================================================
+    // SCENARIOS
+    // ========================================================================
+
+    _server.on("/emulator/scenarios", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        handleGetScenarios(request);
+    });
+
+    _server.on("/emulator/scenario/active", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        handleGetActiveScenario(request);
+    });
+
+    _server.on("/emulator/scenario/apply", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleApplyScenarioById(request);
+    });
+
+    _server.on("/emulator/scenario/custom", HTTP_POST,
+        [](AsyncWebServerRequest* request) {},
+        nullptr,
+        [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+            handleApplyCustomScenario(request, data, len);
+        }
+    );
+
+    // ========================================================================
     // FAULT INJECTION
     // ========================================================================
 
@@ -189,8 +213,8 @@ void EmulatorWebServer::setupRoutes() {
 
 void EmulatorWebServer::setupStaticFiles() {
     // Serve static files from LittleFS
-    _server.serveStatic("/", LittleFS, "/").setDefaultFile("index.htm");
-    _server.serveStatic("/assets/", LittleFS, "/assets/");
+    _server.serveStatic("/", LittleFS, "/www/").setDefaultFile("index.htm");
+    _server.serveStatic("/assets/", LittleFS, "/www/assets/");
 
     Serial.println("[EmulatorWebServer] Static files configured");
 }
@@ -458,6 +482,73 @@ void EmulatorWebServer::handleOverrideSetState(AsyncWebServerRequest* request) {
 void EmulatorWebServer::handleOverrideClearAll(AsyncWebServerRequest* request) {
     _stateManager->clearAllOverrides();
     sendSuccessResponse(request, "All overrides cleared");
+}
+
+// ============================================================================
+// SCENARIO HANDLERS
+// ============================================================================
+
+void EmulatorWebServer::handleGetScenarios(AsyncWebServerRequest* request) {
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    EmulatorStateManager::predefinedScenariosToJson(arr);
+    sendJsonResponse(request, doc);
+}
+
+void EmulatorWebServer::handleGetActiveScenario(AsyncWebServerRequest* request) {
+    JsonDocument doc;
+    JsonObject obj = doc.to<JsonObject>();
+    _stateManager->scenarioToJson(obj);
+    sendJsonResponse(request, doc);
+}
+
+void EmulatorWebServer::handleApplyScenario(AsyncWebServerRequest* request) {
+    // This would be called with form data, redirect to the ById handler
+    handleApplyScenarioById(request);
+}
+
+void EmulatorWebServer::handleApplyScenarioById(AsyncWebServerRequest* request) {
+    if (!request->hasParam("id", true)) {
+        sendErrorResponse(request, "Missing 'id' parameter");
+        return;
+    }
+
+    int id = request->getParam("id", true)->value().toInt();
+    if (id < 0 || id >= static_cast<int>(ScenarioId::CUSTOM)) {
+        sendErrorResponse(request, "Invalid scenario ID");
+        return;
+    }
+
+    if (_stateManager->applyScenario(static_cast<ScenarioId>(id))) {
+        JsonDocument doc;
+        doc["success"] = true;
+        doc["message"] = "Scenario applied";
+        doc["scenario_name"] = _stateManager->getActiveScenarioName();
+        sendJsonResponse(request, doc);
+    } else {
+        sendErrorResponse(request, "Failed to apply scenario");
+    }
+}
+
+void EmulatorWebServer::handleApplyCustomScenario(AsyncWebServerRequest* request, uint8_t* data, size_t len) {
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, data, len);
+
+    if (error) {
+        sendErrorResponse(request, "Invalid JSON");
+        return;
+    }
+
+    JsonObject obj = doc.as<JsonObject>();
+    if (_stateManager->applyScenarioFromJson(obj)) {
+        JsonDocument response;
+        response["success"] = true;
+        response["message"] = "Custom scenario applied";
+        response["scenario_name"] = _stateManager->getActiveScenarioName();
+        sendJsonResponse(request, response);
+    } else {
+        sendErrorResponse(request, "Failed to apply custom scenario");
+    }
 }
 
 // ============================================================================
