@@ -5,13 +5,7 @@
 .vscode/ipch
 compile_commands.json
 
-data/www/assets/
-data/www/index.htm
-data/www/index.htm.gz
 data/user_settings.json
-data/www/favicon.ico
-data/www/favicon.ico.gz
-data/www/logo.webp
 
 data_testbed/
 
@@ -29,3 +23,5 @@ settings.local.json
 docs/temp_*.md
 .cache
 tmp/
+
+__pycache__

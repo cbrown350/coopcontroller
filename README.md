@@ -12,6 +12,19 @@ ESP32-based automation for chicken coop management: temperature monitoring, free
 - Async web server with OTA updates, logs, and real-time status dashboard
 - All settings stored in LittleFS and configurable via web UI
 
+## Build Setup
+
+1. Install Python3 and pip [Python.org](https://www.python.org/downloads/).
+2. Install Node.js and npm [Node.js](https://nodejs.org/en/download/).
+3. Install PlatformIO and dependencies (see below).
+   1. Install [PlatformIO](https://platformio.org/install/ide?install=vscode) (VSCode extension recommended).
+   2. Or install PlatformIO Core via pip: `pip install platformio`.
+   3. Or use `wget https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py -O /tmp/platformio.py && chmod +x /tmp/platformio.py && python /tmp/platformio.py` (Linux/Mac). 
+   4. Or follow [PlatformIO Core installation instructions](https://docs.platformio.org/en/latest/core/installation.html).
+4. `source ~/.platformio/penv/bin/activate` (Linux/Mac) or `~\.platformio\penv\Scripts\activate` (Windows) to activate the PlatformIO virtual environment.
+5. You may want to add pio to path (`export PATH="~/.platformio/penv/bin:$PATH"` on Linux/Mac or add to Environment Variables on Windows).
+6. `pip install -r build_scripts/requirements.txt` to install build script dependencies.
+
 ## Firmware Installation (ESP32)
 
 1. Flash firmware and filesystem (web tool or PlatformIO Upload Filesystem Image).
@@ -23,7 +36,7 @@ ESP32-based automation for chicken coop management: temperature monitoring, free
 
 - `cd web && npm i`
 - `npm run dev` to run with the mock API server.
-- `npm run build` then upload the filesystem image to copy assets into `data/`.
+- Building the filesystem in Platformio automatically builds the web UI and includes it in the filesystem image.
 
 ## Project Resources
 

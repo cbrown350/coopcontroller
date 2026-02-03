@@ -1,4 +1,3 @@
-Import("env") # type: ignore
 import math
 import os
 # Verify PIL is installed
@@ -6,7 +5,7 @@ try:
     import PIL  # noqa: F401
 except ImportError as e:
     print("Required module not found:", e)
-    print("In order to modify dev images, install Pillow (~\\.platformio\\penv\\Scripts\\activate && pip install Pillow).")
+    print("In order to modify dev images, install Pillow (~\\.platformio\\penv\\Scripts\\activate && pip install Pillow or source ~/.platformio/penv/bin/activate && pip install Pillow).")
     raise e
 
 def _try_load_font(font_path, size):
@@ -189,8 +188,3 @@ def add_diagonal_text(image_path, output_path, text="DEV", font_path=None, font_
             _watermark_raster(image_path, output_path, text, font_path, color)
     except Exception as ex:
         print(f"Watermark failed for {image_path}: {ex}")
-
-# Watermark logo and favicon (ICO now handled safely)
-env.AddPreAction("$BUILD_DIR/littlefs.bin", lambda target, source, env: add_diagonal_text("data/logo.webp", "data/logo.webp", text="DEV")) # type: ignore
-env.AddPreAction("$BUILD_DIR/littlefs.bin", lambda target, source, env: add_diagonal_text("data/favicon.ico", "data/favicon.ico", text="DEV")) # type: ignore
-env.AddPreAction("$BUILD_DIR/littlefs.bin", lambda target, source, env: os.remove("data/favicon.ico.gz") if os.path.exists("data/favicon.ico.gz") else None) # type: ignore
