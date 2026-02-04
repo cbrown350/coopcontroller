@@ -2054,12 +2054,15 @@ The emulator acts as a hardware-in-the-loop testing platform, providing:
 - **Remote Control** - Web-based UI for controlling emulator state and monitoring signal interactions
 - **Development Aid** - Enables firmware development and testing without physical hardware installation
 
-**Implementation Status:** ✅ Complete (Sprints 1-6 finished)
-- Full firmware implementation with state management
-- Comprehensive web UI with all control pages
-- REST API for programmatic control
-- Persistent settings and configuration
-- 7 predefined test scenarios
+**Implementation Status:** ✅ Complete (Sprints 1-11 finished)
+- Full firmware implementation with state management, recording, and temperature emulation
+- Comprehensive web UI with 9 control pages
+- 40+ REST API endpoints for programmatic control
+- Persistent settings, custom scenarios, and signal recordings on LittleFS
+- 7 predefined test scenarios + up to 8 user-created custom scenarios
+- Signal recording and playback at 0.5x / 1x / 2x speed
+- Temperature sensor emulation with configurable drift (2 sensors)
+- Settings backup and restore via JSON export/import
 
 ### Purpose & Use Cases
 
@@ -2143,7 +2146,38 @@ The emulator firmware consists of three primary components working together:
 - Automatic save on configuration changes
 - Load settings on startup
 - Factory reset capability
-- Example template for initial configuration
+- Settings export / import as JSON for backup and restore
+
+#### CustomScenarioManager
+**Purpose:** Persistent CRUD storage for user-created test scenarios on LittleFS.
+
+**Key Responsibilities:**
+- Stores up to 8 custom scenarios in `/custom_scenarios.json`
+- Save, update, delete, and load custom scenarios by name or index
+- JSON serialisation / deserialisation of all scenario parameters
+- Thread-safe access from web server request handlers
+
+#### LogRecorder
+**Purpose:** Record all signal states over time and replay them for regression testing.
+
+**Key Responsibilities:**
+- Samples all 14 monitored + emulated signals every 100 ms into `SignalSnapshot` structs
+- Streaming JSON write to LittleFS for memory-efficient storage (compact short keys: `t`, `pa`, `la`, etc.)
+- Start / stop / pause recording; max 5 minutes per recording, max 10 recordings stored
+- Playback drives emulated outputs via override mode; supports 0.5x / 1x / 2x speed
+- Auto-removes oldest recording when storage limit is reached
+- Recording index persisted in `/recordings/_index.json`
+
+#### TempSensorEmulator
+**Purpose:** Emulate DS18B20 temperature sensors with configurable values and drift.
+
+**Design Decision:** Full 1-Wire slave emulation on ESP32 is unreliable due to microsecond timing constraints. A logical temperature emulator exposed via REST API is used instead — it provides configurable temperatures with smooth sinusoidal drift, enabling scenario-based testing of all temperature-dependent controller logic.
+
+**Key Responsibilities:**
+- 2 independent sensor slots, each with enable/disable, configurable temperature (–40 to +60 °C)
+- Disconnect simulation (reports sensor absent to the main controller)
+- Sinusoidal drift: configurable amplitude (0.1–10 °C) and period (5 s – 5 min)
+- `update()` called from main loop to advance drift; JSON serialisation for state persistence
 
 ### Emulated Signals
 
@@ -2199,10 +2233,11 @@ These pins provide simulated sensor/switch signals to the main controller:
 - Supports scenario-based failures (frozen water line = no pulses despite pump ON)
 
 **Dallas Temperature Sensor Emulation:**
-- **Status:** Future implementation (not yet available)
-- Planned to provide simulated 1-Wire Dallas DS18B20 responses
-- Will support configurable temperature values per scenario
-- Requires 1-Wire protocol implementation
+- **Status:** ✅ Implemented as logical REST-based emulator (see TempSensorEmulator architecture section)
+- 2 independently configurable DS18B20 sensor slots (–40 to +60 °C)
+- Sinusoidal drift simulation: configurable amplitude and period
+- Disconnect simulation per sensor
+- Controlled via `/emulator/temperature/*` REST endpoints and Temperature web UI page
 
 **Door Motor Control Detection:**
 - Monitors both EMU_READ_DOOR_POS_PIN and EMU_READ_DOOR_NEG_PIN
@@ -2453,6 +2488,59 @@ The emulator provides a comprehensive SolidJS-based web interface for control an
 - Customer demonstration - show how system handles various conditions
 - Documentation - capture screenshots of system response to scenarios
 
+**Custom Scenarios:**
+- "Create Custom Scenario" button opens the ScenarioEditor form
+- Configure: name (31-char limit), description (127-char limit), door position/state, water flow rate, fault injection, and advanced override toggles
+- Up to 8 custom scenarios stored persistently in `/custom_scenarios.json` on LittleFS
+- Custom scenarios appear alongside predefined scenarios with Edit / Delete / Apply controls
+- Apply a custom scenario directly by name via `POST /emulator/scenarios/custom/apply`
+
+#### Recordings Page
+**Purpose:** Record all signal states over time and replay them for regression testing and debugging.
+
+**Recording Controls:**
+- **Label** - Assign a human-readable name before starting
+- **Record / Pause / Stop & Save** - Full lifecycle control with live sample-count and elapsed-time display
+- Sampling interval: 100 ms; maximum recording duration: 5 minutes
+- Up to 10 recordings stored on LittleFS; oldest is auto-removed when limit is reached
+
+**Playback Controls:**
+- Select any saved recording and click Play to replay all signal states
+- Progress bar shows current position vs total duration
+- Speed selector: 0.5x, 1x, 2x playback
+- Pause / Resume / Stop controls
+- Playback drives all emulated outputs via the override system
+
+**Recording Management:**
+- Download any recording as a JSON file for offline analysis
+- Delete individual recordings or clear all at once
+- 1-second polling keeps the UI in sync with recording / playback state
+
+**Use Cases:**
+- Capture a known-good signal sequence for later comparison
+- Replay a captured fault condition for debugging without re-wiring
+- Automate regression testing by replaying saved sequences
+
+#### Temperature Page
+**Purpose:** Configure and monitor emulated DS18B20 temperature sensors.
+
+**Per-Sensor Controls (Sensor 1 and Sensor 2):**
+- **Enable / Disable** toggle — only enabled sensors appear in status responses
+- **Temperature** — slider (–40 to 60 °C, 0.5 °C steps) plus numeric input for precise values; large readout shows both °C and °F
+- **Disconnect Simulation** — toggle with red badge; reports the sensor as absent to the main controller
+- **Drift Simulation** (collapsible panel):
+  - Enable / disable drift
+  - Amplitude slider: 0.1–10 °C peak swing
+  - Period slider: 5 seconds to 5 minutes (sinusoidal cycle)
+
+**Design Note:** Drift uses `sinf()` over the configured period for smooth, continuous oscillation around the set temperature. This accurately models real-world sensor behaviour in changing environments.
+
+**Use Cases:**
+- Test temperature-based pump cycling thresholds
+- Simulate gradual temperature changes (freeze / thaw) with drift
+- Test sensor-failure handling by disconnecting a sensor
+- Verify the main controller reacts correctly to multi-sensor disagreements
+
 #### Settings Page
 **Purpose:** Configuration persistence and system settings.
 
@@ -2501,144 +2589,123 @@ The emulator provides a comprehensive SolidJS-based web interface for control an
 
 ### API Documentation
 
-The emulator provides a REST API for programmatic control and status queries. All endpoints return JSON unless otherwise specified.
+The emulator exposes 40+ REST endpoints. All responses are JSON unless noted. Endpoints are grouped by subsystem below.
 
-#### GET `/status`
-Get current emulator state and main controller signal monitoring.
+#### Status Endpoints
 
-**Response:**
-```json
-{
-  "door": {
-    "state": "OPEN",
-    "hall_open": false,
-    "hall_close": true,
-    "motor_fault": false
-  },
-  "water": {
-    "pulse1_rate": 440,
-    "pulse1_count": 15680,
-    "pulse1_active": true,
-    "pulse2_rate": 440,
-    "pulse2_count": 15680,
-    "pulse2_active": true
-  },
-  "main_controller": {
-    "pump_active": true,
-    "light_pwm": 128,
-    "door_pos": false,
-    "door_neg": false,
-    "buzzer_active": false,
-    "wifi_led_active": true
-  },
-  "system": {
-    "uptime_seconds": 3625,
-    "free_heap": 125648,
-    "ip_address": "192.168.1.100"
-  }
-}
-```
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/emulator/status` | Full status: monitored signals, emulated outputs, config, active scenario |
+| GET | `/emulator/monitored` | Monitored signals only (pump, light, motor, buzzer, LED) |
+| GET | `/emulator/emulated` | Emulated outputs only (water, door, hall, switch, fault) |
+| GET | `/emulator/system` | System info: uptime, heap usage, chip model, WiFi, firmware version |
 
-#### POST `/door/state`
-Set door to specific state.
+#### Door Control
 
-**Request Body:**
-```json
-{
-  "state": "OPEN"
-}
-```
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| POST | `/emulator/door/position` | `{ "position": 0-100 }` — set door position directly |
+| POST | `/emulator/door/open` | Move door to fully open |
+| POST | `/emulator/door/close` | Move door to fully closed |
+| POST | `/emulator/door/fault/inject` | `{ "active": true/false }` — inject / clear door fault signal |
+| POST | `/emulator/door/fault/clear` | Clear door fault |
+| POST | `/emulator/door/config` | `{ "travel_time_ms": N, "auto_simulate": bool }` |
 
-**Valid States:** "CLOSED", "OPENING", "OPEN", "CLOSING", "STUCK_OPEN", "STUCK_CLOSED", "MOTOR_FAULT"
+#### Water Control
 
-**Response:** `200 OK` with updated status
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| POST | `/emulator/water/config` | `{ "flow_rate_gpm": N, "auto_generate_pulses": bool, "pulses_per_gallon": N }` |
+| POST | `/emulator/water/pulse` | Generate a single water pulse on both channels |
+| POST | `/emulator/water/reset` | Reset pulse counters to zero |
+| POST | `/emulator/water/frozen` | `{ "frozen": true/false }` — simulate frozen water line |
 
-#### POST `/door/manual_switch`
-Trigger manual door switch press (momentary activation).
+#### Manual Switch
 
-**Response:** `200 OK` with "Manual switch activated" text
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| POST | `/emulator/manual_switch/press` | Assert switch active (hold) |
+| POST | `/emulator/manual_switch/release` | Release switch |
+| POST | `/emulator/manual_switch/pulse` | `{ "duration_ms": N }` — momentary press (default 200 ms) |
+| POST | `/emulator/manual_switch/long_press` | `{ "duration_ms": N }` — long press (default 2000 ms) |
+| POST | `/emulator/manual_switch/config` | `{ "short_press_ms": N, "long_press_ms": N }` |
 
-#### POST `/water/pulse_rate`
-Configure water pulse generation rate.
+#### Manual Override Mode
 
-**Request Body:**
-```json
-{
-  "sensor": 1,
-  "rate": 440,
-  "enabled": true
-}
-```
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| POST | `/emulator/override/enable` | Enable global manual override |
+| POST | `/emulator/override/disable` | Disable global manual override |
+| POST | `/emulator/override/set` | `{ "hall_open": bool, "hall_close": bool, … }` — set individual overrides |
+| POST | `/emulator/override/clear_all` | Reset all overrides |
 
-**Parameters:**
-- `sensor`: 1 or 2 (which sensor to configure)
-- `rate`: Pulses per minute (0-1000)
-- `enabled`: Start/stop pulse generation
+#### Scenarios
 
-**Response:** `200 OK` with updated water status
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| GET | `/emulator/scenarios` | List all 7 predefined scenarios with full details |
+| GET | `/emulator/scenario/active` | Currently active scenario |
+| POST | `/emulator/scenario/apply` | `{ "id": 0-6 }` — apply predefined scenario by ID |
+| POST | `/emulator/scenario/custom` | Apply an ad-hoc custom scenario from a JSON body |
 
-#### POST `/water/reset`
-Reset pulse counters.
+#### Custom Scenarios (persistent)
 
-**Request Body:**
-```json
-{
-  "sensor": 1
-}
-```
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| GET | `/emulator/scenarios/custom` | List all saved custom scenarios |
+| POST | `/emulator/scenarios/custom/save` | Save or update a custom scenario (name + full config) |
+| DELETE | `/emulator/scenarios/custom` | `?name=ScenarioName` — delete by name |
+| POST | `/emulator/scenarios/custom/apply` | `{ "name": "…" }` — apply a saved custom scenario |
 
-**Response:** `200 OK` with "Water meter X reset" text
+#### Recordings
 
-#### POST `/scenario/activate`
-Activate predefined test scenario.
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| GET | `/emulator/recordings` | List all stored recordings (metadata) |
+| GET | `/emulator/recordings/status` | Current recording + playback state |
+| POST | `/emulator/recordings/start` | `{ "label": "…" }` — start a new recording |
+| POST | `/emulator/recordings/stop` | Stop and save the current recording |
+| POST | `/emulator/recordings/pause` | Toggle recording pause |
+| POST | `/emulator/recordings/playback/start` | `{ "id": "…", "speed_percent": 100 }` |
+| POST | `/emulator/recordings/playback/stop` | Stop playback |
+| POST | `/emulator/recordings/playback/pause` | Toggle playback pause |
+| POST | `/emulator/recordings/playback/speed` | `{ "speed_percent": 50/100/200 }` |
+| DELETE | `/emulator/recordings/:id` | Delete one recording |
+| DELETE | `/emulator/recordings/all` | Delete all recordings |
+| GET | `/emulator/recordings/download/:id` | Download recording JSON file |
 
-**Request Body:**
-```json
-{
-  "scenario": "freeze_condition"
-}
-```
+#### Temperature Sensors
 
-**Valid Scenarios:**
-- `normal_operation`
-- `freeze_condition`
-- `door_stuck_open`
-- `door_stuck_closed`
-- `motor_fault`
-- `frozen_water_line`
-- `pump_failure`
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| GET | `/emulator/temperature` | State of both sensors |
+| POST | `/emulator/temperature/set` | `{ "sensor1": { … }, "sensor2": { … } }` — set temp / options |
+| POST | `/emulator/temperature/enable` | `{ "sensor": 1, "enabled": true }` |
+| POST | `/emulator/temperature/disconnect` | `{ "sensor": 1, "disconnected": true }` |
+| POST | `/emulator/temperature/drift` | `{ "sensor": 1, "enabled": true, "amplitude_c": 2.0, "period_ms": 30000 }` |
 
-**Response:** `200 OK` with scenario confirmation
+#### Settings
 
-#### GET `/settings`
-Get current emulator configuration.
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| GET | `/get_settings` | Current settings (WiFi, emulation defaults, log level) |
+| POST | `/update_settings` | Update settings (partial JSON body; password included only if changing) |
+| GET | `/emulator/settings/export` | Download full settings as JSON with export metadata |
+| POST | `/emulator/settings/import` | Restore settings from a previously exported JSON file |
 
-**Response:**
-```json
-{
-  "ssid": "TestNetwork",
-  "water_pulse_rate": 440,
-  "door_open_duration": 15,
-  "door_close_duration": 12,
-  "debug_enabled": false
-}
-```
+#### Fault Injection
 
-#### POST `/settings`
-Update emulator configuration.
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| POST | `/emulator/fault/door_stuck` | `{ "stuck": true/false }` — simulate door stuck (hall sensors never trigger) |
+| POST | `/emulator/fault/clear_all` | Clear all injected faults |
 
-**Request Body:**
-```json
-{
-  "ssid": "NewNetwork",
-  "passwd": "NewPassword",
-  "water_pulse_rate": 500
-}
-```
+#### System
 
-**Response:** `200 OK` with "Settings saved" text
-
-**Note:** WiFi settings (ssid, passwd) trigger system restart after save.
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/reboot` | Reboot the emulator ESP32 |
+| POST | `/factory_reset` | Wipe all settings and recordings, reboot |
 
 ### Building and Deploying
 
@@ -2717,25 +2784,30 @@ monitor_port = COM22
 ```
 emulate_hardware/
 ├── src/
-│   ├── main.cpp                  # Main entry point
-│   ├── config.h                  # Pin and constant definitions
-│   ├── EmulatorStateManager.cpp  # State machine implementation
-│   ├── EmulatorStateManager.h
-│   ├── EmulatorWebServer.cpp     # REST API implementation
-│   ├── EmulatorWebServer.h
-│   ├── EmulatorSettings.cpp      # Settings persistence
-│   └── EmulatorSettings.h
+│   ├── main.cpp                    # Main entry point (setup / loop)
+│   ├── config.h                    # Pin definitions and default constants
+│   ├── EmulatorStateManager.h/cpp  # Central state machine (door, water, overrides)
+│   ├── EmulatorWebServer.h/cpp     # REST API route registration and handlers
+│   ├── EmulatorSettings.h/cpp      # WiFi / emulation settings persistence
+│   ├── CustomScenarioManager.h/cpp # User-created scenario CRUD on LittleFS
+│   ├── LogRecorder.h/cpp           # Signal recording and playback engine
+│   └── TempSensorEmulator.h/cpp    # DS18B20 temperature sensor emulation
 └── web/
     ├── src/
-    │   ├── App.tsx               # Main app component
-    │   ├── Status.tsx            # Status page
-    │   ├── DoorControl.tsx       # Door control page
-    │   ├── WaterControl.tsx      # Water control page
-    │   ├── ManualControls.tsx    # Manual controls page
-    │   ├── Scenarios.tsx         # Scenarios page
-    │   └── Settings.tsx          # Settings page
-    ├── package.json              # Node dependencies
-    └── vite.config.ts            # Vite build config
+    │   ├── index.tsx               # Router entry point
+    │   ├── App.tsx                 # Tab navigation layout
+    │   ├── types.ts                # All TypeScript interfaces and enums
+    │   ├── Status.tsx              # Real-time signal dashboard
+    │   ├── DoorControl.tsx         # Door position / state / fault controls
+    │   ├── WaterControl.tsx        # Water pulse and flow controls
+    │   ├── ManualControls.tsx      # Switch simulation and override panel
+    │   ├── Scenarios.tsx           # Predefined + custom scenario list
+    │   ├── ScenarioEditor.tsx      # Create / edit custom scenario form
+    │   ├── Recordings.tsx          # Record, playback, and manage recordings
+    │   ├── Temperature.tsx         # Per-sensor temperature and drift controls
+    │   └── Settings.tsx            # WiFi config, backup/restore, system controls
+    ├── package.json                # Node dependencies (solid-js, vite, tailwind)
+    └── vite.config.ts              # Vite build configuration
 ```
 
 ### Test Scenarios
@@ -2929,32 +3001,32 @@ The emulator provides 7 predefined test scenarios for comprehensive system testi
 ### Build Statistics
 
 **Firmware Size (esp32-emulate-hardware environment):**
-- **RAM Usage:** 46,780 bytes (14.3% of 327,680 bytes available)
-- **Flash Usage:** 1,041,829 bytes (79.5% of 1,310,720 bytes available)
+- **RAM Usage:** 47,044 bytes (14.4% of 327,680 bytes available)
+- **Flash Usage:** 1,144,865 bytes (87.3% of 1,310,720 bytes available)
 
 **Memory Breakdown:**
-- **Code:** ~800KB (state machine, web server, settings management)
-- **Static Data:** ~40KB (strings, constants, web UI assets)
+- **Code:** ~900KB (state machine, web server, settings, recording, temperature emulation)
+- **Static Data:** ~45KB (strings, constants, web UI assets)
 - **Stack:** ~6KB per task (FreeRTOS)
 - **Heap:** ~280KB available for dynamic allocation
 
 **Comparison to Main Controller:**
 - Main Controller RAM: 56,436 bytes (17.2%)
 - Main Controller Flash: 1,081,881 bytes (82.5%)
-- Emulator uses less RAM due to simpler logic
-- Emulator uses less flash due to fewer external library dependencies
+- Emulator uses less RAM due to simpler logic (no sensor libraries)
+- Emulator now uses more flash due to recording and temperature emulation features
 
 **Build Performance:**
 - Typical build time: 15-25 seconds (clean build)
 - Incremental build time: 3-8 seconds
-- Web UI build time: 8-12 seconds
+- Web UI build time: 8-12 seconds (36 modules transformed, gzip-optimised assets)
 - Filesystem upload time: 20-30 seconds
 
 **Optimization Notes:**
 - Debug build includes full symbol tables and logging
 - Release build could reduce flash usage by ~150KB
-- Further optimization possible by removing unused library code
-- Current sizes leave comfortable margins for future features
+- Recording storage uses compact JSON keys to minimize LittleFS usage
+- Current sizes leave adequate margins for future features
 
 ### Usage Tips
 
