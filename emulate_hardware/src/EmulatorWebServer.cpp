@@ -213,12 +213,9 @@ void EmulatorWebServer::setupRoutes() {
 
   // ========================================================================
   // RECORDINGS
+  // NOTE: Register specific routes BEFORE the base /emulator/recordings route
+  // to prevent ESPAsyncWebServer from matching the base route first
   // ========================================================================
-
-  _server.on("/emulator/recordings", HTTP_GET,
-             [this](AsyncWebServerRequest *request) {
-               handleGetRecordings(request);
-             });
 
   _server.on("/emulator/recordings/status", HTTP_GET,
              [this](AsyncWebServerRequest *request) {
@@ -273,6 +270,12 @@ void EmulatorWebServer::setupRoutes() {
   _server.on("/emulator/recordings/download", HTTP_GET,
              [this](AsyncWebServerRequest *request) {
                handleDownloadRecording(request);
+             });
+
+  // Base recordings route - MUST be registered LAST among /emulator/recordings/* routes
+  _server.on("/emulator/recordings", HTTP_GET,
+             [this](AsyncWebServerRequest *request) {
+               handleGetRecordings(request);
              });
 
   // ========================================================================

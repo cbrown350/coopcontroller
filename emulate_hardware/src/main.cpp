@@ -78,8 +78,7 @@ void setupWifi() {
     setupMDNS();
   } else {
     // Connect to WiFi
-    Serial.printf("[WiFi] Connecting to: %s using password: %s\n", ssid.c_str(),
-                  password.c_str());
+    Serial.printf("[WiFi] Connecting to: %s\n", ssid.c_str());
     WiFi.mode(WIFI_STA);
     WiFi.setHostname(hostName);
     WiFi.persistent(false);

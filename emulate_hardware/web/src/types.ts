@@ -223,12 +223,13 @@ export interface RecordingMetadata {
 
 export interface RecordingStatus {
   recording: {
-    state: 'IDLE' | 'RECORDING' | 'PAUSED';
+    state: 'idle' | 'recording' | 'paused';
     sample_count: number;
     duration_ms: number;
+    label: string;
   };
   playback: {
-    state: 'IDLE' | 'PLAYING' | 'PAUSED';
+    state: 'idle' | 'playing' | 'paused';
     id: string;
     position_ms: number;
     duration_ms: number;

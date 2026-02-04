@@ -19,7 +19,8 @@ function Recordings() {
       ])
       if (recRes.ok) {
         const data = await recRes.json()
-        setRecordings(data.recordings || [])
+        // Backend returns array directly, not {recordings: [...]}
+        setRecordings(Array.isArray(data) ? data : [])
       }
       if (statusRes.ok) {
         setStatus(await statusRes.json())
@@ -54,10 +55,12 @@ function Recordings() {
   const handleStartRecording = async () => {
     try {
       setError('')
+      const params = new URLSearchParams()
+      params.append('label', label() || 'Recording')
       const res = await fetch('/emulator/recordings/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: label() || 'Recording' })
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to start recording')
@@ -98,10 +101,13 @@ function Recordings() {
   const handleStartPlayback = async (id: string) => {
     try {
       setError('')
-      const res = await fetch('/emulator/recordings/playback/start', {
+      const params = new URLSearchParams()
+      params.append('id', id)
+      params.append('speed', '100')
+      const res = await fetch('/emulator/recordings/play', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, speed_percent: 100 })
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to start playback')
@@ -138,10 +144,12 @@ function Recordings() {
 
   const handleSetPlaybackSpeed = async (speed: number) => {
     try {
+      const params = new URLSearchParams()
+      params.append('speed', speed.toString())
       const res = await fetch('/emulator/recordings/playback/speed', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ speed_percent: speed })
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
       })
       if (!res.ok) {
         const data = await res.json()
@@ -156,7 +164,7 @@ function Recordings() {
 
   const handleDownload = async (id: string, label: string) => {
     try {
-      const res = await fetch(`/emulator/recordings/download/${id}`)
+      const res = await fetch(`/emulator/recordings/download?id=${encodeURIComponent(id)}`)
       if (!res.ok) throw new Error('Failed to download recording')
       const blob = await res.blob()
       const url = window.URL.createObjectURL(blob)
@@ -176,7 +184,13 @@ function Recordings() {
     if (!confirm('Delete this recording?')) return
     try {
       setError('')
-      const res = await fetch(`/emulator/recordings/${id}`, { method: 'DELETE' })
+      const params = new URLSearchParams()
+      params.append('id', id)
+      const res = await fetch('/emulator/recordings/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to delete recording')
       showSuccess('Recording deleted')
@@ -190,7 +204,7 @@ function Recordings() {
     if (!confirm('Delete all recordings? This cannot be undone.')) return
     try {
       setError('')
-      const res = await fetch('/emulator/recordings/all', { method: 'DELETE' })
+      const res = await fetch('/emulator/recordings/delete_all', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to delete recordings')
       showSuccess('All recordings deleted')
@@ -208,10 +222,11 @@ function Recordings() {
     return `${m}:${String(s % 60).padStart(2, '0')}`
   }
 
-  const isRecording = () => status()?.recording.state === 'RECORDING'
-  const isRecordingPaused = () => status()?.recording.state === 'PAUSED'
-  const isPlaying = () => status()?.playback.state === 'PLAYING'
-  const isPlaybackPaused = () => status()?.playback.state === 'PAUSED'
+  // Backend returns lowercase state values: "idle", "recording", "paused", "playing"
+  const isRecording = () => status()?.recording.state === 'recording'
+  const isRecordingPaused = () => status()?.recording.state === 'paused'
+  const isPlaying = () => status()?.playback.state === 'playing'
+  const isPlaybackPaused = () => status()?.playback.state === 'paused'
   const isPlaybackActive = () => isPlaying() || isPlaybackPaused()
 
   return (
