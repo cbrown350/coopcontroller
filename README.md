@@ -22,8 +22,7 @@ ESP32-based automation for chicken coop management: temperature monitoring, free
    3. Or use `wget https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py -O /tmp/platformio.py && chmod +x /tmp/platformio.py && python /tmp/platformio.py` (Linux/Mac). 
    4. Or follow [PlatformIO Core installation instructions](https://docs.platformio.org/en/latest/core/installation.html).
 4. `source ~/.platformio/penv/bin/activate` (Linux/Mac) or `~\.platformio\penv\Scripts\activate` (Windows) to activate the PlatformIO virtual environment.
-5. You may want to add pio to path (`export PATH="~/.platformio/penv/bin:$PATH"` on Linux/Mac or add to Environment Variables on Windows).
-6. `pip install -r build_scripts/requirements.txt` to install build script dependencies.
+5. You may want to add pio to path (`export PATH="$HOME/.platformio/penv/bin:$PATH"` on Linux/Mac or add to Environment Variables on Windows).6. `pip install -r build_scripts/requirements.txt` to install build script dependencies.
 
 ## Firmware Installation (ESP32)
 
