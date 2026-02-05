@@ -945,11 +945,12 @@ Features organized by priority and implementation status.
 - Minimal impact on functionality - only requires path configuration changes
 - Test thoroughly to ensure all static file serving still works correctly
 
-#### Water Meter Calibration
+#### ~~Water Meter Calibration~~ ✅ **Already Implemented**
 - Make pulse-to-gallons conversion factor configurable from web UI
 - Currently hardcoded in SensorManager constructor
 - Allow users to calibrate based on their specific water meter model
 - Store calibration factor in settings
+- **Status:** Feature was already fully implemented. `pulses_per_gallon` setting exists in SettingsManager (default 450.0), exposed in web UI Settings page with input control (min 100, max 2000), cached in SensorManager for ISR-safe access, handled in `/update_settings` API endpoint.
 
 #### ~~Sensor Error Handling~~ ✅ **Already Implemented**
 - Display "---°F" or "Unknown" when Dallas sensor not detected
