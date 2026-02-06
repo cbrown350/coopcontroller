@@ -108,4 +108,7 @@ export interface Settings {
   pump_min_daily_cycles_enabled?: boolean;
   pump_min_daily_cycles?: number;
   pump_min_cycle_run_seconds?: number;
+  api_auth_enabled?: boolean;
+  api_username?: string;
+  api_password?: string;
 }

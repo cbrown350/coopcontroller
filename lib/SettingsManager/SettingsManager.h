@@ -113,6 +113,14 @@ struct user_settings // NOSONAR
     bool         pump_min_daily_cycles_enabled = false;  ///< Enable minimum daily pump cycles
     unsigned int pump_min_daily_cycles = 3;              ///< Minimum cycles per 24 hours
     unsigned int pump_min_cycle_run_seconds = 120;       ///< Duration of each scheduled cycle
+
+    // ========================================================================
+    // API AUTHENTICATION
+    // ========================================================================
+
+    bool   api_auth_enabled = false;        ///< Enable/disable API authentication
+    String api_username = "admin";          ///< API authentication username
+    String api_password = "";               ///< API authentication password (empty = no auth)
 };
 
 /**
@@ -311,6 +319,16 @@ class SettingsManager // NOSONAR
     void setPumpMinDailyCyclesEnabled(bool enabled);
     void setPumpMinDailyCycles(unsigned int cycles);
     void setPumpMinCycleRunSeconds(unsigned int seconds);
+
+    // API Authentication getters
+    bool   getApiAuthEnabled() const;
+    String getApiUsername() const;
+    String getApiPassword() const;
+
+    // API Authentication setters
+    void setApiAuthEnabled(bool enabled);
+    void setApiUsername(const String& username);
+    void setApiPassword(const String& password);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);

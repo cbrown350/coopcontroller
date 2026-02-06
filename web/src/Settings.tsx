@@ -1,4 +1,5 @@
 import { createSignal, onMount, Show } from 'solid-js'
+import { authenticatedFetch, setAuthCredentials, clearAuthCredentials } from './utils/api'
 
 function Settings() {
   const [ssid, setSsid] = createSignal('')
@@ -89,6 +90,12 @@ function Settings() {
   const [doorAutoCloseAfterSunsetEnabled, setDoorAutoCloseAfterSunsetEnabled] = createSignal<boolean | null>(null)
   const [doorAutoCloseAfterSunsetMinutes, setDoorAutoCloseAfterSunsetMinutes] = createSignal<number | null>(null)
 
+  // API Authentication settings
+  const [apiAuthEnabled, setApiAuthEnabled] = createSignal<boolean | null>(null)
+  const [apiUsername, setApiUsername] = createSignal('')
+  const [apiPassword, setApiPassword] = createSignal('')
+  const [showApiPassword, setShowApiPassword] = createSignal(false)
+
   // Load settings from server
   onMount(async () => {
     try {
@@ -144,6 +151,12 @@ function Settings() {
       // Load Task 3.5k preparation settings
       setDoorAutoCloseAfterSunsetEnabled(settings.door_auto_close_after_sunset_enabled ?? false)
       setDoorAutoCloseAfterSunsetMinutes(settings.door_auto_close_after_sunset_minutes ?? 0)
+
+      // Load API authentication settings
+      setApiAuthEnabled(settings.api_auth_enabled ?? false)
+      setApiUsername(settings.api_username ?? 'admin')
+      // Never load password from server
+      setApiPassword('')
 
       // Set hostname if available
       if (settings.hostname) {
@@ -240,17 +253,34 @@ function Settings() {
         timezone_offset_hours: timezoneOffsetHours() ?? -5,
         door_auto_close_after_sunset_enabled: doorAutoCloseAfterSunsetEnabled() ?? false,
         door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0,
-        log_level: logLevel() ?? 'INFO'
+        log_level: logLevel() ?? 'INFO',
+        api_auth_enabled: apiAuthEnabled() ?? false,
+        api_username: apiUsername() ?? 'admin'
       }
 
-      // Handle password: either set new password, clear it, or don't change it
+      // Handle WiFi password: either set new password, clear it, or don't change it
       if (clearPassword()) {
         settingsPayload['passwd'] = ''
       } else if (password().length >= 5) {
         settingsPayload['passwd'] = password()
       }
 
-      const response = await fetch('/update_settings', {
+      // Handle API password: only include if provided (non-empty)
+      if (apiPassword().length > 0) {
+        settingsPayload['api_password'] = apiPassword()
+      }
+
+      // Cache credentials for authenticated requests if auth is enabled
+      if (apiAuthEnabled() && apiPassword().length > 0) {
+        setAuthCredentials(apiUsername(), apiPassword())
+      } else if (apiAuthEnabled()) {
+        // Use existing username with empty password if no new password provided
+        setAuthCredentials(apiUsername(), '')
+      } else {
+        clearAuthCredentials()
+      }
+
+      const response = await authenticatedFetch('/update_settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settingsPayload)
@@ -275,8 +305,8 @@ function Settings() {
     try {
       const formData = new FormData()
       formData.append('confirm', 'RESET')
-      
-      const response = await fetch('/factory_reset', {
+
+      const response = await authenticatedFetch('/factory_reset', {
         method: 'POST',
         body: formData
       })
@@ -298,8 +328,8 @@ function Settings() {
     try {
       const formData = new FormData()
       formData.append('confirm', 'REBOOT')
-      
-      const response = await fetch('/reboot', {
+
+      const response = await authenticatedFetch('/reboot', {
         method: 'POST',
         body: formData
       })
@@ -357,7 +387,7 @@ function Settings() {
       const fileContent = await restoreFile()!.text()
       const settings = JSON.parse(fileContent)
 
-      const response = await fetch('/settings/restore', {
+      const response = await authenticatedFetch('/settings/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
@@ -1118,6 +1148,103 @@ function Settings() {
       </fieldset>
 
           <h2 class="text-lg font-bold mb-4 mt-10">Advanced Settings</h2>
+
+          {/* API Authentication Section */}
+          <div class="card bg-base-200 card-sm shadow-sm mt-4">
+            <div class="card-body">
+              <h2 class="card-title">API Authentication</h2>
+              <p class="text-sm opacity-70 mb-4">
+                Secure your device's API endpoints with HTTP Basic Authentication.
+                When enabled, all control operations will require username and password.
+              </p>
+
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Enable API Authentication</legend>
+                <div class="form-control">
+                  <label class="label cursor-pointer">
+                    <span class="label-text">Require authentication for API access</span>
+                    <input
+                      type="checkbox"
+                      class="toggle toggle-warning"
+                      checked={apiAuthEnabled() ?? false}
+                      onChange={(e) => setApiAuthEnabled(e.currentTarget.checked)}
+                    />
+                  </label>
+                  <label class="label">
+                    <span class="label-text-alt">
+                      Protects state-modifying endpoints. Read-only endpoints remain public for monitoring.
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <Show when={apiAuthEnabled()}>
+                <div class="mt-4 space-y-4">
+                  <fieldset class="fieldset">
+                    <legend class="fieldset-legend">API Username</legend>
+                    <input
+                      type="text"
+                      value={apiUsername()}
+                      onInput={(e) => setApiUsername(e.target.value)}
+                      placeholder="admin"
+                      class="input"
+                    />
+                    <div class="fieldset-label">Username for API authentication</div>
+                  </fieldset>
+
+                  <fieldset class="fieldset">
+                    <legend class="fieldset-legend">API Password</legend>
+                    <div class="input-group">
+                      <input
+                        type={showApiPassword() ? "text" : "password"}
+                        value={apiPassword()}
+                        onInput={(e) => setApiPassword(e.target.value)}
+                        placeholder="Enter new password (leave blank to keep current)"
+                        class="input"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-ghost"
+                        onClick={() => setShowApiPassword(!showApiPassword())}
+                        title={showApiPassword() ? "Hide password" : "Show password"}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={showApiPassword() ? "lucide lucide-eye-off" : "lucide lucide-eye"}>
+                          {showApiPassword() ? (
+                            <>
+                              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path>
+                              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path>
+                              <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path>
+                              <line x1="2" x2="22" y1="2" y2="22"></line>
+                            </>
+                          ) : (
+                            <>
+                              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+                              <circle cx="12" cy="12" r="3"></circle>
+                            </>
+                          )}
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="fieldset-label">
+                      Leave empty to keep existing password. Password is never displayed after saving.
+                    </div>
+                  </fieldset>
+
+                  <div role="alert" class="alert alert-warning alert-soft">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <span>
+                      Warning: Save your credentials securely. You will need them for all future API operations.
+                      If you forget your password, you'll need physical access to factory reset the device.
+                    </span>
+                  </div>
+                </div>
+              </Show>
+            </div>
+          </div>
 
           {/* Backup/Restore Section */}
           <div class="card bg-base-200 card-sm shadow-sm mt-4">

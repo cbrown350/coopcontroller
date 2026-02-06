@@ -252,6 +252,19 @@ unsigned int SettingsManager::getPumpMinCycleRunSeconds() const {
     return settings.pump_min_cycle_run_seconds;
 }
 
+// API Authentication getters
+bool SettingsManager::getApiAuthEnabled() const {
+    return settings.api_auth_enabled;
+}
+
+String SettingsManager::getApiUsername() const {
+    return settings.api_username;
+}
+
+String SettingsManager::getApiPassword() const {
+    return settings.api_password;
+}
+
 // WiFi connection settings getters
 unsigned int SettingsManager::getWifiMaxRetries() {
     return getSettings().wifi_max_retries;
@@ -439,6 +452,19 @@ void SettingsManager::setPumpMinCycleRunSeconds(unsigned int seconds) {
     settings.pump_min_cycle_run_seconds = constrain(seconds, 30, 600);
 }
 
+// API Authentication setters
+void SettingsManager::setApiAuthEnabled(bool enabled) {
+    settings.api_auth_enabled = enabled;
+}
+
+void SettingsManager::setApiUsername(const String& username) {
+    settings.api_username = username;
+}
+
+void SettingsManager::setApiPassword(const String& password) {
+    settings.api_password = password;
+}
+
 // WiFi connection settings setters - request restart for these
 void SettingsManager::setWifiMaxRetries(int retries) {
     settings.wifi_max_retries = retries;
@@ -601,6 +627,11 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     // Load door auto close settings
     settings.door_auto_close_after_sunset_enabled = doc["door_auto_close_after_sunset_enabled"] | defaultSettings.door_auto_close_after_sunset_enabled;
     settings.door_auto_close_after_sunset_minutes = doc["door_auto_close_after_sunset_minutes"] | defaultSettings.door_auto_close_after_sunset_minutes;
+
+    // Load API authentication settings
+    settings.api_auth_enabled = doc["api_auth_enabled"] | defaultSettings.api_auth_enabled;
+    settings.api_username = doc["api_username"] | defaultSettings.api_username;
+    settings.api_password = doc["api_password"] | defaultSettings.api_password;
 }
 
 JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
@@ -669,6 +700,13 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     // Door auto close settings
     doc["door_auto_close_after_sunset_enabled"] = settings.door_auto_close_after_sunset_enabled;
     doc["door_auto_close_after_sunset_minutes"] = settings.door_auto_close_after_sunset_minutes;
+
+    // API authentication settings
+    doc["api_auth_enabled"] = settings.api_auth_enabled;
+    doc["api_username"] = settings.api_username;
+    if (includePassword && settings.api_password.length() != 0) {
+        doc["api_password"] = settings.api_password;
+    }
 
     return doc;
 }

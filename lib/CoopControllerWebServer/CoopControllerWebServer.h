@@ -36,6 +36,38 @@ class CoopControllerWebServer
         IHAL* hal;          ///< Hardware abstraction layer interface
         uint16_t port;      ///< HTTP server port number
 
+        /**
+         * @brief Check if HTTP request has valid authentication credentials
+         *
+         * Validates HTTP Basic Authentication header against configured credentials.
+         * If authentication is disabled in settings, all requests are allowed.
+         *
+         * @param request The incoming HTTP request to validate
+         * @return true if authenticated or auth disabled, false otherwise
+         */
+        bool isAuthenticated(void* request);
+
+        /**
+         * @brief Send 401 Unauthorized response with WWW-Authenticate header
+         *
+         * Returns HTTP 401 response with Basic authentication challenge,
+         * prompting browser to request credentials.
+         *
+         * @param request The incoming HTTP request to respond to
+         */
+        void sendAuthRequired(void* request);
+
+        /**
+         * @brief Decode Base64 encoded string
+         *
+         * Utility function for decoding HTTP Basic Auth credentials.
+         * Implements RFC 4648 Base64 decoding.
+         *
+         * @param input Base64 encoded string
+         * @return Decoded string
+         */
+        String base64Decode(const String& input);
+
    public:
     /**
      * @brief Constructor for CoopControllerWebServer

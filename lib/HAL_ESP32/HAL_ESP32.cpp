@@ -316,6 +316,17 @@ public:
 
     return String();
   }
+
+  bool hasHeader(const char *name) const override {
+    return request_->hasHeader(name);
+  }
+
+  String header(const char *name) const override {
+    if (request_->hasHeader(name)) {
+      return request_->header(name);
+    }
+    return String();
+  }
 };
 
 /**
@@ -327,17 +338,34 @@ public:
 class ESP32WebResponseWrapper : public IWebResponse {
 private:
   AsyncWebServerRequest *request_;
+  std::vector<std::pair<String, String>> headers_;
 
 public:
   explicit ESP32WebResponseWrapper(AsyncWebServerRequest *request)
       : request_(request) {}
 
   void send(int code, const char *contentType, const char *body) override {
-    request_->send(code, contentType, body);
+    AsyncWebServerResponse *response = request_->beginResponse(code, contentType, body);
+    // Add any custom headers
+    for (const auto& header : headers_) {
+      response->addHeader(header.first, header.second);
+    }
+    request_->send(response);
   }
 
   void sendFile(const char *path, const char *contentType) override {
-    request_->send(LittleFS, path, contentType);
+    // For file sending, headers need to be added differently
+    // AsyncWebServer's send(LittleFS, path) doesn't support custom headers easily
+    // We'll create a response manually if we have custom headers
+    if (headers_.empty()) {
+      request_->send(LittleFS, path, contentType);
+    } else {
+      AsyncWebServerResponse *response = request_->beginResponse(LittleFS, path, contentType);
+      for (const auto& header : headers_) {
+        response->addHeader(header.first, header.second);
+      }
+      request_->send(response);
+    }
   }
 
   void setContentLength(size_t len) override {
@@ -348,6 +376,10 @@ public:
   void setContentType(const char *type) override {
     // AsyncWebServer handles content type automatically
     // This method is provided for interface compatibility
+  }
+
+  void addHeader(const char *name, const char *value) override {
+    headers_.push_back(std::make_pair(String(name), String(value)));
   }
 };
 

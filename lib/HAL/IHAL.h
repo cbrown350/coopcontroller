@@ -84,6 +84,20 @@ public:
    * @return Request body content as string
    */
   virtual String body() const = 0;
+
+  /**
+   * @brief Check if request has a specific header
+   * @param name Header name (case-insensitive)
+   * @return true if header exists
+   */
+  virtual bool hasHeader(const char *name) const = 0;
+
+  /**
+   * @brief Get header value
+   * @param name Header name (case-insensitive)
+   * @return Header value as string (empty if not found)
+   */
+  virtual String header(const char *name) const = 0;
 };
 
 /**
@@ -122,6 +136,13 @@ public:
    * @param type Content type string (e.g., "text/html")
    */
   virtual void setContentType(const char *type) = 0;
+
+  /**
+   * @brief Add response header
+   * @param name Header name
+   * @param value Header value
+   */
+  virtual void addHeader(const char *name, const char *value) = 0;
 };
 
 /**

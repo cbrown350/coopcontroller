@@ -1,5 +1,6 @@
 import { createSignal, onMount, onCleanup, Show, createEffect } from 'solid-js'
 import { SystemStatus } from './types'
+import { authenticatedFetch } from './utils/api'
 
 function Status() {
 
@@ -183,7 +184,7 @@ function Status() {
 
   const handlePumpControl = async (action: string) => {
     try {
-      const response = await fetch(`/pump/${action}`, { method: 'GET' })
+      const response = await authenticatedFetch(`/pump/${action}`, { method: 'GET' })
       if (response.ok) {
         await refreshSensorStatus() // Refresh status after action
       }
@@ -194,7 +195,7 @@ function Status() {
 
   const handleClearOffFlowDetected = async () => {
     try {
-      const response = await fetch('/pump/clear_off_flow_detected', { method: 'GET' })
+      const response = await authenticatedFetch('/pump/clear_off_flow_detected', { method: 'GET' })
       if (response.ok) {
         await refreshSensorStatus() // Refresh status after action
       }
@@ -205,7 +206,7 @@ function Status() {
 
   const handleWaterReset = async (sensor: number) => {
     try {
-      const response = await fetch(`/water/reset/${sensor}`, { method: 'GET' })
+      const response = await authenticatedFetch(`/water/reset/${sensor}`, { method: 'GET' })
       if (response.ok) {
         await refreshSensorStatus() // Refresh status after action
       }
@@ -216,16 +217,16 @@ function Status() {
 
   const handleBrightnessChange = async (value: number) => {
     setLocalBrightness(value)
-    
+
     // If light is OFF and slider > 0, turn it on first
     if (sensorStatus()?.light?.state === "OFF" && value > 0) {
-      await fetch('/light/on')
+      await authenticatedFetch('/light/on')
       await new Promise(resolve => setTimeout(resolve, 100))
     }
-    
+
     const formData = new FormData()
     formData.append('brightness', value.toString())
-    await fetch('/light/set_brightness', {
+    await authenticatedFetch('/light/set_brightness', {
       method: 'POST',
       body: formData
     })
@@ -506,10 +507,10 @@ function Status() {
 
                 {/* Buzzer Control Buttons */}
                 <div class="flex gap-2 mt-4">
-                  <button 
+                  <button
                     class="btn btn-warning btn-sm"
                     onClick={() => {
-                      fetch('/buzzer/silence', { method: 'POST' })
+                      authenticatedFetch('/buzzer/silence', { method: 'POST' })
                         .then(response => {
                           if (response.ok) {
                             // Status will be updated on next refresh
@@ -523,12 +524,12 @@ function Status() {
                   >
                     Silence Alerts
                   </button>
-                  <button 
+                  <button
                     class={`btn btn-sm ${sensorStatus().buzzer?.has_active_alert && sensorStatus().buzzer?.current_alert_type === 'TEST_ALERT' ? 'btn-error' : 'btn-outline'}`}
                     onClick={() => {
                       if (sensorStatus().buzzer?.has_active_alert && sensorStatus().buzzer?.current_alert_type === 'TEST_ALERT') {
                         // Clear the test alert
-                        fetch('/buzzer/clear', { method: 'POST' })
+                        authenticatedFetch('/buzzer/clear', { method: 'POST' })
                           .then(response => {
                             if (response.ok) {
                               // Status will be updated on next refresh
@@ -539,7 +540,7 @@ function Status() {
                           });
                       } else {
                         // Trigger test alert
-                        fetch('/buzzer/test', { method: 'GET' })
+                        authenticatedFetch('/buzzer/test', { method: 'GET' })
                           .then(response => {
                             if (response.ok) {
                               // Status will be updated on next refresh
@@ -619,7 +620,7 @@ function Status() {
                    <button
                      class="btn btn-success btn-sm"
                      onClick={() => {
-                       fetch('/light/on', { method: 'GET' })
+                       authenticatedFetch('/light/on', { method: 'GET' })
                          .then(response => {
                            if (response.ok) {
                              // Status will be updated on next refresh
@@ -636,7 +637,7 @@ function Status() {
                    <button
                      class="btn btn-error btn-sm"
                      onClick={() => {
-                       fetch('/light/off', { method: 'GET' })
+                       authenticatedFetch('/light/off', { method: 'GET' })
                          .then(response => {
                            if (response.ok) {
                              // Status will be updated on next refresh
@@ -653,7 +654,7 @@ function Status() {
                    <button
                      class="btn btn-primary btn-sm"
                      onClick={() => {
-                       fetch('/light/fade_in', { method: 'GET' })
+                       authenticatedFetch('/light/fade_in', { method: 'GET' })
                          .then(response => {
                            if (response.ok) {
                              // Status will be updated on next refresh
@@ -670,7 +671,7 @@ function Status() {
                    <button
                      class="btn btn-primary btn-sm"
                      onClick={() => {
-                       fetch('/light/fade_out', { method: 'GET' })
+                       authenticatedFetch('/light/fade_out', { method: 'GET' })
                          .then(response => {
                            if (response.ok) {
                              // Status will be updated on next refresh
@@ -722,7 +723,7 @@ function Status() {
                      <button
                        class="btn btn-xs btn-outline mt-2"
                        onClick={() => {
-                         fetch('/light/reset_stats', { method: 'GET' })
+                         authenticatedFetch('/light/reset_stats', { method: 'GET' })
                            .then(response => {
                              if (response.ok) {
                                // Status will be updated on next refresh
@@ -810,10 +811,10 @@ function Status() {
 
                 {/* Door Control Buttons */}
                 <div class="flex gap-2 mt-4">
-                  <button 
+                  <button
                     class="btn btn-success btn-sm"
                     onClick={() => {
-                      fetch('/door/open', { method: 'GET' })
+                      authenticatedFetch('/door/open', { method: 'GET' })
                         .then(response => {
                           if (response.ok) {
                             // Status will be updated on next refresh
@@ -827,10 +828,10 @@ function Status() {
                   >
                     Open
                   </button>
-                  <button 
+                  <button
                     class="btn btn-error btn-sm"
                     onClick={() => {
-                      fetch('/door/close', { method: 'GET' })
+                      authenticatedFetch('/door/close', { method: 'GET' })
                         .then(response => {
                           if (response.ok) {
                             // Status will be updated on next refresh
@@ -844,10 +845,10 @@ function Status() {
                   >
                     Close
                   </button>
-                  <button 
+                  <button
                     class="btn btn-warning btn-sm"
                     onClick={() => {
-                      fetch('/door/stop', { method: 'GET' })
+                      authenticatedFetch('/door/stop', { method: 'GET' })
                         .then(response => {
                           if (response.ok) {
                             // Status will be updated on next refresh
@@ -862,10 +863,10 @@ function Status() {
                     Stop
                   </button>
                   <Show when={sensorStatus().door?.state === 'FAULT'}>
-                    <button 
+                    <button
                       class="btn btn-outline btn-sm"
                       onClick={() => {
-                        fetch('/door/clear_fault', { method: 'POST' })
+                        authenticatedFetch('/door/clear_fault', { method: 'POST' })
                           .then(response => {
                             if (response.ok) {
                               // Status will be updated on next refresh
@@ -904,10 +905,10 @@ function Status() {
                     <div class="stat-desc text-sm">
                       Close Time: {formatTime(sensorStatus().door?.total_close_time || 0)}
                     </div>
-                    <button 
+                    <button
                       class="btn btn-xs btn-outline mt-2"
                       onClick={() => {
-                        fetch('/door/reset_stats', { method: 'GET' })
+                        authenticatedFetch('/door/reset_stats', { method: 'GET' })
                           .then(response => {
                             if (response.ok) {
                               // Status will be updated on next refresh

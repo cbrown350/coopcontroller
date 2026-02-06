@@ -42,8 +42,14 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
     // Update settings endpoint - uses POST with JSON body
     hal->webServerOn("/update_settings", HAL_WebRequestMethod::HTTP_POST,
-              [&lightController, &tempSensor, &buzzerController, &sunriseSunset](IWebRequest *request, IWebResponse *response) // NOSONAR
+              [this, &lightController, &tempSensor, &buzzerController, &sunriseSunset](IWebRequest *request, IWebResponse *response) // NOSONAR
               {
+                  // Authentication check
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   // Get request body and parse JSON  
                 //   String body = request->body();                
                 // Serial.printf("[WebServer] /update_settings request received, %s\n", body.c_str());
@@ -253,8 +259,27 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       logger.logInfo(msg.c_str());
                   }
 
+                  // Handle API authentication settings
+                  if (jsonObj["api_auth_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["api_auth_enabled"].as<bool>();
+                      settingsManager.setApiAuthEnabled(enabled);
+                      logger.logInfo(enabled ? "API authentication: enabled" : "API authentication: disabled");
+                  }
+
+                  if (jsonObj["api_username"].is<String>()) {
+                      String username = jsonObj["api_username"].as<String>();
+                      settingsManager.setApiUsername(username);
+                      logger.logInfo("API username updated: " + username);
+                  }
+
+                  if (jsonObj["api_password"].is<String>()) {
+                      String password = jsonObj["api_password"].as<String>();
+                      settingsManager.setApiPassword(password);
+                      logger.logInfo(password.length() > 0 ? "API password updated" : "API password cleared");
+                  }
+
                   // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
-                  
+
                   settingsManager.save();
                   response->send(200, "text/plain", "ok");
               });
@@ -370,52 +395,87 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
     // Pump control endpoints
     hal->webServerOn("/pump/on", HAL_WebRequestMethod::HTTP_GET,
-              [&pumpController](IWebRequest *request, IWebResponse *response)
+              [this, &pumpController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   pumpController.turnOn();
                   logger.logInfo("Pump turned on (manual)");
                   response->send(200, "text/plain", "Pump turned on");
               });
 
     hal->webServerOn("/pump/off", HAL_WebRequestMethod::HTTP_GET,
-              [&pumpController](IWebRequest *request, IWebResponse *response)
+              [this, &pumpController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   pumpController.turnOff();
                   logger.logInfo("Pump turned off (manual)");
                   response->send(200, "text/plain", "Pump turned off");
               });
 
     hal->webServerOn("/pump/auto", HAL_WebRequestMethod::HTTP_GET,
-              [&pumpController](IWebRequest *request, IWebResponse *response)
+              [this, &pumpController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   pumpController.setAutoMode(true);
                   response->send(200, "text/plain", "Pump set to auto mode");
               });
 
     hal->webServerOn("/pump/force_cycle", HAL_WebRequestMethod::HTTP_GET,
-              [&pumpController](IWebRequest *request, IWebResponse *response)
+              [this, &pumpController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   pumpController.forceCycle();
                   response->send(200, "text/plain", "Pump cycle forced");
               });
 
     hal->webServerOn("/pump/reset_stats", HAL_WebRequestMethod::HTTP_GET,
-              [&pumpController](IWebRequest *request, IWebResponse *response)
+              [this, &pumpController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   pumpController.resetStatistics();
                   response->send(200, "text/plain", "Pump statistics reset");
               });
 
     hal->webServerOn("/pump/clear_error", HAL_WebRequestMethod::HTTP_GET,
-              [&pumpController](IWebRequest *request, IWebResponse *response)
+              [this, &pumpController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   pumpController.clearFlowError();
                   response->send(200, "text/plain", "Pump flow error cleared");
               });
 
     hal->webServerOn("/pump/clear_off_flow_detected", HAL_WebRequestMethod::HTTP_GET,
-              [&pumpController](IWebRequest *request, IWebResponse *response)
+              [this, &pumpController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   pumpController.clearPumpOffFlowDetected();
                   response->send(200, "text/plain", "Pump off flow detection cleared");
                   logger.logInfo("Pump off flow detection cleared via web request");
@@ -423,36 +483,61 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
         // Water meter reset endpoints
     hal->webServerOn("/water/reset/1", HAL_WebRequestMethod::HTTP_GET,
-              [&tempSensor](IWebRequest *request, IWebResponse *response)
+              [this, &tempSensor](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   tempSensor.resetPulseCount(1);
                   response->send(200, "text/plain", "Water meter 1 reset");
               });
     
     hal->webServerOn("/water/reset/2", HAL_WebRequestMethod::HTTP_GET,
-              [&tempSensor](IWebRequest *request, IWebResponse *response)
+              [this, &tempSensor](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   tempSensor.resetPulseCount(2);
                   response->send(200, "text/plain", "Water meter 2 reset");
               });
     
     // Buzzer control endpoints
     hal->webServerOn("/buzzer/silence", HAL_WebRequestMethod::HTTP_POST,
-              [&buzzerController](IWebRequest *request, IWebResponse *response)
+              [this, &buzzerController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   buzzerController.silenceAlerts();
                   response->send(200, "text/plain", "Buzzer alerts silenced");
               });
     
     hal->webServerOn("/buzzer/test", HAL_WebRequestMethod::HTTP_GET,
-              [&buzzerController](IWebRequest *request, IWebResponse *response)
+              [this, &buzzerController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   buzzerController.testAlert();
                   response->send(200, "text/plain", "Buzzer test alert triggered");
               });
     hal->webServerOn("/buzzer/clear", HAL_WebRequestMethod::HTTP_POST,
-              [&buzzerController](IWebRequest *request, IWebResponse *response)
+              [this, &buzzerController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   // Clear currently active alert (could be TEST_ALERT or PUMP_ERROR)
                   if (buzzerController.hasActiveAlert()) {
                       AlertType currentAlert = buzzerController.getCurrentAlertType();
@@ -465,29 +550,49 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     
     // Door control endpoints
     hal->webServerOn("/door/open", HAL_WebRequestMethod::HTTP_GET,
-              [&doorController](IWebRequest *request, IWebResponse *response)
+              [this, &doorController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   doorController.open();
                   response->send(200, "text/plain", "Door opening");
               });
     
     hal->webServerOn("/door/close", HAL_WebRequestMethod::HTTP_GET,
-              [&doorController](IWebRequest *request, IWebResponse *response)
+              [this, &doorController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   doorController.close();
                   response->send(200, "text/plain", "Door closing");
               });
     
     hal->webServerOn("/door/stop", HAL_WebRequestMethod::HTTP_GET,
-              [&doorController](IWebRequest *request, IWebResponse *response)
+              [this, &doorController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   doorController.stop();
                   response->send(200, "text/plain", "Door stopped");
               });
     
     hal->webServerOn("/door/set_auto", HAL_WebRequestMethod::HTTP_POST,
-              [&doorController](IWebRequest *request, IWebResponse *response)
+              [this, &doorController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   String autoStr = request->param("auto");
                   bool autoMode = (autoStr == "true" || autoStr == "1");
                   doorController.setAutoMode(autoMode);
@@ -495,53 +600,88 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
               });
     
     hal->webServerOn("/door/clear_fault", HAL_WebRequestMethod::HTTP_POST,
-              [&doorController](IWebRequest *request, IWebResponse *response)
+              [this, &doorController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   doorController.clearFault();
                   response->send(200, "text/plain", "Door fault cleared");
               });
     
     hal->webServerOn("/door/reset_stats", HAL_WebRequestMethod::HTTP_GET,
-              [&doorController](IWebRequest *request, IWebResponse *response)
+              [this, &doorController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   doorController.resetStatistics();
                   response->send(200, "text/plain", "Door statistics reset");
               });
 
     // Light control endpoints
     hal->webServerOn("/light/on", HAL_WebRequestMethod::HTTP_GET,
-              [&lightController](IWebRequest *request, IWebResponse *response)
+              [this, &lightController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   lightController.turnOn();
                   logger.logInfo("Light turned on (manual)");
                   response->send(200, "text/plain", "Light turned on");
               });
     
     hal->webServerOn("/light/off", HAL_WebRequestMethod::HTTP_GET,
-              [&lightController](IWebRequest *request, IWebResponse *response)
+              [this, &lightController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   lightController.turnOff();
                   logger.logInfo("Light turned off (manual)");
                   response->send(200, "text/plain", "Light turned off");
               });
     
     hal->webServerOn("/light/fade_in", HAL_WebRequestMethod::HTTP_GET,
-              [&lightController](IWebRequest *request, IWebResponse *response)
+              [this, &lightController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   lightController.fadeIn();
                   response->send(200, "text/plain", "Light fading in");
               });
     
     hal->webServerOn("/light/fade_out", HAL_WebRequestMethod::HTTP_GET,
-              [&lightController](IWebRequest *request, IWebResponse *response)
+              [this, &lightController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   lightController.fadeOut();
                   response->send(200, "text/plain", "Light fading out");
               });
     
     hal->webServerOn("/light/set_brightness", HAL_WebRequestMethod::HTTP_POST,
-              [&lightController](IWebRequest *request, IWebResponse *response)
+              [this, &lightController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   String brightnessStr = request->param("brightness");
                   int brightness = brightnessStr.toInt();
                   if (brightness < 0 || brightness > 100) {
@@ -555,8 +695,13 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
               });
     
     hal->webServerOn("/light/set_auto", HAL_WebRequestMethod::HTTP_POST,
-              [&lightController](IWebRequest *request, IWebResponse *response)
+              [this, &lightController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   String autoStr = request->param("auto");
                   bool autoMode = (autoStr == "true" || autoStr == "1");
                   lightController.setAutoMode(autoMode);
@@ -566,15 +711,25 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
               });
     
     hal->webServerOn("/light/reset_stats", HAL_WebRequestMethod::HTTP_GET,
-              [&lightController](IWebRequest *request, IWebResponse *response)
+              [this, &lightController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   lightController.resetStatistics();
                   response->send(200, "text/plain", "Light statistics reset");
               });
     
     hal->webServerOn("/light/test_mode", HAL_WebRequestMethod::HTTP_POST,
-              [&lightController](IWebRequest *request, IWebResponse *response)
+              [this, &lightController](IWebRequest *request, IWebResponse *response)
               {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   String enabledStr = request->param("enabled");
                   bool enabled = (enabledStr == "true" || enabledStr == "1");
                   lightController.setTestMode(enabled);
@@ -699,6 +854,12 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     hal->webServerOn("/factory_reset", HAL_WebRequestMethod::HTTP_POST,
               [this](IWebRequest *request, IWebResponse *response)
               {
+                  // Authentication check
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   // Check for confirmation parameter
                   String confirm = request->param("confirm");
                   if (confirm != "RESET") {
@@ -722,6 +883,12 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     hal->webServerOn("/reboot", HAL_WebRequestMethod::HTTP_POST,
               [this](IWebRequest *request, IWebResponse *response)
               {
+                  // Authentication check
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   // Check for confirmation parameter
                   String confirm = request->param("confirm");
                   if (confirm != "REBOOT") {
@@ -748,8 +915,14 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     
     // Restore settings endpoint - Note: Using manual JSON parsing instead of AsyncCallbackJsonWebHandler
     hal->webServerOn("/settings/restore", HAL_WebRequestMethod::HTTP_POST,
-              [&tempSensor, &buzzerController, &lightController](IWebRequest *request, IWebResponse *response) // NOSONAR - complexity ok
+              [this, &tempSensor, &buzzerController, &lightController](IWebRequest *request, IWebResponse *response) // NOSONAR - complexity ok
               {
+                  // Authentication check
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
                   // Get request body and parse JSON
                   String body = request->body();
                   JsonDocument jsonDoc;
@@ -948,7 +1121,91 @@ void CoopControllerWebServer::loop() const
 {
   // Process ArduinoOTA events (network OTA)
   ArduinoOTA.handle();
-  
+
   // Process ElegantOTA events (web OTA)
   ElegantOTA.loop();
+}
+
+// ============================================================================
+// Authentication Methods
+// ============================================================================
+
+String CoopControllerWebServer::base64Decode(const String& input) {
+    // Base64 decode table
+    static const char base64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    String output = "";
+    int val = 0;
+    int valb = -8;
+
+    for (unsigned int i = 0; i < input.length(); i++) {
+        char c = input[i];
+        if (c == '=') break; // Padding character
+
+        const char* p = strchr(base64_table, c);
+        if (p == nullptr) continue; // Skip invalid characters
+
+        val = (val << 6) | (p - base64_table);
+        valb += 6;
+
+        if (valb >= 0) {
+            output += char((val >> valb) & 0xFF);
+            valb -= 8;
+        }
+    }
+
+    return output;
+}
+
+bool CoopControllerWebServer::isAuthenticated(void* request) {
+    IWebRequest* req = static_cast<IWebRequest*>(request);
+
+    // If authentication is disabled in settings, allow all requests
+    if (!settingsManager.getApiAuthEnabled()) {
+        return true;
+    }
+
+    // If password is empty, authentication is effectively disabled
+    if (settingsManager.getApiPassword().length() == 0) {
+        return true;
+    }
+
+    // Check for Authorization header
+    if (!req->hasHeader("Authorization")) {
+        return false;
+    }
+
+    // Parse "Basic <base64>" header
+    String authHeader = req->header("Authorization");
+    if (!authHeader.startsWith("Basic ")) {
+        return false;
+    }
+
+    // Decode base64 credentials (format: "username:password")
+    String credentials = base64Decode(authHeader.substring(6));
+    int colonIndex = credentials.indexOf(':');
+    if (colonIndex == -1) {
+        return false;
+    }
+
+    String username = credentials.substring(0, colonIndex);
+    String password = credentials.substring(colonIndex + 1);
+
+    // Validate credentials against settings
+    bool isValid = (username == settingsManager.getApiUsername() &&
+                   password == settingsManager.getApiPassword());
+
+    if (!isValid) {
+        logger.logWarning("Failed authentication attempt from user: " + username);
+    }
+
+    return isValid;
+}
+
+void CoopControllerWebServer::sendAuthRequired(void* response) {
+    IWebResponse* resp = static_cast<IWebResponse*>(response);
+
+    // Send 401 Unauthorized with WWW-Authenticate header
+    resp->addHeader("WWW-Authenticate", "Basic realm=\"Coop Controller\"");
+    resp->send(401, "text/plain", "Authentication required");
 }

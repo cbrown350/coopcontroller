@@ -49,16 +49,27 @@ public:
         return mockBody;
     }
 
+    bool hasHeader(const char* name) const override {
+        return mockHeaders.find(name) != mockHeaders.end();
+    }
+
+    String header(const char* name) const override {
+        auto it = mockHeaders.find(name);
+        return (it != mockHeaders.end()) ? it->second : String();
+    }
+
     // Test helpers
     void setUrl(const String& url) { mockUrl = url; }
     void setMethod(HAL_WebRequestMethod method) { mockMethod = method; }
     void setBody(const String& body) { mockBody = body; }
+    void setHeader(const String& name, const String& value) { mockHeaders[name] = value; }
 
 private:
     String mockUrl;
     HAL_WebRequestMethod mockMethod;
     JsonVariant mockJsonBody;
     String mockBody;
+    std::map<String, String> mockHeaders;
 };
 
 // ============================================================================
@@ -87,12 +98,18 @@ public:
         (void)type;
     }
 
+    void addHeader(const char* name, const char* value) override {
+        responseHeaders[name] = value;
+    }
+
     // Test helpers
     int getLastCode() const { return lastCode; }
     const char* getLastContentType() const { return lastContentType; }
     const char* getLastBody() const { return lastBody; }
+    const std::map<String, String>& getResponseHeaders() const { return responseHeaders; }
 
 private:
+    std::map<String, String> responseHeaders;
     int lastCode = 200;
     const char* lastContentType = "";
     const char* lastBody = "";
