@@ -5,7 +5,7 @@ try:
     import PIL  # noqa: F401
 except ImportError as e:
     print("Required module not found:", e)
-    print("In order to modify dev images, install Pillow (~\\.platformio\\penv\\Scripts\\activate && pip install Pillow or source ~/.platformio/penv/bin/activate && pip install Pillow).")
+    print("In order to modify dev images, install Pillow ('~\\.platformio\\penv\\Scripts\\activate && pip install Pillow' or 'source ~/.platformio/penv/bin/activate && pip install Pillow' or '%USERPROFILE%\.platformio\penv\Scripts\activate.bat && pip install Pillow' depending on platform).")
     raise e
 
 def _try_load_font(font_path, size):
