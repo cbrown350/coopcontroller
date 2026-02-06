@@ -97,11 +97,97 @@
  *
  * @note This function never returns - contains infinite while loop
  */
+/**
+ * @brief Check for factory reset request during bootup
+ *
+ * Checks if DOOR_MANUAL_SWITCH_B_PIN is held LOW for 20 seconds during bootup.
+ * If held, triggers factory reset (clears all settings and WiFi credentials).
+ * Uses WIFI_LED_B_PIN for visual feedback (rapid blink pattern).
+ *
+ * @param hal Hardware abstraction layer for pin access and LED control
+ * @return true if factory reset was triggered, false otherwise
+ */
+bool checkFactoryResetRequest() {
+    // Configure manual switch pin as input with pullup
+    pinMode(DOOR_MANUAL_SWITCH_B_PIN, INPUT_PULLUP);
+
+    // Check if button is pressed (active LOW)
+    if (digitalRead(DOOR_MANUAL_SWITCH_B_PIN) == HIGH) {
+        // Button not pressed, no factory reset
+        return false;
+    }
+
+    // Button is pressed - configure LED for feedback
+    pinMode(WIFI_LED_B_PIN, OUTPUT);
+
+    Serial.println("Factory reset button detected - hold for 20 seconds to confirm");
+
+    // Wait 20 seconds, checking button state and blinking LED
+    const unsigned long factoryResetHoldTime = 20000; // 20 seconds
+    const unsigned long blinkInterval = 100; // Fast blink (100ms)
+    unsigned long startTime = millis();
+    unsigned long lastBlinkTime = 0;
+    bool ledState = false;
+
+    while (millis() - startTime < factoryResetHoldTime) {
+        // Check if button was released
+        if (digitalRead(DOOR_MANUAL_SWITCH_B_PIN) == HIGH) {
+            digitalWrite(WIFI_LED_B_PIN, LOW); // Turn off LED
+            Serial.println("Factory reset cancelled - button released");
+            return false;
+        }
+
+        // Blink LED rapidly to indicate factory reset in progress
+        if (millis() - lastBlinkTime >= blinkInterval) {
+            lastBlinkTime = millis();
+            ledState = !ledState;
+            digitalWrite(WIFI_LED_B_PIN, ledState ? HIGH : LOW);
+        }
+
+        // Print countdown every second        
+        if (static unsigned long lastCountdown = 0; millis() - lastCountdown >= 1000) {
+            lastCountdown = millis();
+            unsigned long remaining = (factoryResetHoldTime - (millis() - startTime)) / 1000;
+            Serial.print("Factory reset in ");
+            Serial.print(remaining);
+            Serial.println(" seconds...");
+        }
+
+        delay(10); // Small delay to prevent tight loop
+    }
+
+    // Button held for full 20 seconds - trigger factory reset
+    digitalWrite(WIFI_LED_B_PIN, HIGH); // Turn LED on solid
+    Serial.println("===========================================");
+    Serial.println("FACTORY RESET TRIGGERED");
+    Serial.println("===========================================");
+
+    return true;
+}
+
 void setup() // NOSONAR - complexity ok
 {
     Serial.begin(SERIAL_BAUD);
+    delay(100); // Allow serial to initialize
 
     HAL_ESP32 hal{}; // HAL implementation for ESP32
+
+    // Check for factory reset request BEFORE initializing anything else
+    if (checkFactoryResetRequest()) {
+        // Initialize minimal components needed for factory reset
+        hal.begin();
+        settingsManager.begin(&hal);
+
+        // Perform factory reset
+        settingsManager.factoryReset();
+
+        Serial.println("Factory reset complete - device will restart");
+        Serial.println("===========================================");
+        delay(2000); // Allow time for serial output
+
+        // Restart device to apply factory reset
+        hal.restart();
+    }
     
     logger.begin(&hal); // Initialize logger singleton   
     hal.begin();

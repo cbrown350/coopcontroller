@@ -933,17 +933,16 @@ Features organized by priority and implementation status.
 
 ### Critical Priority - Core Functionality & Security
 
-#### PR Problems Found During Review
+#### ~~PR Problems Found During Review~~ ✅ **Complete**
 - Github PR #2 has a number of problems that need to be fixed: "Refactor for unit test #2"
+- **Status:** All 13 issues fixed and verified. See `docs/temp_PR2_fixes.md` for details.
 
-#### Web Assets Security Refactoring
+#### ~~Web Assets Security Refactoring~~ ✅ **Complete**
 - Move web assets into separate subdirectory within LittleFS
 - Adjust web server root path to serve from the new subdirectory
 - Prevents direct access to `user_settings.json` via web requests
-- **Security Risk:** Currently `user_settings.json` is accessible at `/user_settings.json` endpoint
-- Critical for protecting WiFi credentials and API keys from unauthorized access
-- Minimal impact on functionality - only requires path configuration changes
-- Test thoroughly to ensure all static file serving still works correctly
+- **Status:** Web assets now served from `/www/` subdirectory, `user_settings.json` no longer web-accessible
+- WiFi credentials and API keys protected from unauthorized access via direct file access
 
 #### ~~Water Meter Calibration~~ ✅ **Already Implemented**
 - Make pulse-to-gallons conversion factor configurable from web UI
@@ -976,7 +975,7 @@ Features organized by priority and implementation status.
 - Help identify hardware faults and water leaks
 - **Status:** Feature fully implemented. See [Recent Critical Fixes #9](#9-pump-flow-monitoring-enhancement) for details.
 
-#### Minimum Daily Pump Cycles Enforcement
+#### ~~Minimum Daily Pump Cycles Enforcement~~ ✅ **Complete**
 - Run pump X times per day regardless of temperature to keep pipe full and prevent water stagnation
 - Prevents algae growth and maintains water freshness
 - Keeps pump seals lubricated for longevity
@@ -985,11 +984,23 @@ Features organized by priority and implementation status.
 - Schedule evenly throughout day when not triggered by temperature
 - **Status:** Feature fully implemented. Settings: `pump_min_daily_cycles_enabled`, `pump_min_daily_cycles` (1-12), `pump_min_cycle_run_seconds` (30-600). Uses millis()-based interval scheduling; temperature-triggered cycles count toward the minimum. Disabled by default.
 
-#### Factory Reset Functionality
-- Hard reset button or procedure to clear all settings
-- Revert to default/empty values
-- Clear WiFi credentials and enter AP mode
-- Essential for troubleshooting and device transfer
+#### ~~Factory Reset Functionality~~ ✅ **Complete**
+**Hardware Factory Reset:**
+- Hold manual door switch (DOOR_MANUAL_SWITCH_B_PIN) for 20 seconds during bootup to trigger factory reset
+- WIFI_LED_B_PIN indicates factory reset in progress (rapid blink pattern at 100ms intervals)
+- Countdown printed to serial console every second
+- Clears all settings to defaults
+- Clears WiFi credentials
+- Forces AP mode on next boot
+- Serial log confirmation of factory reset
+- Device automatically restarts after factory reset
+- **Status:** ✅ Complete - Implemented in `main.cpp` with `checkFactoryResetRequest()` function, runs before component initialization
+
+**Software Factory Reset:**
+- Factory reset button available in web UI Settings page
+- Confirmation dialog required before executing
+- Same behavior as hardware reset
+- **Status:** ✅ Complete - Already implemented
 
 #### API Authentication for Critical Endpoints
 - Add authentication to protect critical REST API endpoints
