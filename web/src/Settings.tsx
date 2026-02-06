@@ -43,6 +43,11 @@ function Settings() {
   // Pump off flow monitoring
   const [pumpOffFlowMonitoringEnabled, setPumpOffFlowMonitoringEnabled] = createSignal<boolean | null>(null)
   const [pumpOffFlowGracePeriodSeconds, setPumpOffFlowGracePeriodSeconds] = createSignal<number | null>(null)
+
+  // Pump minimum daily cycles
+  const [pumpMinDailyCyclesEnabled, setPumpMinDailyCyclesEnabled] = createSignal<boolean | null>(null)
+  const [pumpMinDailyCycles, setPumpMinDailyCycles] = createSignal<number | null>(null)
+  const [pumpMinCycleRunSeconds, setPumpMinCycleRunSeconds] = createSignal<number | null>(null)
   
   // Water meter timeout
   const [waterMeterTimeoutSeconds, setWaterMeterTimeoutSeconds] = createSignal<number | null>(null)
@@ -115,6 +120,9 @@ function Settings() {
       setWaterMeterPerPulseCalculationEnabled(settings.water_meter_per_pulse_calculation_enabled ?? false)
       setPumpOffFlowMonitoringEnabled(settings.pump_off_flow_monitoring_enabled ?? false)
       setPumpOffFlowGracePeriodSeconds(settings.pump_off_flow_grace_period_seconds ?? 30)
+      setPumpMinDailyCyclesEnabled(settings.pump_min_daily_cycles_enabled ?? false)
+      setPumpMinDailyCycles(settings.pump_min_daily_cycles ?? 3)
+      setPumpMinCycleRunSeconds(settings.pump_min_cycle_run_seconds ?? 120)
       setLogLevel(settings.log_level ?? 'INFO')
       setPulsesPerGallon(settings.pulses_per_gallon ?? null)
       setWifiLedEnabled(settings.wifi_led_enabled ?? true)
@@ -216,6 +224,9 @@ function Settings() {
         water_meter_per_pulse_calculation_enabled: waterMeterPerPulseCalculationEnabled() ?? false,
         pump_off_flow_monitoring_enabled: pumpOffFlowMonitoringEnabled() ?? false,
         pump_off_flow_grace_period_seconds: pumpOffFlowGracePeriodSeconds() ?? 30,
+        pump_min_daily_cycles_enabled: pumpMinDailyCyclesEnabled() ?? false,
+        pump_min_daily_cycles: pumpMinDailyCycles() ?? 3,
+        pump_min_cycle_run_seconds: pumpMinCycleRunSeconds() ?? 120,
         wifi_led_enabled: wifiLedEnabled() ?? true,
         buzzer_enabled: buzzerEnabled() ?? true,
         buzzer_type: buzzerType() ?? 'ACTIVE',
@@ -598,6 +609,52 @@ function Settings() {
             </Show>
             <div class="fieldset-label">Grace period after pump turns off before monitoring starts (default: 30 seconds)</div>
           </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Pump Maintenance Cycles</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Minimum Daily Pump Cycles</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-info"
+                  checked={pumpMinDailyCyclesEnabled() ?? false}
+                  onChange={(e) => setPumpMinDailyCyclesEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Run the pump at regular intervals to prevent water stagnation and maintain pump seal lubrication. Temperature-triggered cycles count toward the minimum.
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <Show when={pumpMinDailyCyclesEnabled()}>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Cycles per Day</legend>
+                <Show when={loaded()}>
+                  <input type="number" id="pump_min_daily_cycles" value={pumpMinDailyCycles()!} onInput={(e) => setPumpMinDailyCycles(parseInt(e.target.value))} placeholder="3" step="1" min="1" max="12" class="input" />
+                </Show>
+                <Show when={!loaded()}>
+                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                </Show>
+                <div class="fieldset-label">Minimum pump cycles per 24 hours (1-12, default: 3)</div>
+              </fieldset>
+
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Cycle Duration (seconds)</legend>
+                <Show when={loaded()}>
+                  <input type="number" id="pump_min_cycle_run_seconds" value={pumpMinCycleRunSeconds()!} onInput={(e) => setPumpMinCycleRunSeconds(parseInt(e.target.value))} placeholder="120" step="10" min="30" max="600" class="input" />
+                </Show>
+                <Show when={!loaded()}>
+                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                </Show>
+                <div class="fieldset-label">How long each scheduled cycle runs (30-600s, default: 120s)</div>
+              </fieldset>
+            </div>
+          </Show>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <fieldset class="fieldset">

@@ -38,7 +38,9 @@ function Status() {
       total_on_time: 0,
       total_off_time: 0,
       total_cycles: 0,
-      pump_off_flow_detected: false
+      pump_off_flow_detected: false,
+      scheduled_cycle_active: false,
+      time_until_next_scheduled: 0
     },
     system: {
       temp_threshold_on_f: 34,
@@ -384,6 +386,18 @@ function Status() {
                       >
                         Clear Warning
                       </button>
+                    </div>
+                  </Show>
+
+                  <Show when={sensorStatus().pump.scheduled_cycle_active}>
+                    <div class="alert alert-info mt-2">
+                      <span class="font-semibold">Scheduled Maintenance Cycle Active</span>
+                    </div>
+                  </Show>
+
+                  <Show when={!sensorStatus().pump.scheduled_cycle_active && sensorStatus().pump.time_until_next_scheduled > 0}>
+                    <div class="stat-desc text-xs mt-1">
+                      Next scheduled cycle: {formatTime(sensorStatus().pump.time_until_next_scheduled)}
                     </div>
                   </Show>
                 </div>

@@ -1122,3 +1122,319 @@ TEST_F(PumpControllerTest, CompleteOperationSequence) {
   EXPECT_FALSE(pumpController.hasFlowError());
   EXPECT_FALSE(pumpController.getPumpOffFlowDetected());
 }
+
+// ============================================================================
+// Scheduled Maintenance Cycles Tests (TDD - tests written before implementation)
+// ============================================================================
+
+// Test fixture that enables scheduled cycles for convenience
+class ScheduledCyclesTest : public PumpControllerTest {
+protected:
+  void enableScheduledCycles(unsigned int cyclesPerDay = 3,
+                             unsigned int runSeconds = 120) {
+    settingsManager.setPumpMinDailyCyclesEnabled(true);
+    settingsManager.setPumpMinDailyCycles(cyclesPerDay);
+    settingsManager.setPumpMinCycleRunSeconds(runSeconds);
+  }
+
+  // Calculate the expected interval in ms for a given number of daily cycles
+  unsigned long expectedIntervalMs(unsigned int cyclesPerDay) {
+    return (24UL * 3600UL * 1000UL) / cyclesPerDay;
+  }
+};
+
+TEST_F(ScheduledCyclesTest, DisabledByDefault_NoScheduledCycles) {
+  // Feature disabled by default
+  EXPECT_FALSE(settingsManager.getPumpMinDailyCyclesEnabled());
+
+  setTemperature(40.0f); // Above threshold, pump idle
+  pumpController.update();
+
+  // Advance past what would be a full interval if feature were enabled
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+
+  // Pump should remain off - no scheduled cycle
+  EXPECT_FALSE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, CycleStartsAfterIntervalElapses) {
+  enableScheduledCycles(3, 120); // 3 cycles/day, 120s each
+  setTemperature(40.0f);         // Above threshold, pump idle
+  pumpController.update();
+
+  EXPECT_FALSE(pumpController.isPumpOn());
+
+  // Advance time past the interval (24h / 3 = 8 hours = 28800000 ms)
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+
+  // Scheduled cycle should have started
+  EXPECT_TRUE(pumpController.isPumpOn());
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, CycleCompletesAfterConfiguredDuration) {
+  enableScheduledCycles(3, 120); // 120 second run duration
+  setTemperature(40.0f);
+  pumpController.update();
+
+  // Trigger scheduled cycle
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isPumpOn());
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+
+  // Advance just before completion
+  advanceTime(119000); // 119 seconds
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isPumpOn());
+
+  // Advance past completion (121 total seconds since cycle start)
+  advanceTime(2000);
+  pumpController.update();
+  EXPECT_FALSE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, NoScheduledCycleDuringTemperatureCycling) {
+  enableScheduledCycles(3, 120);
+  setTemperature(32.0f); // Below threshold, temperature cycling active
+  pumpController.update();
+
+  EXPECT_TRUE(pumpController.isPumpOn()); // Temperature cycling started
+
+  // Advance past scheduled interval but stay within an ON phase
+  // ON phase is 300s, so advance a bit less than that, then keep advancing in steps
+  // to stay in cycling. The key assertion is that no scheduled cycle starts.
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+
+  // Temperature cycling is active; scheduled cycle should NOT have started
+  // Note: pump may be in ON or OFF phase of temperature cycling
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, TemperatureCycleResetsIntervalTimer) {
+  enableScheduledCycles(3, 120);
+  setTemperature(32.0f); // Below threshold
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isPumpOn());
+
+  // Complete a temperature cycle (ON phase)
+  advanceTime(301000); // Past 300s ON time
+  pumpController.update();
+  EXPECT_FALSE(pumpController.isPumpOn()); // OFF phase
+
+  // Temperature rises above threshold - cycling stops, pump stays off
+  // Note: handleAutoMode may briefly trigger setPumpState due to temperature_below_threshold
+  // flag still being set, which resets lastCompletedCycleTime_ to current time
+  setTemperature(40.0f);
+  advanceTime(1000); // Small advance to separate the events
+  pumpController.update();
+
+  EXPECT_FALSE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+
+  // Advance less than the full interval from this point - should NOT trigger scheduled cycle
+  advanceTime(expectedIntervalMs(3) / 2);
+  pumpController.update();
+  EXPECT_FALSE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+
+  // Advance past the full interval from when cycling stopped
+  advanceTime(expectedIntervalMs(3) / 2 + 1000);
+  pumpController.update();
+
+  // NOW the scheduled cycle should start
+  EXPECT_TRUE(pumpController.isPumpOn());
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, ModeChangeCancelsScheduledCycle) {
+  enableScheduledCycles(3, 120);
+  setTemperature(40.0f);
+  pumpController.update();
+
+  // Trigger scheduled cycle
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isPumpOn());
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+
+  // Switch to manual OFF mode
+  pumpController.turnOff();
+  pumpController.update();
+
+  EXPECT_FALSE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, TimeUntilNextScheduledCycleCountdown) {
+  enableScheduledCycles(3, 120);
+  setTemperature(40.0f);
+  pumpController.update();
+
+  unsigned long interval = expectedIntervalMs(3);
+
+  // Advance partway through interval
+  advanceTime(interval / 2);
+  pumpController.update();
+
+  unsigned long timeUntil = pumpController.getTimeUntilNextScheduledCycle();
+  // Should be approximately half the interval remaining
+  EXPECT_GT(timeUntil, 0UL);
+  EXPECT_LE(timeUntil, interval);
+  // Allow some tolerance for test timing
+  unsigned long expectedRemaining = interval / 2;
+  EXPECT_NEAR((double)timeUntil, (double)expectedRemaining, 2000.0);
+}
+
+TEST_F(ScheduledCyclesTest, TimeUntilNextReturnsZeroWhenDisabled) {
+  // Explicitly ensure feature is disabled (singleton may retain state from prior tests)
+  settingsManager.setPumpMinDailyCyclesEnabled(false);
+  setTemperature(40.0f);
+  pumpController.update();
+
+  EXPECT_EQ(pumpController.getTimeUntilNextScheduledCycle(), 0UL);
+}
+
+TEST_F(ScheduledCyclesTest, TimeUntilNextReturnsZeroWhenCycleActive) {
+  enableScheduledCycles(3, 120);
+  setTemperature(40.0f);
+  pumpController.update();
+
+  // Trigger scheduled cycle
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+
+  // During active scheduled cycle, time_until_next should be 0
+  EXPECT_EQ(pumpController.getTimeUntilNextScheduledCycle(), 0UL);
+}
+
+TEST_F(ScheduledCyclesTest, ScheduledCycleDoesNotRunInManualMode) {
+  enableScheduledCycles(3, 120);
+  setTemperature(40.0f);
+  pumpController.turnOff(); // Manual OFF
+  pumpController.update();
+
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+
+  // Should not start scheduled cycle in manual mode
+  EXPECT_FALSE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, ScheduledCycleDoesNotRunInManualOnMode) {
+  enableScheduledCycles(3, 120);
+  pumpController.turnOn(); // Manual ON
+  pumpController.update();
+
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+
+  // Pump is on from manual, but NOT from scheduled cycle
+  EXPECT_TRUE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, ResetStatisticsClearsScheduledCycleState) {
+  enableScheduledCycles(3, 120);
+  setTemperature(40.0f);
+  pumpController.update();
+
+  // Trigger scheduled cycle
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+
+  // Reset statistics should clear scheduled cycle state
+  pumpController.resetStatistics();
+
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, InitializationDefaultsScheduledCycleOff) {
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+  EXPECT_EQ(pumpController.getStatus().scheduled_cycle_active, false);
+}
+
+TEST_F(ScheduledCyclesTest, StatusJsonIncludesScheduledCycleFields) {
+  enableScheduledCycles(3, 120);
+  setTemperature(40.0f);
+  pumpController.update();
+
+  String json = pumpController.getStatusJson();
+  EXPECT_TRUE(json.indexOf("scheduled_cycle_active") >= 0);
+  EXPECT_TRUE(json.indexOf("time_until_next_scheduled") >= 0);
+}
+
+TEST_F(ScheduledCyclesTest, TemperatureDropDuringScheduledCycleHandsOff) {
+  enableScheduledCycles(3, 120);
+  setTemperature(40.0f); // Warm, pump idle
+  pumpController.update();
+
+  // Trigger scheduled cycle
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+  EXPECT_TRUE(pumpController.isPumpOn());
+
+  // Temperature drops below threshold while scheduled cycle is running
+  setTemperature(32.0f);
+  pumpController.update();
+
+  // Temperature cycling should take over - pump still on but scheduled flag cleared
+  EXPECT_TRUE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+}
+
+TEST_F(ScheduledCyclesTest, MultipleScheduledCyclesInSequence) {
+  enableScheduledCycles(3, 60); // Short 60s cycles for easier testing
+  setTemperature(40.0f);
+  pumpController.update();
+
+  unsigned long interval = expectedIntervalMs(3);
+
+  // First scheduled cycle
+  advanceTime(interval + 1000);
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+
+  // Complete first cycle
+  advanceTime(61000); // 61 seconds
+  pumpController.update();
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+  EXPECT_FALSE(pumpController.isPumpOn());
+
+  // Second scheduled cycle after another interval
+  advanceTime(interval + 1000);
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+  EXPECT_TRUE(pumpController.isPumpOn());
+}
+
+TEST_F(ScheduledCyclesTest, SettingsConstraintsEnforced) {
+  // Test that setter constraints are enforced
+  settingsManager.setPumpMinDailyCycles(0); // Below minimum (1)
+  EXPECT_EQ(settingsManager.getPumpMinDailyCycles(), 1u);
+
+  settingsManager.setPumpMinDailyCycles(20); // Above maximum (12)
+  EXPECT_EQ(settingsManager.getPumpMinDailyCycles(), 12u);
+
+  settingsManager.setPumpMinCycleRunSeconds(10); // Below minimum (30)
+  EXPECT_EQ(settingsManager.getPumpMinCycleRunSeconds(), 30u);
+
+  settingsManager.setPumpMinCycleRunSeconds(1000); // Above maximum (600)
+  EXPECT_EQ(settingsManager.getPumpMinCycleRunSeconds(), 600u);
+
+  // Valid values
+  settingsManager.setPumpMinDailyCycles(6);
+  EXPECT_EQ(settingsManager.getPumpMinDailyCycles(), 6u);
+
+  settingsManager.setPumpMinCycleRunSeconds(300);
+  EXPECT_EQ(settingsManager.getPumpMinCycleRunSeconds(), 300u);
+}

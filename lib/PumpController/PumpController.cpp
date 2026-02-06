@@ -48,6 +48,13 @@ void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSens
     pump_off_flow_detected = false;
     status.pump_off_flow_detected = false;
 
+    // Initialize scheduled maintenance cycle tracking
+    lastCompletedCycleTime_ = millis();
+    scheduledCycleActive_ = false;
+    scheduledCycleStartTime_ = 0;
+    status.scheduled_cycle_active = false;
+    status.time_until_next_scheduled = 0;
+
     pinMode(pumpPin, OUTPUT);
     digitalWrite(pumpPin, LOW);
     
@@ -107,6 +114,7 @@ void PumpController::update() {
         case PumpState::PUMP_AUTO:
             // Automatic mode - control based on temperature and cycling
             handleAutoMode(currentTime);
+            handleScheduledCycles(currentTime);
             break;
             
         case PumpState::PUMP_ERROR:
@@ -264,7 +272,8 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
     } 
     if (status.temperature_f > offThreshold) {
         // Temperature is above OFF threshold - turn off pump and reset cycle
-        if (status.is_active || cyclingActive) {
+        // Don't interfere with scheduled maintenance cycles (handled separately)
+        if ((status.is_active && !scheduledCycleActive_) || cyclingActive) {
             setPumpState(false);
             // no clearFlowError(); // don't clear, keep flow error flag so it's known it happened
             cycleStartTime = 0; // Reset cycle
@@ -314,6 +323,8 @@ void PumpController::setPumpState(bool isOn) {
             // Record when pump turned off for flow monitoring
             pump_turned_off_time = millis();
             pump_has_been_off = true;
+            // Update last completed cycle time for scheduled maintenance tracking
+            lastCompletedCycleTime_ = millis();
         }
     }
 }
@@ -332,6 +343,8 @@ void PumpController::updateStatistics() {
 
 void PumpController::turnOn() {
     status.state = PumpState::PUMP_ON;
+    scheduledCycleActive_ = false;
+    status.scheduled_cycle_active = false;
     logger.logInfo("Pump set to manual ON mode");
 }
 
@@ -340,6 +353,8 @@ void PumpController::turnOff() {
     cycleStartTime = 0; // Reset any auto cycle
     cyclingActive = false;
     currentlyInOnPhase = false;
+    scheduledCycleActive_ = false;
+    status.scheduled_cycle_active = false;
     setPumpState(false); // Force pump off immediately
     logger.logInfo("Pump set to manual OFF mode");
 }
@@ -349,10 +364,14 @@ void PumpController::setAutoMode(bool enabled) {
         status.state = PumpState::PUMP_AUTO;
         cycleStartTime = 0; // Reset cycle to start fresh
         cyclingActive = false;
+        scheduledCycleActive_ = false;
+        status.scheduled_cycle_active = false;
         logger.logInfo("Pump set to AUTO mode");
     } else {
         status.state = PumpState::PUMP_OFF;
         cyclingActive = false;
+        scheduledCycleActive_ = false;
+        status.scheduled_cycle_active = false;
         setPumpState(false);
         logger.logInfo("Pump AUTO mode disabled");
     }
@@ -366,6 +385,8 @@ void PumpController::forceCycle() {
     if (status.state == PumpState::PUMP_AUTO) {
         cycleStartTime = 0; // Reset to start new cycle immediately
         cyclingActive = false;
+        scheduledCycleActive_ = false;
+        status.scheduled_cycle_active = false;
         logger.logInfo("Pump cycle forced to restart");
     }
 }
@@ -432,8 +453,10 @@ String PumpController::getStatusJson() const {
     json += R"("time_until_retry":)" + String(status.time_until_retry / 1000) + ",";
     json += R"("total_on_time":)" + String(status.total_on_time / 1000) + ",";
     json += R"("total_off_time":)" + String(status.total_off_time / 1000) + ",";
-    json += R"("total_cycles":)" + String(status.total_cycles);
-    json += R"("pump_off_flow_detected":)" + String(status.pump_off_flow_detected ? "true" : "false");
+    json += R"("total_cycles":)" + String(status.total_cycles) + ",";
+    json += R"("pump_off_flow_detected":)" + String(status.pump_off_flow_detected ? "true" : "false") + ",";
+    json += R"("scheduled_cycle_active":)" + String(status.scheduled_cycle_active ? "true" : "false") + ",";
+    json += R"("time_until_next_scheduled":)" + String(status.time_until_next_scheduled / 1000);
     json += "}";
     return json;
 }
@@ -444,6 +467,9 @@ void PumpController::resetStatistics() {
     status.total_cycles = 0;
     status.current_cycle_start = 0;
     status.current_cycle_duration = 0;
+    lastCompletedCycleTime_ = millis();
+    scheduledCycleActive_ = false;
+    status.scheduled_cycle_active = false;
     logger.logInfo("Pump statistics reset");
 }
 
@@ -512,5 +538,72 @@ void PumpController::checkPumpOffFlow(unsigned long currentTime) {
             status.pump_off_flow_detected = true;
             logger.logWarning("WARNING: Water flow detected while pump is OFF - Possible stuck relay or valve leak");
         }
+    }
+}
+
+void PumpController::handleScheduledCycles(unsigned long currentTime) {
+    // Only run in AUTO mode with feature enabled
+    if (status.state != PumpState::PUMP_AUTO || !settingsManager.getPumpMinDailyCyclesEnabled()) {
+        status.time_until_next_scheduled = 0;
+        return;
+    }
+
+    unsigned int cyclesPerDay = settingsManager.getPumpMinDailyCycles();
+    unsigned long intervalMs = (24UL * 3600UL * 1000UL) / cyclesPerDay;
+    unsigned long runDurationMs = (unsigned long)settingsManager.getPumpMinCycleRunSeconds() * 1000UL;
+    unsigned long timeSinceLastCycle = currentTime - lastCompletedCycleTime_;
+
+    // If a scheduled cycle is currently active
+    if (scheduledCycleActive_) {
+        // Check if temperature cycling has taken over (handleAutoMode started cycling)
+        if (cyclingActive) {
+            // Temperature cycling took over - hand off
+            scheduledCycleActive_ = false;
+            status.scheduled_cycle_active = false;
+            status.time_until_next_scheduled = 0;
+            return;
+        }
+
+        // Check if scheduled cycle duration has elapsed
+        unsigned long cycleElapsed = currentTime - scheduledCycleStartTime_;
+        if (cycleElapsed >= runDurationMs) {
+            // Scheduled cycle complete
+            setPumpState(false);
+            scheduledCycleActive_ = false;
+            status.scheduled_cycle_active = false;
+            status.time_until_next_scheduled = intervalMs;
+            logger.logInfo("Scheduled maintenance pump cycle complete");
+            return;
+        }
+
+        status.time_until_next_scheduled = 0;
+        return;
+    }
+
+    // Not in a scheduled cycle - check if we should start one
+    // Don't start if temperature cycling is active (pump already running from temp)
+    if (cyclingActive || status.is_active) {
+        status.time_until_next_scheduled = 0;
+        return;
+    }
+
+    // Don't start if there's a flow error
+    if (status.flow_error) {
+        status.time_until_next_scheduled = 0;
+        return;
+    }
+
+    // Check if interval has elapsed since last completed cycle
+    if (timeSinceLastCycle >= intervalMs) {
+        // Start a scheduled maintenance cycle
+        scheduledCycleActive_ = true;
+        scheduledCycleStartTime_ = currentTime;
+        status.scheduled_cycle_active = true;
+        status.time_until_next_scheduled = 0;
+        setPumpState(true);
+        logger.logInfo("Starting scheduled maintenance pump cycle");
+    } else {
+        // Update countdown
+        status.time_until_next_scheduled = intervalMs - timeSinceLastCycle;
     }
 }

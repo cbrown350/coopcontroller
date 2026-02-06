@@ -983,6 +983,7 @@ Features organized by priority and implementation status.
 - Configurable minimum cycles (default: 2-3 per day)
 - Configurable minimum run duration per cycle
 - Schedule evenly throughout day when not triggered by temperature
+- **Status:** Feature fully implemented. Settings: `pump_min_daily_cycles_enabled`, `pump_min_daily_cycles` (1-12), `pump_min_cycle_run_seconds` (30-600). Uses millis()-based interval scheduling; temperature-triggered cycles count toward the minimum. Disabled by default.
 
 #### Factory Reset Functionality
 - Hard reset button or procedure to clear all settings

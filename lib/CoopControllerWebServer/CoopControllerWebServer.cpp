@@ -232,7 +232,27 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       String graceMsg = "Pump OFF flow grace period: " + String(gracePeriod) + " seconds";
                       logger.logInfo(graceMsg.c_str());
                   }
-                  
+
+                  if (jsonObj["pump_min_daily_cycles_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["pump_min_daily_cycles_enabled"].as<bool>();
+                      settingsManager.setPumpMinDailyCyclesEnabled(enabled);
+                      logger.logInfo(enabled ? "Minimum daily pump cycles: enabled" : "Minimum daily pump cycles: disabled");
+                  }
+
+                  if (jsonObj["pump_min_daily_cycles"].is<int>()) {
+                      unsigned int cycles = jsonObj["pump_min_daily_cycles"].as<unsigned int>();
+                      settingsManager.setPumpMinDailyCycles(cycles);
+                      String msg = "Minimum daily pump cycles: " + String(cycles);
+                      logger.logInfo(msg.c_str());
+                  }
+
+                  if (jsonObj["pump_min_cycle_run_seconds"].is<int>()) {
+                      unsigned int seconds = jsonObj["pump_min_cycle_run_seconds"].as<unsigned int>();
+                      settingsManager.setPumpMinCycleRunSeconds(seconds);
+                      String msg = "Scheduled cycle run duration: " + String(seconds) + " seconds";
+                      logger.logInfo(msg.c_str());
+                  }
+
                   // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
                   
                   settingsManager.save();
@@ -303,7 +323,9 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   pump["total_cycles"] = pumpController.getTotalCycles();
                   pump["time_until_retry"] = pumpController.getTimeUntilRetry() / 1000;
                   pump["pump_off_flow_detected"] = pumpController.getPumpOffFlowDetected();
-                  
+                  pump["scheduled_cycle_active"] = pumpController.isScheduledCycleActive();
+                  pump["time_until_next_scheduled"] = pumpController.getTimeUntilNextScheduledCycle() / 1000;
+
                   // System status
                   JsonObject system = jsonDoc["system"].to<JsonObject>();
                   system["temp_threshold_on_f"] = settingsManager.getTempThresholdOnF();
@@ -318,7 +340,10 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   system["water_flow_error_timeout_seconds"] = settingsManager.getWaterFlowErrorTimeoutSeconds();
                   system["pump_off_flow_monitoring_enabled"] = settingsManager.getPumpOffFlowMonitoringEnabled();
                   system["pump_off_flow_grace_period_seconds"] = settingsManager.getPumpOffFlowGracePeriodSeconds();
-                  
+                  system["pump_min_daily_cycles_enabled"] = settingsManager.getPumpMinDailyCyclesEnabled();
+                  system["pump_min_daily_cycles"] = settingsManager.getPumpMinDailyCycles();
+                  system["pump_min_cycle_run_seconds"] = settingsManager.getPumpMinCycleRunSeconds();
+
                    // Buzzer status
                    JsonObject buzzer = jsonDoc["buzzer"].to<JsonObject>();
                    buzzerController.toJson(buzzer);

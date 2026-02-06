@@ -105,6 +105,14 @@ struct user_settings // NOSONAR
 
     bool   pump_off_flow_monitoring_enabled = false; ///< Enable pump OFF flow monitoring
     int    pump_off_flow_grace_period_seconds = 30;  ///< Grace period after pump turns off
+
+    // ========================================================================
+    // PUMP MINIMUM DAILY CYCLES
+    // ========================================================================
+
+    bool         pump_min_daily_cycles_enabled = false;  ///< Enable minimum daily pump cycles
+    unsigned int pump_min_daily_cycles = 3;              ///< Minimum cycles per 24 hours
+    unsigned int pump_min_cycle_run_seconds = 120;       ///< Duration of each scheduled cycle
 };
 
 /**
@@ -204,7 +212,12 @@ class SettingsManager // NOSONAR
     // Pump off flow monitoring getters
     bool   getPumpOffFlowMonitoringEnabled() const;
     int    getPumpOffFlowGracePeriodSeconds() const;
-    
+
+    // Pump minimum daily cycles getters
+    bool         getPumpMinDailyCyclesEnabled() const;
+    unsigned int getPumpMinDailyCycles() const;
+    unsigned int getPumpMinCycleRunSeconds() const;
+
     // WiFi connection settings getters
     unsigned int getWifiMaxRetries();
     unsigned int getWifiRetryDelaySeconds();
@@ -293,6 +306,11 @@ class SettingsManager // NOSONAR
     // Pump off flow monitoring setters
     void setPumpOffFlowMonitoringEnabled(bool enabled);
     void setPumpOffFlowGracePeriodSeconds(int seconds);
+
+    // Pump minimum daily cycles setters
+    void setPumpMinDailyCyclesEnabled(bool enabled);
+    void setPumpMinDailyCycles(unsigned int cycles);
+    void setPumpMinCycleRunSeconds(unsigned int seconds);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);

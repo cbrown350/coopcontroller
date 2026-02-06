@@ -239,6 +239,19 @@ int SettingsManager::getPumpOffFlowGracePeriodSeconds() const {
     return settings.pump_off_flow_grace_period_seconds;
 }
 
+// Pump minimum daily cycles getters
+bool SettingsManager::getPumpMinDailyCyclesEnabled() const {
+    return settings.pump_min_daily_cycles_enabled;
+}
+
+unsigned int SettingsManager::getPumpMinDailyCycles() const {
+    return settings.pump_min_daily_cycles;
+}
+
+unsigned int SettingsManager::getPumpMinCycleRunSeconds() const {
+    return settings.pump_min_cycle_run_seconds;
+}
+
 // WiFi connection settings getters
 unsigned int SettingsManager::getWifiMaxRetries() {
     return getSettings().wifi_max_retries;
@@ -413,6 +426,19 @@ void SettingsManager::setPumpOffFlowGracePeriodSeconds(int seconds) {
     settings.pump_off_flow_grace_period_seconds = seconds;
 }
 
+// Pump minimum daily cycles setters
+void SettingsManager::setPumpMinDailyCyclesEnabled(bool enabled) {
+    settings.pump_min_daily_cycles_enabled = enabled;
+}
+
+void SettingsManager::setPumpMinDailyCycles(unsigned int cycles) {
+    settings.pump_min_daily_cycles = constrain(cycles, 1, 12);
+}
+
+void SettingsManager::setPumpMinCycleRunSeconds(unsigned int seconds) {
+    settings.pump_min_cycle_run_seconds = constrain(seconds, 30, 600);
+}
+
 // WiFi connection settings setters - request restart for these
 void SettingsManager::setWifiMaxRetries(int retries) {
     settings.wifi_max_retries = retries;
@@ -540,7 +566,12 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.water_meter_per_pulse_calculation_enabled = doc["water_meter_per_pulse_calculation_enabled"] | defaultSettings.water_meter_per_pulse_calculation_enabled;
     settings.pump_off_flow_monitoring_enabled = doc["pump_off_flow_monitoring_enabled"] | defaultSettings.pump_off_flow_monitoring_enabled;
     settings.pump_off_flow_grace_period_seconds = doc["pump_off_flow_grace_period_seconds"] | defaultSettings.pump_off_flow_grace_period_seconds;
-    
+
+    // Load pump minimum daily cycles settings
+    settings.pump_min_daily_cycles_enabled = doc["pump_min_daily_cycles_enabled"] | defaultSettings.pump_min_daily_cycles_enabled;
+    settings.pump_min_daily_cycles = doc["pump_min_daily_cycles"] | defaultSettings.pump_min_daily_cycles;
+    settings.pump_min_cycle_run_seconds = doc["pump_min_cycle_run_seconds"] | defaultSettings.pump_min_cycle_run_seconds;
+
     // Load WiFi connection settings
     settings.wifi_max_retries = doc["wifi_max_retries"] | defaultSettings.wifi_max_retries;
     settings.wifi_retry_delay_seconds = doc["wifi_retry_delay_seconds"] | defaultSettings.wifi_retry_delay_seconds;
@@ -606,7 +637,12 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["water_meter_per_pulse_calculation_enabled"] = settings.water_meter_per_pulse_calculation_enabled;
     doc["pump_off_flow_monitoring_enabled"] = settings.pump_off_flow_monitoring_enabled;
     doc["pump_off_flow_grace_period_seconds"] = settings.pump_off_flow_grace_period_seconds;
-    
+
+    // Pump minimum daily cycles settings
+    doc["pump_min_daily_cycles_enabled"] = settings.pump_min_daily_cycles_enabled;
+    doc["pump_min_daily_cycles"] = settings.pump_min_daily_cycles;
+    doc["pump_min_cycle_run_seconds"] = settings.pump_min_cycle_run_seconds;
+
     // WiFi connection settings
     doc["wifi_max_retries"] = settings.wifi_max_retries;
     doc["wifi_retry_delay_seconds"] = settings.wifi_retry_delay_seconds;

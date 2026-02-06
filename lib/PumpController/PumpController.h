@@ -37,6 +37,8 @@ struct PumpStatus {
     unsigned long total_off_time;                ///< Cumulative pump off time
     unsigned long total_cycles;                  ///< Number of on/off cycles
     bool pump_off_flow_detected;                 ///< Flow detected when pump should be off
+    bool scheduled_cycle_active;                 ///< Scheduled maintenance cycle running
+    unsigned long time_until_next_scheduled;     ///< Time until next scheduled cycle (ms)
 };
 
 /**
@@ -96,6 +98,11 @@ private:
     bool pump_has_been_off;                  ///< Has pump been off yet (handles time=0 case)
     bool pump_off_flow_detected;             ///< Flow detected when pump should be off
 
+    // Scheduled maintenance cycles
+    unsigned long lastCompletedCycleTime_;   ///< When last pump cycle completed (any type)
+    bool scheduledCycleActive_;              ///< Is a scheduled maintenance cycle running
+    unsigned long scheduledCycleStartTime_;  ///< When current scheduled cycle started
+
     // ========================================================================
     // PRIVATE METHODS
     // ========================================================================
@@ -140,7 +147,17 @@ private:
      * @param currentTime Current timestamp from millis()
      */
     void checkPumpOffFlow(unsigned long currentTime);
-    
+
+    /**
+     * @brief Handle scheduled maintenance pump cycles
+     *
+     * Runs pump at regular intervals to prevent water stagnation.
+     * Temperature-triggered cycles count toward the minimum.
+     *
+     * @param currentTime Current timestamp from millis()
+     */
+    void handleScheduledCycles(unsigned long currentTime);
+
 public:
     /**
      * @brief Default constructor
@@ -257,6 +274,20 @@ public:
      * @return true if flow detected when pump should be off
      */
     bool getPumpOffFlowDetected() const { return status.pump_off_flow_detected; }
+
+    /**
+     * @brief Check if scheduled maintenance cycle is active
+     *
+     * @return true if a scheduled cycle is currently running
+     */
+    bool isScheduledCycleActive() const { return status.scheduled_cycle_active; }
+
+    /**
+     * @brief Get time until next scheduled cycle
+     *
+     * @return Milliseconds until next scheduled cycle (0 if disabled or cycling)
+     */
+    unsigned long getTimeUntilNextScheduledCycle() const { return status.time_until_next_scheduled; }
 
     /**
      * @brief Get timestamp of current run start

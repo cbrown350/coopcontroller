@@ -49,6 +49,11 @@ const mockSettings = {
   door_auto_close_after_sunset_enabled: false,
   door_auto_close_after_sunset_minutes: 0,
   
+  // Pump minimum daily cycles
+  pump_min_daily_cycles_enabled: false,
+  pump_min_daily_cycles: 3,
+  pump_min_cycle_run_seconds: 120,
+
   // New light timing settings
   light_on_mode: 'fixed', // 'fixed' or 'sunset_offset'
   light_on_hour: 6,
@@ -74,7 +79,9 @@ let mockPumpState = {
   time_until_next_switch: 300,
   total_on_time: 0,
   total_off_time: 0,
-  total_cycles: 0
+  total_cycles: 0,
+  scheduled_cycle_active: false,
+  time_until_next_scheduled: 0
 };
 
 // Mock sensor data
@@ -352,6 +359,17 @@ async function createServer() {
       }
       if (settings.door_auto_close_after_sunset_minutes !== undefined) {
         mockSettings.door_auto_close_after_sunset_minutes = settings.door_auto_close_after_sunset_minutes;
+      }
+
+      // Pump minimum daily cycles
+      if (settings.pump_min_daily_cycles_enabled !== undefined) {
+        mockSettings.pump_min_daily_cycles_enabled = settings.pump_min_daily_cycles_enabled;
+      }
+      if (settings.pump_min_daily_cycles !== undefined) {
+        mockSettings.pump_min_daily_cycles = settings.pump_min_daily_cycles;
+      }
+      if (settings.pump_min_cycle_run_seconds !== undefined) {
+        mockSettings.pump_min_cycle_run_seconds = settings.pump_min_cycle_run_seconds;
       }
       
       res.setHeader("Content-Type", "application/json");

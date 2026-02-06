@@ -25,6 +25,8 @@ export interface PumpStatus {
   total_off_time: number;
   total_cycles: number;
   pump_off_flow_detected?: boolean;
+  scheduled_cycle_active?: boolean;
+  time_until_next_scheduled?: number;
 }
 
 export interface SystemSettings {
@@ -103,4 +105,7 @@ export interface Settings {
   water_meter_per_pulse_calculation_enabled?: boolean;
   pump_off_flow_monitoring_enabled?: boolean;
   pump_off_flow_grace_period_seconds?: number;
+  pump_min_daily_cycles_enabled?: boolean;
+  pump_min_daily_cycles?: number;
+  pump_min_cycle_run_seconds?: number;
 }
