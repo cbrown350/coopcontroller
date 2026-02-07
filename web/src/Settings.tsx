@@ -86,6 +86,10 @@ function Settings() {
   const [sunriseData, setSunriseData] = createSignal<any>(null)
   const [sunsetData, setSunsetData] = createSignal<any>(null)
   
+  // Door lockout and auto-calc
+  const [doorLockoutEnabled, setDoorLockoutEnabled] = createSignal<boolean | null>(null)
+  const [doorTimeoutAutoCalcEnabled, setDoorTimeoutAutoCalcEnabled] = createSignal<boolean | null>(null)
+
   // Task 3.5k preparation settings
   const [doorAutoCloseAfterSunsetEnabled, setDoorAutoCloseAfterSunsetEnabled] = createSignal<boolean | null>(null)
   const [doorAutoCloseAfterSunsetMinutes, setDoorAutoCloseAfterSunsetMinutes] = createSignal<number | null>(null)
@@ -148,6 +152,10 @@ function Settings() {
       setLongitude(settings.longitude ?? -74.0060)
       setTimezoneOffsetHours(settings.timezone_offset_hours ?? -5)
       
+      // Load door lockout and auto-calc settings
+      setDoorLockoutEnabled(settings.door_lockout_enabled ?? false)
+      setDoorTimeoutAutoCalcEnabled(settings.door_timeout_auto_calc_enabled ?? false)
+
       // Load Task 3.5k preparation settings
       setDoorAutoCloseAfterSunsetEnabled(settings.door_auto_close_after_sunset_enabled ?? false)
       setDoorAutoCloseAfterSunsetMinutes(settings.door_auto_close_after_sunset_minutes ?? 0)
@@ -251,6 +259,8 @@ function Settings() {
         latitude: latitude() ?? 40.7128,
         longitude: longitude() ?? -74.0060,
         timezone_offset_hours: timezoneOffsetHours() ?? -5,
+        door_lockout_enabled: doorLockoutEnabled() ?? false,
+        door_timeout_auto_calc_enabled: doorTimeoutAutoCalcEnabled() ?? false,
         door_auto_close_after_sunset_enabled: doorAutoCloseAfterSunsetEnabled() ?? false,
         door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0,
         log_level: logLevel() ?? 'INFO',
@@ -985,6 +995,46 @@ function Settings() {
               <div class="fieldset-label">Minutes before/after sunset to close door (default: 0)</div>
             </fieldset>
           </div>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Door Lockout</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Door Lockout</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-warning"
+                  checked={doorLockoutEnabled() ?? false}
+                  onChange={(e) => setDoorLockoutEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Prevents all door operations (open/close/manual switch/schedule) when enabled
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Timeout Auto-Calculation</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Timeout Auto-Calculation</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-info"
+                  checked={doorTimeoutAutoCalcEnabled() ?? false}
+                  onChange={(e) => setDoorTimeoutAutoCalcEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Automatically adjust door open/close timeouts based on historical operation durations
+                </span>
+              </label>
+            </div>
+          </fieldset>
 
       <h2 class="text-lg font-bold mb-4 mt-10">Location Settings</h2>
       

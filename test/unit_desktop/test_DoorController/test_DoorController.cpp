@@ -724,3 +724,201 @@ TEST_F(DoorControllerTest, MultipleOperationCycles) {
 
     EXPECT_EQ(doorController->getTotalCycles(), 5UL);
 }
+
+// ============================================================================
+// Door Lockout Tests
+// ============================================================================
+
+TEST_F(DoorControllerTest, DoorLockout_DefaultDisabled) {
+    EXPECT_FALSE(doorController->isLockoutEnabled());
+}
+
+TEST_F(DoorControllerTest, DoorLockout_EnableDisable) {
+    doorController->setLockoutEnabled(true);
+    EXPECT_TRUE(doorController->isLockoutEnabled());
+
+    doorController->setLockoutEnabled(false);
+    EXPECT_FALSE(doorController->isLockoutEnabled());
+}
+
+TEST_F(DoorControllerTest, DoorLockout_BlocksOpen) {
+    doorController->setLockoutEnabled(true);
+
+    doorController->open();
+
+    // Door should remain in IDLE state - open was blocked
+    EXPECT_EQ(doorController->getState(), DoorState::IDLE);
+}
+
+TEST_F(DoorControllerTest, DoorLockout_BlocksClose) {
+    doorController->setLockoutEnabled(true);
+
+    doorController->close();
+
+    // Door should remain in IDLE state - close was blocked
+    EXPECT_EQ(doorController->getState(), DoorState::IDLE);
+}
+
+TEST_F(DoorControllerTest, DoorLockout_BlocksSchedule) {
+    // Enable auto mode and lockout
+    doorController->setAutoMode(true);
+    doorController->setLockoutEnabled(true);
+
+    // Run several update cycles - schedule should be blocked by lockout
+    for (int i = 0; i < 10; i++) {
+        doorController->update();
+        advanceTime(1000);
+    }
+
+    // Door should remain in IDLE state since lockout blocks schedule
+    EXPECT_EQ(doorController->getState(), DoorState::IDLE);
+}
+
+TEST_F(DoorControllerTest, DoorLockout_InJson) {
+    JsonDocument doc;
+    JsonObject json = doc.to<JsonObject>();
+
+    doorController->setLockoutEnabled(true);
+    doorController->toJson(json);
+
+    EXPECT_TRUE(!json["lockout_enabled"].isNull());
+    EXPECT_EQ(json["lockout_enabled"], true);
+}
+
+// ============================================================================
+// Door Timeout Auto-Calculation Tests
+// ============================================================================
+
+TEST_F(DoorControllerTest, AutoCalc_DefaultDisabled) {
+    EXPECT_FALSE(doorController->isAutoCalcTimeoutEnabled());
+}
+
+TEST_F(DoorControllerTest, AutoCalc_EnableDisable) {
+    doorController->setAutoCalcTimeoutEnabled(true);
+    EXPECT_TRUE(doorController->isAutoCalcTimeoutEnabled());
+
+    doorController->setAutoCalcTimeoutEnabled(false);
+    EXPECT_FALSE(doorController->isAutoCalcTimeoutEnabled());
+}
+
+TEST_F(DoorControllerTest, AutoCalc_NoHistoryReturnsZero) {
+    EXPECT_EQ(doorController->getRecommendedOpenTimeout(), 0u);
+    EXPECT_EQ(doorController->getRecommendedCloseTimeout(), 0u);
+}
+
+TEST_F(DoorControllerTest, AutoCalc_RecordsOpenTiming) {
+    EXPECT_EQ(doorController->getOpenTimingCount(), 0);
+
+    // Simulate a complete OPENING -> OPEN transition
+    doorController->setTestMode(false);
+    doorController->open();
+    EXPECT_EQ(doorController->getState(), DoorState::OPENING);
+
+    advanceTime(5000); // 5 seconds to open
+
+    // Simulate ISR stopping motor (hall sensor triggered)
+    setHallSensorOpen(true);
+    stopMotor();
+    doorController->update();
+
+    EXPECT_EQ(doorController->getState(), DoorState::OPEN);
+    EXPECT_EQ(doorController->getOpenTimingCount(), 1);
+}
+
+TEST_F(DoorControllerTest, AutoCalc_RecordsCloseTiming) {
+    EXPECT_EQ(doorController->getCloseTimingCount(), 0);
+
+    // Simulate a complete CLOSING -> CLOSED transition
+    doorController->setTestMode(false);
+    doorController->close();
+    EXPECT_EQ(doorController->getState(), DoorState::CLOSING);
+
+    advanceTime(5000); // 5 seconds to close
+
+    // Simulate ISR stopping motor (hall sensor triggered)
+    setHallSensorClosed(true);
+    stopMotor();
+    doorController->update();
+
+    EXPECT_EQ(doorController->getState(), DoorState::CLOSED);
+    EXPECT_EQ(doorController->getCloseTimingCount(), 1);
+}
+
+TEST_F(DoorControllerTest, AutoCalc_RecommendedTimeout) {
+    // Simulate a complete OPENING -> OPEN transition taking 5 seconds
+    doorController->setTestMode(false);
+    doorController->open();
+    advanceTime(5000); // 5000ms = 5 seconds
+
+    setHallSensorOpen(true);
+    stopMotor();
+    doorController->update();
+    EXPECT_EQ(doorController->getState(), DoorState::OPEN);
+
+    // Recommended timeout = max(history) / 1000 + 1 = 5000/1000 + 1 = 6
+    EXPECT_EQ(doorController->getRecommendedOpenTimeout(), 6u);
+}
+
+TEST_F(DoorControllerTest, AutoCalc_CircularBuffer) {
+    doorController->setTestMode(false);
+
+    // Record 11 open timing entries (exceeds MAX_TIMING_HISTORY of 10)
+    for (int i = 0; i < 11; i++) {
+        // Reset state for next cycle
+        if (doorController->getState() == DoorState::OPEN) {
+            setHallSensorOpen(false);
+            doorController->close();
+            advanceTime(2000);
+            setHallSensorClosed(true);
+            stopMotor();
+            doorController->update();
+            setHallSensorClosed(false);
+        }
+
+        doorController->open();
+        EXPECT_EQ(doorController->getState(), DoorState::OPENING);
+        advanceTime(3000);
+
+        setHallSensorOpen(true);
+        stopMotor();
+        doorController->update();
+        EXPECT_EQ(doorController->getState(), DoorState::OPEN);
+        setHallSensorOpen(false);
+    }
+
+    // Count should be capped at MAX_TIMING_HISTORY (10)
+    EXPECT_EQ(doorController->getOpenTimingCount(), 10);
+}
+
+TEST_F(DoorControllerTest, AutoCalc_AutoUpdatesTimeout) {
+    // Enable auto-calc
+    doorController->setAutoCalcTimeoutEnabled(true);
+    doorController->setOpenTimeoutSeconds(30); // Start with 30s
+
+    // Simulate a complete OPENING -> OPEN transition taking 5 seconds
+    doorController->setTestMode(false);
+    doorController->open();
+    advanceTime(5000); // 5000ms
+
+    setHallSensorOpen(true);
+    stopMotor();
+    doorController->update();
+    EXPECT_EQ(doorController->getState(), DoorState::OPEN);
+
+    // With auto-calc enabled, timeout should have been auto-updated
+    // Recommended = 5000/1000 + 1 = 6 seconds
+    EXPECT_EQ(doorController->getOpenTimeoutSeconds(), 6u);
+}
+
+TEST_F(DoorControllerTest, AutoCalc_InJson) {
+    JsonDocument doc;
+    JsonObject json = doc.to<JsonObject>();
+
+    doorController->setAutoCalcTimeoutEnabled(true);
+    doorController->toJson(json);
+
+    EXPECT_TRUE(!json["auto_calc_timeout_enabled"].isNull());
+    EXPECT_EQ(json["auto_calc_timeout_enabled"], true);
+    EXPECT_TRUE(!json["recommended_open_timeout"].isNull());
+    EXPECT_TRUE(!json["recommended_close_timeout"].isNull());
+}

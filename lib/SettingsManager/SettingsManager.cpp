@@ -333,13 +333,21 @@ int SettingsManager::getTimezoneOffsetHours() const {
     return settings.timezone_offset_hours;
 }
 
-// Door auto close getters
+// Door advanced features getters
 bool SettingsManager::getDoorAutoCloseAfterSunsetEnabled() const {
     return settings.door_auto_close_after_sunset_enabled;
 }
 
 int SettingsManager::getDoorAutoCloseAfterSunsetMinutes() const {
     return settings.door_auto_close_after_sunset_minutes;
+}
+
+bool SettingsManager::getDoorLockoutEnabled() const {
+    return settings.door_lockout_enabled;
+}
+
+bool SettingsManager::getDoorTimeoutAutoCalcEnabled() const {
+    return settings.door_timeout_auto_calc_enabled;
 }
 
 // WiFi setters
@@ -533,13 +541,21 @@ void SettingsManager::setTimezoneOffsetHours(int offset) {
     settings.timezone_offset_hours = offset;
 }
 
-// Door auto close setters
+// Door advanced features setters
 void SettingsManager::setDoorAutoCloseAfterSunsetEnabled(bool enabled) {
     settings.door_auto_close_after_sunset_enabled = enabled;
 }
 
 void SettingsManager::setDoorAutoCloseAfterSunsetMinutes(int minutes) {
     settings.door_auto_close_after_sunset_minutes = minutes;
+}
+
+void SettingsManager::setDoorLockoutEnabled(bool enabled) {
+    settings.door_lockout_enabled = enabled;
+}
+
+void SettingsManager::setDoorTimeoutAutoCalcEnabled(bool enabled) {
+    settings.door_timeout_auto_calc_enabled = enabled;
 }
 
 void SettingsManager::factoryReset() {
@@ -624,9 +640,11 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.longitude = doc["longitude"] | defaultSettings.longitude;
     settings.timezone_offset_hours = doc["timezone_offset_hours"] | defaultSettings.timezone_offset_hours;
     
-    // Load door auto close settings
+    // Load door advanced features settings
     settings.door_auto_close_after_sunset_enabled = doc["door_auto_close_after_sunset_enabled"] | defaultSettings.door_auto_close_after_sunset_enabled;
     settings.door_auto_close_after_sunset_minutes = doc["door_auto_close_after_sunset_minutes"] | defaultSettings.door_auto_close_after_sunset_minutes;
+    settings.door_lockout_enabled = doc["door_lockout_enabled"] | defaultSettings.door_lockout_enabled;
+    settings.door_timeout_auto_calc_enabled = doc["door_timeout_auto_calc_enabled"] | defaultSettings.door_timeout_auto_calc_enabled;
 
     // Load API authentication settings
     settings.api_auth_enabled = doc["api_auth_enabled"] | defaultSettings.api_auth_enabled;
@@ -697,9 +715,11 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["longitude"] = settings.longitude;
     doc["timezone_offset_hours"] = settings.timezone_offset_hours;
     
-    // Door auto close settings
+    // Door advanced features settings
     doc["door_auto_close_after_sunset_enabled"] = settings.door_auto_close_after_sunset_enabled;
     doc["door_auto_close_after_sunset_minutes"] = settings.door_auto_close_after_sunset_minutes;
+    doc["door_lockout_enabled"] = settings.door_lockout_enabled;
+    doc["door_timeout_auto_calc_enabled"] = settings.door_timeout_auto_calc_enabled;
 
     // API authentication settings
     doc["api_auth_enabled"] = settings.api_auth_enabled;

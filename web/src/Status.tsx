@@ -65,12 +65,16 @@ function Status() {
       progress: 0,
       auto_mode: false,
       test_mode: false,
+      lockout_enabled: false,
       hall_open: false,
       hall_closed: false,
       total_open_time: 0,
       total_close_time: 0,
       total_cycles: 0,
-      next_scheduled_action: 'No scheduled action'
+      next_scheduled_action: 'No scheduled action',
+      auto_calc_timeout_enabled: false,
+      recommended_open_timeout: 0,
+      recommended_close_timeout: 0
     },
     light: {
       state: 'OFF',
@@ -809,6 +813,17 @@ function Status() {
                   </div>
                 </div>
 
+                {/* Lockout Warning */}
+                <Show when={sensorStatus().door?.lockout_enabled}>
+                  <div class="alert alert-warning mt-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                    </svg>
+                    <span class="font-semibold">Door Lockout Active</span>
+                    <span class="block text-sm">All door operations are disabled. Disable lockout to resume control.</span>
+                  </div>
+                </Show>
+
                 {/* Door Control Buttons */}
                 <div class="flex gap-2 mt-4">
                   <button
@@ -824,7 +839,7 @@ function Status() {
                           console.error('Door open error:', error);
                         });
                     }}
-                    disabled={sensorStatus().door?.state === 'OPENING' || sensorStatus().door?.state === 'OPEN'}
+                    disabled={sensorStatus().door?.lockout_enabled || sensorStatus().door?.state === 'OPENING' || sensorStatus().door?.state === 'OPEN'}
                   >
                     Open
                   </button>
@@ -841,7 +856,7 @@ function Status() {
                           console.error('Door close error:', error);
                         });
                     }}
-                    disabled={sensorStatus().door?.state === 'CLOSING' || sensorStatus().door?.state === 'CLOSED'}
+                    disabled={sensorStatus().door?.lockout_enabled || sensorStatus().door?.state === 'CLOSING' || sensorStatus().door?.state === 'CLOSED'}
                   >
                     Close
                   </button>
@@ -858,9 +873,26 @@ function Status() {
                           console.error('Door stop error:', error);
                         });
                     }}
-                    disabled={sensorStatus().door?.state === 'IDLE' || sensorStatus().door?.state === 'OPEN' || sensorStatus().door?.state === 'CLOSED'}
+                    disabled={sensorStatus().door?.lockout_enabled || sensorStatus().door?.state === 'IDLE' || sensorStatus().door?.state === 'OPEN' || sensorStatus().door?.state === 'CLOSED'}
                   >
                     Stop
+                  </button>
+                  <button
+                    class={`btn btn-sm ${sensorStatus().door?.lockout_enabled ? 'btn-error' : 'btn-outline'}`}
+                    onClick={() => {
+                      const endpoint = sensorStatus().door?.lockout_enabled ? '/door/lockout/off' : '/door/lockout/on';
+                      authenticatedFetch(endpoint, { method: 'GET' })
+                        .then(response => {
+                          if (response.ok) {
+                            // Status will be updated on next refresh
+                          }
+                        })
+                        .catch(error => {
+                          console.error('Door lockout toggle error:', error);
+                        });
+                    }}
+                  >
+                    {sensorStatus().door?.lockout_enabled ? 'Unlock Door' : 'Lock Door'}
                   </button>
                   <Show when={sensorStatus().door?.state === 'FAULT'}>
                     <button

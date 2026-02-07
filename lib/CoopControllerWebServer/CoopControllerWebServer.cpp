@@ -42,7 +42,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
     // Update settings endpoint - uses POST with JSON body
     hal->webServerOn("/update_settings", HAL_WebRequestMethod::HTTP_POST,
-              [this, &lightController, &tempSensor, &buzzerController, &sunriseSunset](IWebRequest *request, IWebResponse *response) // NOSONAR
+              [this, &lightController, &tempSensor, &buzzerController, &doorController, &sunriseSunset](IWebRequest *request, IWebResponse *response) // NOSONAR
               {
                   // Authentication check
                   if (!isAuthenticated(request)) {
@@ -210,12 +210,22 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       logger.logInfo("Location settings updated, sunrise/sunset recalculated");
                   }
                   
-                  // Handle Task 3.5k preparation settings
+                  // Handle door advanced features settings
                   if (jsonObj["door_auto_close_after_sunset_enabled"].is<bool>()) {
                       settingsManager.setDoorAutoCloseAfterSunsetEnabled(jsonObj["door_auto_close_after_sunset_enabled"].as<bool>());
                   }
                   if (jsonObj["door_auto_close_after_sunset_minutes"].is<int>()) {
                       settingsManager.setDoorAutoCloseAfterSunsetMinutes(jsonObj["door_auto_close_after_sunset_minutes"].as<int>());
+                  }
+                  if (jsonObj["door_lockout_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["door_lockout_enabled"].as<bool>();
+                      settingsManager.setDoorLockoutEnabled(enabled);
+                      doorController.setLockoutEnabled(enabled);
+                  }
+                  if (jsonObj["door_timeout_auto_calc_enabled"].is<bool>()) {
+                      bool enabled = jsonObj["door_timeout_auto_calc_enabled"].as<bool>();
+                      settingsManager.setDoorTimeoutAutoCalcEnabled(enabled);
+                      doorController.setAutoCalcTimeoutEnabled(enabled);
                   }
                   
                   if (jsonObj["water_meter_per_pulse_calculation_enabled"].is<bool>()) {
@@ -621,6 +631,34 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                   doorController.resetStatistics();
                   response->send(200, "text/plain", "Door statistics reset");
+              });
+
+    hal->webServerOn("/door/lockout/on", HAL_WebRequestMethod::HTTP_GET,
+              [this, &doorController](IWebRequest *request, IWebResponse *response)
+              {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
+                  doorController.setLockoutEnabled(true);
+                  settingsManager.setDoorLockoutEnabled(true);
+                  settingsManager.save();
+                  response->send(200, "text/plain", "Door lockout enabled");
+              });
+
+    hal->webServerOn("/door/lockout/off", HAL_WebRequestMethod::HTTP_GET,
+              [this, &doorController](IWebRequest *request, IWebResponse *response)
+              {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
+                  doorController.setLockoutEnabled(false);
+                  settingsManager.setDoorLockoutEnabled(false);
+                  settingsManager.save();
+                  response->send(200, "text/plain", "Door lockout disabled");
               });
 
     // Light control endpoints

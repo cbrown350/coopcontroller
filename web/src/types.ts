@@ -83,6 +83,24 @@ export interface SystemStatus {
   wifi_ssid?: string;
 }
 
+export interface DoorStatus {
+  state: string;
+  position: string;
+  progress: number;
+  auto_mode: boolean;
+  test_mode: boolean;
+  lockout_enabled: boolean;
+  hall_open: boolean;
+  hall_closed: boolean;
+  total_open_time: number;
+  total_close_time: number;
+  total_cycles: number;
+  next_scheduled_action: string;
+  auto_calc_timeout_enabled: boolean;
+  recommended_open_timeout: number;
+  recommended_close_timeout: number;
+}
+
 export interface Settings {
   ssid?: string;
   ap_mode?: boolean;
@@ -111,4 +129,8 @@ export interface Settings {
   api_auth_enabled?: boolean;
   api_username?: string;
   api_password?: string;
+  door_lockout_enabled?: boolean;
+  door_timeout_auto_calc_enabled?: boolean;
+  door_auto_close_after_sunset_enabled?: boolean;
+  door_auto_close_after_sunset_minutes?: number;
 }

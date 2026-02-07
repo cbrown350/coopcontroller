@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <array>
 
 /**
  * @brief Door operational states
@@ -87,6 +88,17 @@ private:
     unsigned int closeTimeoutSeconds;  ///< Maximum time to wait for close (default: 30)
     int sunriseOffsetMinutes;         ///< Minutes after sunrise to open door
     int sunsetOffsetMinutes;          ///< Minutes after sunset to close door
+    bool lockoutEnabled;              ///< Prevents all door operations when true
+
+    // Timeout auto-calculation
+    static const int MAX_TIMING_HISTORY = 10; ///< Max entries in timing history
+    std::array<unsigned long, MAX_TIMING_HISTORY> openTimingHistory;   ///< History of open durations (ms)
+    std::array<unsigned long, MAX_TIMING_HISTORY> closeTimingHistory;  ///< History of close durations (ms)
+    int openTimingIndex;              ///< Next write index for open history (circular)
+    int closeTimingIndex;             ///< Next write index for close history (circular)
+    int openTimingCount;              ///< Total entries recorded for open
+    int closeTimingCount;             ///< Total entries recorded for close
+    bool autoCalcTimeoutEnabled;      ///< Auto-update timeouts from history
 
     // Statistics
     unsigned long totalOpenTime;   ///< Cumulative time spent opening
@@ -346,6 +358,76 @@ public:
      * @return Progress percentage (0-100) or 0 if not moving
      */
     int getProgressPercentage() const;
+
+    // ========================================================================
+    // LOCKOUT CONTROL
+    // ========================================================================
+
+    /**
+     * @brief Enable or disable door lockout
+     *
+     * When enabled, all door operations (open/close/manual switch/schedule)
+     * are blocked. Useful for maintenance or manual intervention.
+     *
+     * @param enabled true to lock out door operations
+     */
+    void setLockoutEnabled(bool enabled);
+
+    /**
+     * @brief Check if door lockout is enabled
+     *
+     * @return true if lockout is active
+     */
+    bool isLockoutEnabled() const;
+
+    // ========================================================================
+    // TIMEOUT AUTO-CALCULATION
+    // ========================================================================
+
+    /**
+     * @brief Get recommended open timeout based on history
+     *
+     * @return Recommended timeout in seconds (max historical + 1s buffer), or 0 if no history
+     */
+    unsigned int getRecommendedOpenTimeout() const;
+
+    /**
+     * @brief Get recommended close timeout based on history
+     *
+     * @return Recommended timeout in seconds (max historical + 1s buffer), or 0 if no history
+     */
+    unsigned int getRecommendedCloseTimeout() const;
+
+    /**
+     * @brief Enable or disable automatic timeout calculation
+     *
+     * When enabled, door timeouts are automatically updated based on
+     * historical operation durations after each successful operation.
+     *
+     * @param enabled true to enable auto-calculation
+     */
+    void setAutoCalcTimeoutEnabled(bool enabled);
+
+    /**
+     * @brief Check if automatic timeout calculation is enabled
+     *
+     * @return true if auto-calculation is active
+     */
+    bool isAutoCalcTimeoutEnabled() const;
+
+    /**
+     * @brief Get number of recorded open timing entries
+     *
+     * @return Count of open timing history entries (0 to MAX_TIMING_HISTORY)
+     */
+    int getOpenTimingCount() const;
+
+    /**
+     * @brief Get number of recorded close timing entries
+     *
+     * @return Count of close timing history entries (0 to MAX_TIMING_HISTORY)
+     */
+    int getCloseTimingCount() const;
 
     // ========================================================================
     // CONFIGURATION GETTERS/SETTERS

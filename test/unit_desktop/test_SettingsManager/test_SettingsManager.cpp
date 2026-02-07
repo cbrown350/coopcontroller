@@ -1219,3 +1219,35 @@ TEST_F(SettingsManagerTest, DoorAutoCloseAfterSunsetMinutesHandlesZero) {
     sm.setDoorAutoCloseAfterSunsetMinutes(0);
     EXPECT_EQ(sm.getDoorAutoCloseAfterSunsetMinutes(), 0);
 }
+
+// ============================================================================
+// Door Lockout Settings Tests
+// ============================================================================
+
+TEST_F(SettingsManagerTest, DoorLockout_DefaultFalse) {
+    EXPECT_FALSE(sm.getDoorLockoutEnabled());
+}
+
+TEST_F(SettingsManagerTest, DoorLockout_GetterSetter) {
+    sm.setDoorLockoutEnabled(true);
+    EXPECT_TRUE(sm.getDoorLockoutEnabled());
+
+    sm.setDoorLockoutEnabled(false);
+    EXPECT_FALSE(sm.getDoorLockoutEnabled());
+}
+
+// ============================================================================
+// Door Timeout Auto-Calc Settings Tests
+// ============================================================================
+
+TEST_F(SettingsManagerTest, DoorTimeoutAutoCalc_DefaultFalse) {
+    EXPECT_FALSE(sm.getDoorTimeoutAutoCalcEnabled());
+}
+
+TEST_F(SettingsManagerTest, DoorTimeoutAutoCalc_GetterSetter) {
+    sm.setDoorTimeoutAutoCalcEnabled(true);
+    EXPECT_TRUE(sm.getDoorTimeoutAutoCalcEnabled());
+
+    sm.setDoorTimeoutAutoCalcEnabled(false);
+    EXPECT_FALSE(sm.getDoorTimeoutAutoCalcEnabled());
+}

@@ -13,6 +13,9 @@
 // Static instance for ISR access
 DoorController* DoorController::instance = nullptr;
 
+// Static constant definition (required for ODR-use in std::min)
+const int DoorController::MAX_TIMING_HISTORY;
+
 DoorController::DoorController() {
     instance = this;
     currentState = DoorState::IDLE;
@@ -29,7 +32,17 @@ DoorController::DoorController() {
     closeTimeoutSeconds = 30;
     sunriseOffsetMinutes = 0;
     sunsetOffsetMinutes = 0;
-    
+    lockoutEnabled = false;
+
+    // Timeout auto-calculation
+    openTimingHistory.fill(0);
+    closeTimingHistory.fill(0);
+    openTimingIndex = 0;
+    closeTimingIndex = 0;
+    openTimingCount = 0;
+    closeTimingCount = 0;
+    autoCalcTimeoutEnabled = false;
+
     // Statistics
     totalOpenTime = 0;
     totalCloseTime = 0;
@@ -197,10 +210,37 @@ void DoorController::setState(DoorState newState) {
     logger.logfInfo("Door state: %s -> %s", getStateString().c_str(), stateText.c_str());
     
     // Handle exit from old state
+    unsigned long elapsed = currentTime - stateStartTime;
     if (oldState == DoorState::OPENING) {
-        totalOpenTime += (currentTime - stateStartTime);
+        totalOpenTime += elapsed;
+        // Record successful open timing (not fault/stop transitions)
+        if (newState == DoorState::OPEN) {
+            openTimingHistory[openTimingIndex] = elapsed;
+            openTimingIndex = (openTimingIndex + 1) % MAX_TIMING_HISTORY;
+            if (openTimingCount < MAX_TIMING_HISTORY) openTimingCount++;
+            if (autoCalcTimeoutEnabled) {
+                unsigned int recommended = getRecommendedOpenTimeout();
+                if (recommended > 0) {
+                    openTimeoutSeconds = recommended;
+                    logger.logfInfo("Auto-calc open timeout updated to %u seconds", openTimeoutSeconds);
+                }
+            }
+        }
     } else if (oldState == DoorState::CLOSING) {
-        totalCloseTime += (currentTime - stateStartTime);
+        totalCloseTime += elapsed;
+        // Record successful close timing (not fault/stop transitions)
+        if (newState == DoorState::CLOSED) {
+            closeTimingHistory[closeTimingIndex] = elapsed;
+            closeTimingIndex = (closeTimingIndex + 1) % MAX_TIMING_HISTORY;
+            if (closeTimingCount < MAX_TIMING_HISTORY) closeTimingCount++;
+            if (autoCalcTimeoutEnabled) {
+                unsigned int recommended = getRecommendedCloseTimeout();
+                if (recommended > 0) {
+                    closeTimeoutSeconds = recommended;
+                    logger.logfInfo("Auto-calc close timeout updated to %u seconds", closeTimeoutSeconds);
+                }
+            }
+        }
     }
     
     // Update state BEFORE handling motor outputs
@@ -273,7 +313,7 @@ void DoorController::checkManualSwitch() { // NOSONAR - complexity ok
     }
     
     // Detect button press (HIGH to LOW transition) with debounce
-    if (lastSwitchState == HIGH && currentSwitchState == LOW && !testMode) {
+    if (lastSwitchState == HIGH && currentSwitchState == LOW && !testMode && !lockoutEnabled) {
         // Check debounce timing
         if (currentTime - lastSwitchCheck < switchDebounceMs) {
             logger.logfDebug("Manual switch press ignored - debounce (too soon: %lu ms)", currentTime - lastSwitchCheck);
@@ -345,6 +385,7 @@ void DoorController::checkTimeout() {
 }
 
 void DoorController::checkSchedule() {
+    if (lockoutEnabled) return;
     if (shouldOpenBySchedule() && currentPosition != DoorPosition::OPEN) {
         logger.logInfo("Schedule: Opening door");
         open();
@@ -356,6 +397,10 @@ void DoorController::checkSchedule() {
 
 // Manual control methods
 void DoorController::open() {
+    if (lockoutEnabled) {
+        logger.logWarning("Door open blocked - lockout is enabled");
+        return;
+    }
     if (currentState == DoorState::IDLE || currentState == DoorState::CLOSED) {
         setState(DoorState::OPENING);
     } else {
@@ -364,6 +409,10 @@ void DoorController::open() {
 }
 
 void DoorController::close() {
+    if (lockoutEnabled) {
+        logger.logWarning("Door close blocked - lockout is enabled");
+        return;
+    }
     if (currentState == DoorState::IDLE || currentState == DoorState::OPEN) {
         setState(DoorState::CLOSING);
     } else {
@@ -375,6 +424,58 @@ void DoorController::stop() {
     if (currentState == DoorState::OPENING || currentState == DoorState::CLOSING) {
         setState(DoorState::IDLE);
     }
+}
+
+// Lockout control
+void DoorController::setLockoutEnabled(bool enabled) {
+    lockoutEnabled = enabled;
+    logger.logfInfo("Door lockout: %s", enabled ? "ENABLED" : "DISABLED");
+}
+
+bool DoorController::isLockoutEnabled() const {
+    return lockoutEnabled;
+}
+
+// Timeout auto-calculation
+unsigned int DoorController::getRecommendedOpenTimeout() const {
+    if (openTimingCount == 0) return 0;
+    unsigned long maxTime = 0;
+    int count = std::min(openTimingCount, MAX_TIMING_HISTORY);
+    for (int i = 0; i < count; i++) {
+        if (openTimingHistory[i] > maxTime) {
+            maxTime = openTimingHistory[i];
+        }
+    }
+    return static_cast<unsigned int>((maxTime / 1000) + 1); // Convert ms to seconds + 1s buffer
+}
+
+unsigned int DoorController::getRecommendedCloseTimeout() const {
+    if (closeTimingCount == 0) return 0;
+    unsigned long maxTime = 0;
+    int count = std::min(closeTimingCount, MAX_TIMING_HISTORY);
+    for (int i = 0; i < count; i++) {
+        if (closeTimingHistory[i] > maxTime) {
+            maxTime = closeTimingHistory[i];
+        }
+    }
+    return static_cast<unsigned int>((maxTime / 1000) + 1); // Convert ms to seconds + 1s buffer
+}
+
+void DoorController::setAutoCalcTimeoutEnabled(bool enabled) {
+    autoCalcTimeoutEnabled = enabled;
+    logger.logfInfo("Door timeout auto-calculation: %s", enabled ? "ENABLED" : "DISABLED");
+}
+
+bool DoorController::isAutoCalcTimeoutEnabled() const {
+    return autoCalcTimeoutEnabled;
+}
+
+int DoorController::getOpenTimingCount() const {
+    return openTimingCount;
+}
+
+int DoorController::getCloseTimingCount() const {
+    return closeTimingCount;
 }
 
 // Mode control
@@ -521,12 +622,16 @@ void DoorController::toJson(JsonObject& json) const { // NOSONAR - json is writt
     json["progress"] = getProgressPercentage();
     json["auto_mode"] = autoMode;
     json["test_mode"] = testMode;
+    json["lockout_enabled"] = lockoutEnabled;
     json["hall_open"] = (digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN) == LOW);
     json["hall_closed"] = (digitalRead(DOOR_A_HALL_SENSOR_CLOSED_B_PIN) == LOW);
     json["total_open_time"] = totalOpenTime / 1000;
     json["total_close_time"] = totalCloseTime / 1000;
     json["total_cycles"] = totalCycles;
     json["next_scheduled_action"] = getNextScheduledAction();
+    json["auto_calc_timeout_enabled"] = autoCalcTimeoutEnabled;
+    json["recommended_open_timeout"] = getRecommendedOpenTimeout();
+    json["recommended_close_timeout"] = getRecommendedCloseTimeout();
 }
 
 String DoorController::getNextScheduledAction() const {

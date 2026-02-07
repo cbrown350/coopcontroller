@@ -12,26 +12,26 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5 (Critical Refactoring) | 100% complete - HAL refactoring complete, all ESP32-specific functions abstracted |
 | Phase 3.5a (Sunrise/Sunset Integration) | 100% complete with accurate UTC to local time conversion |
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
-| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 452 desktop unit tests passing, all 10 core components covered |
+| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
 
-**Current Build:** RAM 17.2% (56,436 bytes), Flash 82.5% (1,081,881 bytes)
+**Current Build:** RAM 17.3% (56,532 bytes), Flash 96.3% (1,261,809 bytes)
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. Actual functionality hasn't been checked for correctness.
 
-**Test Coverage (January 2026):** 452/452 desktop tests passing (100% pass rate)
+**Test Coverage (February 2026):** 488/488 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
 | BuzzerController | 3 |
-| CoopControllerWebServer | 15 |
-| DoorController | 59 |
-| LightController | 95 |
-| Logger | 12 |
-| PumpController | 77 |
-| SensorManager | 7 |
-| SettingsManager | 83 |
-| SunriseSunset | 35 |
-| WifiController | 66 |
+| CoopControllerWebServer | 16 |
+| DoorController | 68 |
+| LightController | 102 |
+| Logger | 11 |
+| PumpController | 83 |
+| SensorManager | 33 |
+| SettingsManager | 135 |
+| SunriseSunset | 36 |
+| WifiController | 1 |
 
 - **Embedded Unit Tests:** 1/1 passing - Logger singleton pattern test
 - **Test Infrastructure:** Complete mocking framework with MockHAL, MockSensorManager, MockBuzzerController
@@ -419,6 +419,106 @@ Monitors for water flow when pump is OFF to detect hardware faults (stuck relay,
 
 ---
 
+### WiFi Status LED ✅
+
+**Implemented:** 2026-01-XX
+**Status:** Complete
+
+**Summary:**
+Heartbeat LED on WIFI_LED_B_PIN when connected, fast blink when disconnected. Configurable via `wifi_led_enabled` setting. Implemented in WifiController.
+
+---
+
+### ESP32 Watchdog ✅
+
+**Implemented:** 2026-01-XX
+**Status:** Complete
+
+**Summary:**
+Watchdog timer implemented in main loop to detect hangs and automatically restart. Uses ESP32 task watchdog API in main.cpp.
+
+---
+
+### Buzzer Alerts Integration ✅
+
+**Implemented:** 2026-01-XX
+**Status:** Complete
+
+**Summary:**
+Buzzer sounds on fault conditions (pump failure, sensor error, door fault). Configurable alert patterns. Web UI silence/test/clear buttons. Persistent until acknowledged. BuzzerController integrated with all controllers in main.cpp.
+
+---
+
+### Automatic Door Close After Sunset ✅
+
+**Implemented:** 2026-01-XX
+**Status:** Complete
+
+**Summary:**
+Settings `door_auto_close_after_sunset_enabled` and `door_auto_close_after_sunset_minutes` implemented. Door auto-closes X minutes after sunset. Web UI toggle and delay input in Settings page. Logic in DoorController::shouldCloseBySchedule().
+
+---
+
+### Door Progress Calculation ✅
+
+**Implemented:** 2026-01-XX
+**Status:** Complete
+
+**Summary:**
+`getProgressPercentage()` calculates open/close progress based on elapsed time vs timeout. Progress bar displayed in Status page door section. Updated in real-time via sensor_status endpoint.
+
+---
+
+### Door Lockout Toggle ✅
+
+**Implemented:** 2026-02-06
+**Status:** Complete and tested
+
+**Summary:**
+Door lockout prevents all door operations when enabled. Useful for maintenance or manual intervention.
+
+**Key Changes:**
+- `door_lockout_enabled` setting in SettingsManager (default: false)
+- DoorController blocks open(), close(), checkManualSwitch(), checkSchedule() when lockout enabled
+- Web API endpoints: `/door/lockout/on` and `/door/lockout/off` (auth required)
+- Settings page toggle and status page lock/unlock button with warning banner
+- Disabled door control buttons when lockout active
+- JSON serialization includes `lockout_enabled` in door status
+
+**Testing:** Unit tests for lockout blocking open, close, schedule, manual switch, and JSON output.
+
+---
+
+### Door Timeout Auto-Calculation ✅
+
+**Implemented:** 2026-02-06
+**Status:** Complete and tested
+
+**Summary:**
+Automatically adjusts door timeouts based on historical operation durations.
+
+**Key Changes:**
+- Circular buffer (10 entries) tracks open/close timing history in DoorController
+- `getRecommendedOpenTimeout()` / `getRecommendedCloseTimeout()` return max(history)/1000 + 1 second
+- When `autoCalcTimeoutEnabled` is true, timeouts auto-update after each successful operation
+- `door_timeout_auto_calc_enabled` setting in SettingsManager
+- Settings page toggle control
+- JSON serialization includes `auto_calc_timeout_enabled`, `recommended_open_timeout`, `recommended_close_timeout`
+
+**Testing:** Unit tests for timing recording, recommended timeout calculation, circular buffer overflow, auto-update behavior, and JSON output.
+
+---
+
+### Refactor main.cpp WiFi Functions ✅
+
+**Implemented:** 2026-01-XX
+**Status:** Complete
+
+**Summary:**
+WiFi management code extracted from main.cpp to dedicated WifiController class. All WiFi state and logic encapsulated.
+
+---
+
 ## In Progress
 
 *No features currently in progress*
@@ -431,78 +531,10 @@ Features organized by priority and implementation status.
 
 ### High Priority - Safety & Reliability
 
-#### WiFi Status LED
-- Implement heartbeat LED on WIFI_LED_B_PIN when connected
-- Fast blink pattern when disconnected
-- Visual status indicator without requiring web UI access
-
-#### Buzzer Alerts
-- Sound buzzer on fault conditions (pump failure, sensor error)
-- Configurable alert patterns for different issues
-- Web UI silencing button
-- Persistent until acknowledged or resolved
-
-#### ESP32 Watchdog
-- Implement watchdog timer for main loop
-- Automatic restart if loop hangs
-- Prevents system lockup
-- Log watchdog resets for debugging
-
-#### Automatic Door Close After Sunset
-- Add setting `door_auto_close_after_sunset_enabled` (boolean, default false)
-- Add setting `door_auto_close_after_sunset_minutes` (integer, default 0)
-- Automatically close door X minutes after calculated sunset time when enabled
-- **Dependencies:** Requires Sunrise/Sunset Integration to be completed first
-- **Implementation Notes:**
-  - Separate from existing `sunset_offset_minutes` setting (which affects both open and close times)
-  - This specifically adds a delay AFTER sunset for closing only
-  - Respects door auto mode settings
-  - Example: If sunset is 6:30 PM and setting is 30 minutes, door closes at 7:00 PM
-  - Logs scheduled close time and actual execution
-  - User can disable entirely or set to 0 for immediate close at sunset
-  - Web UI displays calculated close time based on current sunset + offset
-
-#### Door Timeout Auto-Calculation
-- Track historical door open/close times
-- Calculate timeout automatically: max(historical_time) + 1 second buffer
-- Store last N operations for averaging
-- Fallback to user-configured value if no history
-- Display calculated timeout in web UI
-- Allow manual override of auto-calculated value
-
-#### Door Lockout Toggle
-- Add door lockout toggle control to Status page in web UI
-- Position near existing door control buttons
-- When enabled, prevents all door operations (open/close)
-- Useful for maintenance, cleaning, or manual intervention
-- Visual indicator showing lockout is active
-- Persists across page refreshes (saved in settings)
-- Override all automatic door operations when active
-- Clear warning when attempting door operations during lockout
-
-#### Door Progress Calculation
-- Calculate open/close progress percentage during operation
-- Based on elapsed time vs expected timeout duration
-- Display progress bar in web UI during door movement
-- Helps identify slow operations or obstructions
-- Update progress in real-time via status endpoint
-- Show "Unknown" instead of 50% if progress cannot be calculated (e.g., door stopped mid-operation)
-- Track and display accurate progress values only when actively moving
-
 #### Improved Connection Status
 - Only show "connected" if water meter pulse detected
 - More accurate connection state reporting
 - Helps identify sensor vs network issues
-
-### High Priority - Code Refactoring
-
-#### Refactor main.cpp WiFi Functions
-- Move remaining WiFi-related functions from main.cpp to WifiController
-- Complete the WiFi controller refactoring started in Phase 3.5
-- Encapsulate all WiFi state and logic in WifiController class
-- Reduce main.cpp complexity and improve maintainability
-- Ensure consistent controller pattern across all components
-- Update any dependencies to use WifiController interface
 
 ### High Priority - Monitoring & Notifications
 

@@ -241,6 +241,8 @@ void setup() // NOSONAR - complexity ok
     buzzerController.begin(BUZZER_B_PIN);
     wifiController.begin(&hal, &settingsManager, &buzzerController, hostName, apPasswd);
     doorController.begin(&buzzerController, &sunriseSunset);
+    doorController.setLockoutEnabled(settingsManager.getDoorLockoutEnabled());
+    doorController.setAutoCalcTimeoutEnabled(settingsManager.getDoorTimeoutAutoCalcEnabled());
     lightController.begin(&hal, &sunriseSunset);
     
     // Initialize sunrise/sunset calculator with location settings

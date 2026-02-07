@@ -87,11 +87,13 @@ struct user_settings // NOSONAR
     int    timezone_offset_hours = -5;      ///< UTC timezone offset in hours (default: EST)
 
     // ========================================================================
-    // FUTURE FEATURES (Task 3.5k)
+    // DOOR ADVANCED FEATURES
     // ========================================================================
 
     bool   door_auto_close_after_sunset_enabled = false; ///< Auto-close after sunset
     int    door_auto_close_after_sunset_minutes = 0;     ///< Minutes after sunset to close
+    bool   door_lockout_enabled = false;                 ///< Prevent all door operations when true
+    bool   door_timeout_auto_calc_enabled = false;       ///< Auto-calculate door timeouts from history
 
     // ========================================================================
     // WATER METER PER-PULSE CALCULATION
@@ -250,9 +252,11 @@ class SettingsManager // NOSONAR
     float getLongitude() const;
     int getTimezoneOffsetHours() const;
     
-    // Task 3.5k preparation getters
+    // Door advanced features getters
     bool getDoorAutoCloseAfterSunsetEnabled() const;
     int getDoorAutoCloseAfterSunsetMinutes() const;
+    bool getDoorLockoutEnabled() const;
+    bool getDoorTimeoutAutoCalcEnabled() const;
 
     void setSSID(const String &ssid);
     void setPassword(const String &password);
@@ -304,9 +308,11 @@ class SettingsManager // NOSONAR
     void setLongitude(float longitude);
     void setTimezoneOffsetHours(int offset);
     
-    // Task 3.5k preparation setters
+    // Door advanced features setters
     void setDoorAutoCloseAfterSunsetEnabled(bool enabled);
     void setDoorAutoCloseAfterSunsetMinutes(int minutes);
+    void setDoorLockoutEnabled(bool enabled);
+    void setDoorTimeoutAutoCalcEnabled(bool enabled);
     
     // Water meter per-pulse calculation setter
     void setWaterMeterPerPulseCalculationEnabled(bool enabled);
