@@ -477,6 +477,33 @@ void SettingsManager::setApiPassword(const String& password) {
     settings.api_password = password;
 }
 
+// Syslog configuration getters
+String SettingsManager::getSyslogServer() const {
+    return settings.syslog_server;
+}
+
+int SettingsManager::getSyslogPort() const {
+    return settings.syslog_port;
+}
+
+// Syslog configuration setters
+void SettingsManager::setSyslogServer(const String& server) {
+    settings.syslog_server = server;
+}
+
+void SettingsManager::setSyslogPort(int port) {
+    settings.syslog_port = constrain(port, 1, 65535);
+}
+
+// Flow calculation interval getters/setters
+unsigned int SettingsManager::getFlowCalculationIntervalSeconds() const {
+    return settings.flow_calculation_interval_seconds;
+}
+
+void SettingsManager::setFlowCalculationIntervalSeconds(unsigned int seconds) {
+    settings.flow_calculation_interval_seconds = constrain(seconds, 5, 300);
+}
+
 // WiFi connection settings setters - request restart for these
 void SettingsManager::setWifiMaxRetries(int retries) {
     settings.wifi_max_retries = retries;
@@ -659,6 +686,13 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.api_auth_enabled = doc["api_auth_enabled"] | defaultSettings.api_auth_enabled;
     settings.api_username = doc["api_username"] | defaultSettings.api_username;
     settings.api_password = doc["api_password"] | defaultSettings.api_password;
+
+    // Load syslog configuration
+    if (doc["syslog_server"].is<const char*>()) settings.syslog_server = doc["syslog_server"].as<String>();
+    settings.syslog_port = doc["syslog_port"] | defaultSettings.syslog_port;
+
+    // Load flow calculation interval
+    settings.flow_calculation_interval_seconds = doc["flow_calculation_interval_seconds"] | defaultSettings.flow_calculation_interval_seconds;
 }
 
 JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
@@ -737,6 +771,13 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     if (includePassword && settings.api_password.length() != 0) {
         doc["api_password"] = settings.api_password;
     }
+
+    // Syslog configuration
+    doc["syslog_server"] = settings.syslog_server;
+    doc["syslog_port"] = settings.syslog_port;
+
+    // Flow calculation interval
+    doc["flow_calculation_interval_seconds"] = settings.flow_calculation_interval_seconds;
 
     return doc;
 }

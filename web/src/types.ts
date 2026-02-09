@@ -137,4 +137,7 @@ export interface Settings {
   door_auto_close_after_sunset_enabled?: boolean;
   door_auto_close_after_sunset_minutes?: number;
   wifi_bssid_preference?: string;
+  syslog_server?: string;
+  syslog_port?: number;
+  flow_calculation_interval_seconds?: number;
 }

@@ -37,6 +37,22 @@ void Logger::begin(IHAL* _hal)
   }
 }
 
+void Logger::reconfigureSyslog(const String& server, int port, const char* hostname)
+{
+  // Destroy existing syslog client
+  if (syslog != nullptr) {
+    delete syslog; // NOSONAR
+    syslog = nullptr;
+  }
+
+  if (server.length() > 0 && port > 0) {
+    syslog = new SimpleSyslog(hostname, "CoopController", server.c_str(), (uint16_t)port, 400); // NOSONAR
+    logInfo(String("Syslog reconfigured: ") + server + ":" + String(port));
+  } else {
+    logInfo("Syslog disabled (no server configured)");
+  }
+}
+
 Logger::~Logger()
 {
   if (syslog != nullptr) 

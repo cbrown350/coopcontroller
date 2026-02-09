@@ -1,0 +1,280 @@
+{
+	"info": {
+		"_postman_id": "coop-controller-api",
+		"name": "Coop Controller API",
+		"description": "REST API collection for the ESP32 Coop Controller.\n\nPublic endpoints (no auth required) are for monitoring.\nProtected endpoints require HTTP Basic Auth when API authentication is enabled.\n\nBase URL: http://coopcontroller.local",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://coopcontroller.local",
+			"type": "string"
+		}
+	],
+	"auth": {
+		"type": "basic",
+		"basic": [
+			{ "key": "username", "value": "admin", "type": "string" },
+			{ "key": "password", "value": "", "type": "string" }
+		]
+	},
+	"item": [
+		{
+			"name": "Public Endpoints",
+			"description": "Read-only endpoints that do not require authentication.",
+			"item": [
+				{
+					"name": "Get Settings",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"url": "{{baseUrl}}/get_settings",
+						"description": "Returns all system settings as JSON. Passwords are excluded."
+					}
+				},
+				{
+					"name": "Sensor Status",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"url": "{{baseUrl}}/sensor_status",
+						"description": "Returns real-time sensor data: temperature, water flow, pump status, door status, light status, buzzer status, and sunrise/sunset times."
+					}
+				},
+				{
+					"name": "System Status",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"url": "{{baseUrl}}/system_status",
+						"description": "Returns system health: heap memory, uptime, chip info, WiFi signal, IP/MAC/BSSID."
+					}
+				},
+				{
+					"name": "Sunrise/Sunset Times",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"url": "{{baseUrl}}/sun/times",
+						"description": "Returns calculated sunrise and sunset times based on configured location."
+					}
+				},
+				{
+					"name": "Firmware Version",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"url": "{{baseUrl}}/version",
+						"description": "Returns firmware version and chip family."
+					}
+				},
+				{
+					"name": "Get Logs",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"url": "{{baseUrl}}/logs",
+						"description": "Returns log entries from the circular buffer as JSON array."
+					}
+				},
+				{
+					"name": "Backup Settings",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"url": "{{baseUrl}}/settings/backup",
+						"description": "Downloads current settings as a JSON file."
+					}
+				}
+			]
+		},
+		{
+			"name": "Settings",
+			"description": "Settings management (auth required when enabled).",
+			"item": [
+				{
+					"name": "Update Settings",
+					"request": {
+						"method": "POST",
+						"url": "{{baseUrl}}/update_settings",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"temp_threshold_on_f\": 34.0,\n  \"temp_threshold_off_f\": 36.0,\n  \"pump_on_time_seconds\": 300,\n  \"pump_off_time_seconds\": 600,\n  \"pump_auto_mode\": true,\n  \"light_auto_mode\": false,\n  \"light_on_hour\": 6,\n  \"light_off_hour\": 21,\n  \"light_brightness_percent\": 80,\n  \"log_level\": \"DEBUG\"\n}"
+						},
+						"description": "Update system settings. Only include fields you want to change (PATCH semantics). Returns 200 'ok' on success."
+					}
+				},
+				{
+					"name": "Restore Settings",
+					"request": {
+						"method": "POST",
+						"url": "{{baseUrl}}/settings/restore",
+						"description": "Restore settings from a previously backed-up JSON file."
+					}
+				},
+				{
+					"name": "Factory Reset",
+					"request": {
+						"method": "POST",
+						"url": "{{baseUrl}}/factory_reset",
+						"description": "Reset all settings to factory defaults. Device will restart."
+					}
+				},
+				{
+					"name": "Reboot",
+					"request": {
+						"method": "POST",
+						"url": "{{baseUrl}}/reboot",
+						"description": "Reboot the ESP32 device."
+					}
+				}
+			]
+		},
+		{
+			"name": "Pump Control",
+			"description": "Pump control endpoints (auth required when enabled).",
+			"item": [
+				{
+					"name": "Pump ON",
+					"request": { "method": "GET", "url": "{{baseUrl}}/pump/on", "description": "Force pump ON (manual override)." }
+				},
+				{
+					"name": "Pump OFF",
+					"request": { "method": "GET", "url": "{{baseUrl}}/pump/off", "description": "Force pump OFF (manual override)." }
+				},
+				{
+					"name": "Pump AUTO",
+					"request": { "method": "GET", "url": "{{baseUrl}}/pump/auto", "description": "Set pump to automatic temperature-based control." }
+				},
+				{
+					"name": "Force Pump Cycle",
+					"request": { "method": "GET", "url": "{{baseUrl}}/pump/force_cycle", "description": "Force an immediate pump cycle." }
+				},
+				{
+					"name": "Clear Pump Error",
+					"request": { "method": "GET", "url": "{{baseUrl}}/pump/clear_error", "description": "Clear pump flow error and allow retry." }
+				},
+				{
+					"name": "Clear OFF Flow Detected",
+					"request": { "method": "GET", "url": "{{baseUrl}}/pump/clear_off_flow_detected", "description": "Clear the pump-off flow detection warning." }
+				},
+				{
+					"name": "Reset Pump Stats",
+					"request": { "method": "GET", "url": "{{baseUrl}}/pump/reset_stats", "description": "Reset pump statistics (total ON/OFF time, cycles)." }
+				}
+			]
+		},
+		{
+			"name": "Water Meter",
+			"description": "Water meter reset endpoints (auth required when enabled).",
+			"item": [
+				{
+					"name": "Reset Water Meter 1",
+					"request": { "method": "GET", "url": "{{baseUrl}}/water/reset/1", "description": "Reset pulse count for water meter sensor 1." }
+				},
+				{
+					"name": "Reset Water Meter 2",
+					"request": { "method": "GET", "url": "{{baseUrl}}/water/reset/2", "description": "Reset pulse count for water meter sensor 2." }
+				}
+			]
+		},
+		{
+			"name": "Door Control",
+			"description": "Door control endpoints (auth required when enabled).",
+			"item": [
+				{
+					"name": "Open Door",
+					"request": { "method": "GET", "url": "{{baseUrl}}/door/open", "description": "Open the coop door." }
+				},
+				{
+					"name": "Close Door",
+					"request": { "method": "GET", "url": "{{baseUrl}}/door/close", "description": "Close the coop door." }
+				},
+				{
+					"name": "Stop Door",
+					"request": { "method": "GET", "url": "{{baseUrl}}/door/stop", "description": "Stop door motor immediately." }
+				},
+				{
+					"name": "Set Door Auto Mode",
+					"request": { "method": "POST", "url": "{{baseUrl}}/door/set_auto", "description": "Enable/disable automatic door control." }
+				},
+				{
+					"name": "Clear Door Fault",
+					"request": { "method": "POST", "url": "{{baseUrl}}/door/clear_fault", "description": "Clear door fault condition." }
+				},
+				{
+					"name": "Reset Door Stats",
+					"request": { "method": "GET", "url": "{{baseUrl}}/door/reset_stats", "description": "Reset door statistics." }
+				},
+				{
+					"name": "Enable Door Lockout",
+					"request": { "method": "GET", "url": "{{baseUrl}}/door/lockout/on", "description": "Enable door lockout (prevents all door operations)." }
+				},
+				{
+					"name": "Disable Door Lockout",
+					"request": { "method": "GET", "url": "{{baseUrl}}/door/lockout/off", "description": "Disable door lockout." }
+				}
+			]
+		},
+		{
+			"name": "Light Control",
+			"description": "Light control endpoints (auth required when enabled).",
+			"item": [
+				{
+					"name": "Light ON",
+					"request": { "method": "GET", "url": "{{baseUrl}}/light/on", "description": "Turn light ON immediately." }
+				},
+				{
+					"name": "Light OFF",
+					"request": { "method": "GET", "url": "{{baseUrl}}/light/off", "description": "Turn light OFF immediately." }
+				},
+				{
+					"name": "Fade In",
+					"request": { "method": "GET", "url": "{{baseUrl}}/light/fade_in", "description": "Start light fade-in transition." }
+				},
+				{
+					"name": "Fade Out",
+					"request": { "method": "GET", "url": "{{baseUrl}}/light/fade_out", "description": "Start light fade-out transition." }
+				},
+				{
+					"name": "Set Brightness",
+					"request": { "method": "POST", "url": "{{baseUrl}}/light/set_brightness", "description": "Set light brightness level (0-100%)." }
+				},
+				{
+					"name": "Set Light Auto Mode",
+					"request": { "method": "POST", "url": "{{baseUrl}}/light/set_auto", "description": "Enable/disable automatic light control." }
+				},
+				{
+					"name": "Reset Light Stats",
+					"request": { "method": "GET", "url": "{{baseUrl}}/light/reset_stats", "description": "Reset light statistics." }
+				},
+				{
+					"name": "Toggle Test Mode",
+					"request": { "method": "POST", "url": "{{baseUrl}}/light/test_mode", "description": "Toggle light test mode." }
+				}
+			]
+		},
+		{
+			"name": "Buzzer Control",
+			"description": "Buzzer control endpoints (auth required when enabled).",
+			"item": [
+				{
+					"name": "Test Buzzer",
+					"request": { "method": "GET", "url": "{{baseUrl}}/buzzer/test", "description": "Trigger a test buzzer alert." }
+				},
+				{
+					"name": "Silence Buzzer",
+					"request": { "method": "POST", "url": "{{baseUrl}}/buzzer/silence", "description": "Silence the currently active buzzer alert." }
+				},
+				{
+					"name": "Clear Buzzer Alert",
+					"request": { "method": "POST", "url": "{{baseUrl}}/buzzer/clear", "description": "Clear the active buzzer alert completely." }
+				}
+			]
+		}
+	]
+}

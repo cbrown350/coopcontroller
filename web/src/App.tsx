@@ -13,9 +13,9 @@ function App(props: ParentProps) {
   }
 
   return (
-    <div class="flex flex-col items-center h-screen pt-10 bg-base-200 overflow-x-hidden w-full max-w-full">
-      <h1 class="text-xl font-bold w-full max-w-5xl pl-1 pb-4">Coop Controller</h1>
-      <div class="tabs tabs-lift w-full max-w-5xl">
+    <div class="flex flex-col items-center min-h-screen pt-4 sm:pt-10 bg-base-200 overflow-x-hidden w-full max-w-full">
+      <h1 class="text-xl font-bold w-full max-w-5xl px-2 sm:pl-1 pb-4">Coop Controller</h1>
+      <div class="tabs tabs-lift w-full max-w-5xl text-xs sm:text-sm">
 
         <A href="/status" class={`tab ${isActive('/status') ? 'tab-active' : ''}`}>
           Status
@@ -39,7 +39,7 @@ function App(props: ParentProps) {
 
       </div>
 
-      <div class="w-full max-w-5xl bg-base-100 border-base-300 p-6">
+      <div class="w-full max-w-5xl bg-base-100 border-base-300 px-2 py-4 sm:p-6">
         {props.children}
       </div>
     </div>

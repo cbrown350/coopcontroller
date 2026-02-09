@@ -118,6 +118,19 @@ struct user_settings // NOSONAR
     unsigned int pump_min_cycle_run_seconds = 120;       ///< Duration of each scheduled cycle
 
     // ========================================================================
+    // SYSLOG CONFIGURATION
+    // ========================================================================
+
+    String syslog_server = "";              ///< Syslog server address (empty = use compile-time default)
+    int    syslog_port = 514;               ///< Syslog server port (default: 514)
+
+    // ========================================================================
+    // FLOW CALCULATION INTERVAL
+    // ========================================================================
+
+    unsigned int flow_calculation_interval_seconds = 60; ///< Flow rate calculation interval (seconds, default: 60)
+
+    // ========================================================================
     // API AUTHENTICATION
     // ========================================================================
 
@@ -328,6 +341,18 @@ class SettingsManager // NOSONAR
     void setPumpMinDailyCyclesEnabled(bool enabled);
     void setPumpMinDailyCycles(unsigned int cycles);
     void setPumpMinCycleRunSeconds(unsigned int seconds);
+
+    // Syslog configuration getters
+    String getSyslogServer() const;
+    int    getSyslogPort() const;
+
+    // Syslog configuration setters
+    void setSyslogServer(const String& server);
+    void setSyslogPort(int port);
+
+    // Flow calculation interval getters/setters
+    unsigned int getFlowCalculationIntervalSeconds() const;
+    void setFlowCalculationIntervalSeconds(unsigned int seconds);
 
     // API Authentication getters
     bool   getApiAuthEnabled() const;

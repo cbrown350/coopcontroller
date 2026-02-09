@@ -14,7 +14,7 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
 | Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
 
-**Current Build:** RAM 17.3% (56,532 bytes), Flash 96.3% (1,261,809 bytes)
+**Current Build:** RAM 17.3% (56,580 bytes), Flash 96.7% (1,266,841 bytes)
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. Actual functionality hasn't been checked for correctness.
 
@@ -404,6 +404,134 @@ Monitors for water flow when pump is OFF to detect hardware faults (stuck relay,
 
 ---
 
+### Remote Syslog Runtime Configuration ✅
+
+**Implemented:** 2026-02-XX
+**Status:** Complete and tested
+
+**Summary:**
+Moved syslog server/port from compile-time defines to runtime-configurable web UI settings, allowing users to change syslog targets without recompiling firmware.
+
+**Key Changes:**
+- Added `syslog_server` (String, default "") and `syslog_port` (int, default 514) to SettingsManager
+- Added `reconfigureSyslog(server, port, hostname)` method to Logger
+- Runtime reconfiguration in main.cpp after settings load (overrides compile-time defaults)
+- `/update_settings` API handler reconfigures syslog when server/port changes
+- Web UI Settings page: Syslog Server fieldset with server address and port inputs in 2-column grid
+- Empty server string disables syslog output
+
+**Files Modified:**
+- `lib/SettingsManager/SettingsManager.h` - Added syslog_server, syslog_port fields
+- `lib/SettingsManager/SettingsManager.cpp` - Getters/setters with port clamping (1-65535)
+- `lib/Logger/Logger.h` - Added reconfigureSyslog() declaration
+- `lib/Logger/Logger.cpp` - Implemented reconfigureSyslog()
+- `lib/CoopControllerWebServer/CoopControllerWebServer.cpp` - Handler for syslog setting changes
+- `src/main.cpp` - Runtime syslog reconfiguration from saved settings
+- `web/src/types.ts` - Added syslog_server, syslog_port to Settings interface
+- `web/src/Settings.tsx` - Added syslog configuration UI controls
+
+**Build Verification:**
+- ESP32: ✅ RAM: 56,580 bytes (17.3%), Flash: 1,266,841 bytes (96.7%)
+- Web UI: ✅ TypeScript compilation successful
+- Tests: ✅ 488/488 passing
+
+---
+
+### Configurable Flow Calculation Interval ✅
+
+**Implemented:** 2026-02-XX
+**Status:** Complete and tested
+
+**Summary:**
+Made the flow calculation interval configurable via web UI instead of hardcoded at 60 seconds.
+
+**Key Changes:**
+- Added `flow_calculation_interval_seconds` (unsigned int, default 60, range 5-300) to SettingsManager
+- Changed SensorManager `FLOW_CALCULATION_INTERVAL` from static const to configurable member `flowCalculationIntervalMs_`
+- Added `setFlowCalculationIntervalSeconds(seconds)` method to SensorManager
+- `/update_settings` API handler updates SensorManager when interval changes
+- Interval applied on boot in main.cpp after sensor calibration
+- Web UI Settings page: Flow Calculation Interval fieldset with number input (5-300 seconds)
+
+**Files Modified:**
+- `lib/SettingsManager/SettingsManager.h` - Added flow_calculation_interval_seconds field
+- `lib/SettingsManager/SettingsManager.cpp` - Getter/setter with clamping (5-300)
+- `lib/SensorManager/SensorManager.h` - Configurable interval member, setter method
+- `lib/SensorManager/SensorManager.cpp` - Uses configurable interval in calculateFlowRate()
+- `lib/CoopControllerWebServer/CoopControllerWebServer.cpp` - Handler for interval setting
+- `src/main.cpp` - Applies interval on boot
+- `web/src/types.ts` - Added flow_calculation_interval_seconds to Settings interface
+- `web/src/Settings.tsx` - Added flow interval configuration UI controls
+
+**Build Verification:**
+- ESP32: ✅ RAM: 56,580 bytes (17.3%), Flash: 1,266,841 bytes (96.7%)
+- Web UI: ✅ TypeScript compilation successful
+- Tests: ✅ 488/488 passing
+
+---
+
+### NTP WiFi Safety Guard ✅
+
+**Implemented:** 2026-02-XX
+**Status:** Complete
+
+**Summary:**
+Added network safety check around NTP time configuration to prevent calls when WiFi is not connected.
+
+**Key Changes:**
+- Wrapped `configTime()` call in `if (wifiController.isConnected())` check
+- Logs warning when NTP configuration is deferred due to no WiFi connection
+- Prevents potential crashes or hangs when making network calls without connectivity
+
+**Files Modified:**
+- `src/main.cpp` - Added WiFi connection guard around configTime()
+
+---
+
+### Postman API Collection ✅
+
+**Implemented:** 2026-02-XX
+**Status:** Complete
+
+**Summary:**
+Created comprehensive Postman collection documenting all REST API endpoints for easy testing and sharing.
+
+**Key Changes:**
+- Postman v2.1 collection with 37 endpoints organized in folders
+- Folders: Public (7), Settings (4), Pump (7), Water Meter (2), Door (7), Light (6), Buzzer (3), System (1)
+- Base URL variable (`{{baseUrl}}`) defaults to `http://coopcontroller.local`
+- HTTP Basic Auth pre-configured for protected endpoints
+- Descriptions for each endpoint with method, expected response format
+- Importable JSON file for easy team sharing
+
+**Files Created:**
+- `docs/CoopController.postman_collection.json` - Complete Postman collection
+
+---
+
+### Mobile UI Optimization ✅
+
+**Implemented:** 2026-02-XX
+**Status:** Complete
+
+**Summary:**
+Fixed responsive layout issues for mobile devices in the main App shell.
+
+**Key Changes:**
+- Changed `h-screen` to `min-h-screen` to prevent content cutoff on overflow
+- Reduced top padding on mobile: `pt-10` → `pt-4 sm:pt-10`
+- Added symmetric horizontal padding: `pl-1` → `px-2 sm:pl-1`
+- Smaller tab text on mobile: added `text-xs sm:text-sm`
+- Tighter content padding on mobile: `p-6` → `px-2 py-4 sm:p-6`
+
+**Files Modified:**
+- `web/src/App.tsx` - Updated responsive CSS classes
+
+**Build Verification:**
+- Web UI: ✅ TypeScript compilation successful
+
+---
+
 ### Web Assets Security Refactoring ✅
 - Moved web assets into separate subdirectory within LittleFS
 - Adjusted web server root path to serve from the new subdirectory
@@ -618,13 +746,6 @@ Features organized by priority and implementation status.
 - Consider dark/light mode variations
 - Apply consistently across all pages
 
-#### Mobile UI Optimization
-- Fix horizontal scrolling issues on mobile devices
-- Prevent content cutoff on smaller screens
-- Optimize touch targets for mobile interaction
-- Test on various mobile screen sizes
-- Improve responsive breakpoints in Tailwind config
-
 #### Floating UI Elements for Settings Page
 - **Floating Notifications for Settings Changes** - Notifications when changes are made should float so they're visible wherever the user has scrolled on the screen (not fixed in one location under tabs)
 - **Floating Save Settings Button** - The save settings button should float so it's easy to click from anywhere on the page
@@ -712,15 +833,6 @@ Features organized by priority and implementation status.
 
 ### Low Priority - Documentation & Clarifications
 
-#### Postman API Collection
-- Create Postman collection file for all REST API endpoints
-- Include example requests and responses for each endpoint
-- Document all HTTP methods (GET, POST) with proper headers
-- Add environment variables for base URL configuration
-- Include description and usage notes for each endpoint
-- Export as importable JSON file for easy sharing
-- Store in `docs/` directory
-
 #### Door Test Mode Documentation
 - Document what door test mode is and its purpose (it doesn't seem to do anything currently?)
 - Explain when and why to use test mode
@@ -730,22 +842,6 @@ Features organized by priority and implementation status.
 - Does it just need to be removed?
 
 ### Low Priority - Enhancements
-
-#### Configurable Intervals
-- Make FLOW_CALCULATION_INTERVAL configurable from web UI
-- Currently hardcoded at 60000ms (1 minute)
-- Allow users to adjust based on flow rates
-
-#### Remote Syslog Configuration
-- Move syslog server/port from compile-time defines to web UI settings
-- Runtime configuration changes
-- Multiple syslog targets
-
-#### Mobile Optimization
-- Optimize web UI for mobile devices
-- Touch-friendly controls
-- Responsive layout improvements
-- PWA capabilities for app-like experience
 
 #### Component Refactoring
 - Change enums to enum class for type safety

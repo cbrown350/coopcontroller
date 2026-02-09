@@ -103,6 +103,13 @@ function Settings() {
   // WiFi BSSID preference
   const [wifiBssidPreference, setWifiBssidPreference] = createSignal('')
 
+  // Syslog configuration
+  const [syslogServer, setSyslogServer] = createSignal('')
+  const [syslogPort, setSyslogPort] = createSignal<number | null>(null)
+
+  // Flow calculation interval
+  const [flowCalculationIntervalSeconds, setFlowCalculationIntervalSeconds] = createSignal<number | null>(null)
+
   // Unsaved changes tracking
   const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false)
 
@@ -179,6 +186,13 @@ function Settings() {
 
       // Load WiFi BSSID preference
       setWifiBssidPreference(settings.wifi_bssid_preference ?? '')
+
+      // Load syslog configuration
+      setSyslogServer(settings.syslog_server ?? '')
+      setSyslogPort(settings.syslog_port ?? 514)
+
+      // Load flow calculation interval
+      setFlowCalculationIntervalSeconds(settings.flow_calculation_interval_seconds ?? 60)
 
       setLoaded(true)
       setError('')
@@ -276,7 +290,10 @@ function Settings() {
         log_level: logLevel() ?? 'INFO',
         api_auth_enabled: apiAuthEnabled() ?? false,
         api_username: apiUsername() ?? 'admin',
-        wifi_bssid_preference: wifiBssidPreference() ?? ''
+        wifi_bssid_preference: wifiBssidPreference() ?? '',
+        syslog_server: syslogServer() ?? '',
+        syslog_port: syslogPort() ?? 514,
+        flow_calculation_interval_seconds: flowCalculationIntervalSeconds() ?? 60
       }
 
       // Handle WiFi password: either set new password, clear it, or don't change it
@@ -631,6 +648,17 @@ function Settings() {
           </fieldset>
 
           <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Flow Calculation Interval (seconds)</legend>
+            <Show when={loaded()}>
+              <input type="number" id="flow_calculation_interval_seconds" value={flowCalculationIntervalSeconds()!} onInput={(e) => setFlowCalculationIntervalSeconds(parseInt(e.target.value))} placeholder="60" step="1" min="5" max="300" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">How often to calculate interval-based flow rate in seconds (default: 60). Lower values give more frequent updates. Only used when per-pulse calculation is disabled.</div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
             <legend class="fieldset-legend">Per-Pulse Flow Calculation</legend>
             <div class="form-control">
               <label class="label cursor-pointer">
@@ -922,6 +950,31 @@ function Settings() {
               <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
             </Show>
             <div class="fieldset-label">Preferred access point MAC address for mesh networks (leave empty for auto-select)</div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Syslog Server</legend>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="label"><span class="label-text">Server Address</span></label>
+                <Show when={loaded()}>
+                  <input type="text" value={syslogServer()} onInput={(e) => setSyslogServer(e.target.value)} placeholder="192.168.1.100" class="input w-full" />
+                </Show>
+                <Show when={!loaded()}>
+                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled w-full" />
+                </Show>
+              </div>
+              <div>
+                <label class="label"><span class="label-text">Port</span></label>
+                <Show when={loaded()}>
+                  <input type="number" value={syslogPort()!} onInput={(e) => setSyslogPort(parseInt(e.target.value))} placeholder="514" min="1" max="65535" class="input w-full" />
+                </Show>
+                <Show when={!loaded()}>
+                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled w-full" />
+                </Show>
+              </div>
+            </div>
+            <div class="fieldset-label">Remote syslog server for log forwarding. Leave server empty to disable. Default port: 514</div>
           </fieldset>
 
           <fieldset class="fieldset mt-4">

@@ -252,6 +252,14 @@ void setup() // NOSONAR - complexity ok
     
     // Set water meter calibration from settings
     sensorManager.setPulsesPerGallon(settingsManager.getPulsesPerGallon());
+    sensorManager.setFlowCalculationIntervalSeconds(settingsManager.getFlowCalculationIntervalSeconds());
+    
+    // Reconfigure syslog from runtime settings (overrides compile-time defaults if configured)
+    if (settingsManager.getSyslogServer().length() > 0) {
+        logger.reconfigureSyslog(settingsManager.getSyslogServer(),
+                                settingsManager.getSyslogPort(),
+                                hostName);
+    }
     
     logger.logInfo("Coop controller components initialized");
 
@@ -265,8 +273,13 @@ void setup() // NOSONAR - complexity ok
         logger.logError(String("Failed to initialize Task Watchdog Timer: ") + String(esp_err_to_name(wdtResult)));
     }
 
-    logger.logInfo("NTP time synchronization started");
-    configTime(0, 0, ntpServer);
+    // Only sync NTP if connected to WiFi (not in AP mode)
+    if (wifiController.isConnected()) {
+        logger.logInfo("NTP time synchronization started");
+        configTime(0, 0, ntpServer);
+    } else {
+        logger.logWarning("WiFi not connected - NTP time sync deferred");
+    }
     
     // Wait a moment for NTP to sync, then calculate sunrise/sunset
     delay(2000);

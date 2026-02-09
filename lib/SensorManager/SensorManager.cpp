@@ -280,7 +280,7 @@ void SensorManager::calculateFlowRate(SensorData& sensor) const {
         return;
     }
     
-    if (currentTime - sensor.last_flow_calculation_time >= FLOW_CALCULATION_INTERVAL) {
+    if (currentTime - sensor.last_flow_calculation_time >= flowCalculationIntervalMs_) {
         unsigned long pulses = sensor.pulse_count.load();
         unsigned long timeDiff = currentTime - sensor.last_flow_calculation_time;
         
@@ -316,6 +316,11 @@ void SensorManager::resetPulseCount(int sensor) {
 void SensorManager::setPulsesPerGallon(float pulses_per_gallon) {
     this->pulsesPerGallon = pulses_per_gallon;
     logger.logInfo(String("Water meter calibration updated: ") + String(pulsesPerGallon, 1) + " pulses per gallon");
+}
+
+void SensorManager::setFlowCalculationIntervalSeconds(unsigned int seconds) {
+    flowCalculationIntervalMs_ = static_cast<unsigned long>(seconds) * 1000UL;
+    logger.logInfo(String("Flow calculation interval updated: ") + String(seconds) + " seconds");
 }
 
 float SensorManager::celsiusToFahrenheit(float celsius) const {

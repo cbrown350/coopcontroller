@@ -13,7 +13,7 @@
 | **Build (firmware)** | `pio run` |
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
-| **Current build** | RAM 17.3%, Flash 96.3% |
+| **Current build** | RAM 17.3%, Flash 96.7% |
 | **Tests** | 488/488 passing (10 components) |
 | **Web access** | `http://coopcontroller.local` |
 

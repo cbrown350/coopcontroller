@@ -161,7 +161,7 @@ private:
     SensorData  sensor2;
     
     // Water meter calculation variables
-    static const unsigned long FLOW_CALCULATION_INTERVAL = 60000; // 1 minute
+    unsigned long flowCalculationIntervalMs_ = 60000; // Default 1 minute, configurable via settings
     float pulsesPerGallon;  // Conversion factor for pulses to gallons
     bool perPulseCalcEnabled_ = false;  // Cached setting for ISR-safe access
     
@@ -236,6 +236,9 @@ public:
     
     // Water meter calibration
     void setPulsesPerGallon(float pulsesPerGallon);
+
+    // Flow calculation interval
+    void setFlowCalculationIntervalSeconds(unsigned int seconds);
     
     // Status methods
     String getSensorStatusString(const SensorData& sensor) const;

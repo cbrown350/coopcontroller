@@ -292,6 +292,30 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       logger.logInfo(password.length() > 0 ? "API password updated" : "API password cleared");
                   }
 
+                  // Handle syslog configuration
+                  bool syslogChanged = false;
+                  if (jsonObj["syslog_server"].is<String>()) {
+                      settingsManager.setSyslogServer(jsonObj["syslog_server"].as<String>());
+                      syslogChanged = true;
+                  }
+                  if (jsonObj["syslog_port"].is<int>()) {
+                      settingsManager.setSyslogPort(jsonObj["syslog_port"].as<int>());
+                      syslogChanged = true;
+                  }
+                  if (syslogChanged) {
+                      logger.reconfigureSyslog(settingsManager.getSyslogServer(),
+                                              settingsManager.getSyslogPort(),
+                                              hostName);
+                  }
+
+                  // Handle flow calculation interval
+                  if (jsonObj["flow_calculation_interval_seconds"].is<int>()) {
+                      unsigned int interval = jsonObj["flow_calculation_interval_seconds"].as<unsigned int>();
+                      settingsManager.setFlowCalculationIntervalSeconds(interval);
+                      tempSensor.setFlowCalculationIntervalSeconds(interval);
+                      logger.logInfo(String("Flow calculation interval: ") + String(interval) + " seconds");
+                  }
+
                   // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
 
                   settingsManager.save();

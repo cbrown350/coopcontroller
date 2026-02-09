@@ -103,6 +103,18 @@ public:
   void begin(IHAL* ihal);
 
   /**
+   * @brief Reconfigure syslog with new server/port at runtime
+   *
+   * Destroys existing syslog client and creates a new one with the
+   * specified server and port. Pass empty server to disable syslog.
+   *
+   * @param server Syslog server address
+   * @param port Syslog server port
+   * @param hostname Device hostname for syslog identification
+   */
+  void reconfigureSyslog(const String& server, int port, const char* hostname);
+
+  /**
    * @brief Get singleton instance
    *
    * Provides global access to logger instance.
