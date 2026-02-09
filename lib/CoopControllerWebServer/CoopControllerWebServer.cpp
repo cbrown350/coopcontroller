@@ -150,7 +150,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       String ledMsg = "WiFi LED enabled: " + String(enabled ? "true" : "false");
                       logger.logInfo(ledMsg.c_str());
                   }
-                  
+
+                  if (jsonObj["wifi_bssid_preference"].is<const char*>()) {
+                      settingsManager.setWifiBssidPreference(jsonObj["wifi_bssid_preference"].as<String>());
+                  }
+
                   // Handle buzzer settings
                   if (jsonObj["buzzer_enabled"].is<bool>()) {
                       bool enabled = jsonObj["buzzer_enabled"].as<bool>();
@@ -863,9 +867,15 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   if (wifiController.isConnected()) {
                       jsonDoc["wifi_rssi"] = wifiController.getRSSI();
                       jsonDoc["wifi_ssid"] = wifiController.getSSID();
+                      jsonDoc["wifi_ip"] = wifiController.getIPAddress();
+                      jsonDoc["wifi_mac"] = hal->wifiGetMacAddress();
+                      jsonDoc["wifi_bssid"] = hal->wifiGetBSSID();
                   } else {
                       jsonDoc["wifi_rssi"] = 0;
                       jsonDoc["wifi_ssid"] = "Not Connected";
+                      jsonDoc["wifi_ip"] = "N/A";
+                      jsonDoc["wifi_mac"] = hal->wifiGetMacAddress();
+                      jsonDoc["wifi_bssid"] = "N/A";
                   }
                   
                   String jsonResponse;

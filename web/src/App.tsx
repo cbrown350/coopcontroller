@@ -13,7 +13,7 @@ function App(props: ParentProps) {
   }
 
   return (
-    <div class="flex flex-col items-center h-screen pt-10 bg-base-200 ">
+    <div class="flex flex-col items-center h-screen pt-10 bg-base-200 overflow-x-hidden w-full max-w-full">
       <h1 class="text-xl font-bold w-full max-w-5xl pl-1 pb-4">Coop Controller</h1>
       <div class="tabs tabs-lift w-full max-w-5xl">
 

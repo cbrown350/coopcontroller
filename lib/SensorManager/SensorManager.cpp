@@ -141,13 +141,16 @@ void SensorManager::update() {
         readDallasTemperature(dallasTemp1.get(), sensor1);
     } else if (sensor1.type == SensorType::WATER_METER) {
         logWaterMeterPulse(sensor1);
-        
+
+        // Update connection status based on pulse activity
+        sensor1.is_connected = isActivelyConnected(sensor1);
+
         // Use per-pulse calculation if enabled, otherwise use interval-based calculation
         if (settingsManager.getWaterMeterPerPulseCalculationEnabled()) {
             // Check for no-flow timeout (5 seconds)
             unsigned long currentTime = millis();
             unsigned long lastPulseTime = sensor1.last_pulse_time.load();
-            
+
             if (lastPulseTime != 0) {
                 // Handle millis() rollover
                 unsigned long timeSinceLastPulse;
@@ -156,7 +159,7 @@ void SensorManager::update() {
                 } else {
                     timeSinceLastPulse = (ULONG_MAX - lastPulseTime) + currentTime;
                 }
-                
+
                 // Set flow rate to 0 if no pulse for 5 seconds
                 if (timeSinceLastPulse > 5000) {
                     sensor1.flow_rate = 0.0f;
@@ -172,13 +175,16 @@ void SensorManager::update() {
         readDallasTemperature(dallasTemp2.get(), sensor2);
     } else if (sensor2.type == SensorType::WATER_METER) {
         logWaterMeterPulse(sensor2);
-        
+
+        // Update connection status based on pulse activity
+        sensor2.is_connected = isActivelyConnected(sensor2);
+
         // Use per-pulse calculation if enabled, otherwise use interval-based calculation
         if (settingsManager.getWaterMeterPerPulseCalculationEnabled()) {
             // Check for no-flow timeout (5 seconds)
             unsigned long currentTime = millis();
             unsigned long lastPulseTime = sensor2.last_pulse_time.load();
-            
+
             if (lastPulseTime != 0) {
                 // Handle millis() rollover
                 unsigned long timeSinceLastPulse;
@@ -187,7 +193,7 @@ void SensorManager::update() {
                 } else {
                     timeSinceLastPulse = (ULONG_MAX - lastPulseTime) + currentTime;
                 }
-                
+
                 // Set flow rate to 0 if no pulse for 5 seconds
                 if (timeSinceLastPulse > 5000) {
                     sensor2.flow_rate = 0.0f;

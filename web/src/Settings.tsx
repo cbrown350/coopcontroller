@@ -100,6 +100,12 @@ function Settings() {
   const [apiPassword, setApiPassword] = createSignal('')
   const [showApiPassword, setShowApiPassword] = createSignal(false)
 
+  // WiFi BSSID preference
+  const [wifiBssidPreference, setWifiBssidPreference] = createSignal('')
+
+  // Unsaved changes tracking
+  const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false)
+
   // Load settings from server
   onMount(async () => {
     try {
@@ -171,8 +177,12 @@ function Settings() {
         setHostname(settings.hostname)
       }
 
+      // Load WiFi BSSID preference
+      setWifiBssidPreference(settings.wifi_bssid_preference ?? '')
+
       setLoaded(true)
       setError('')
+      setHasUnsavedChanges(false)
       // Fetch sunrise/sunset data after loading location
       fetchSunriseSunsetData()
     } catch (err: any) {
@@ -265,7 +275,8 @@ function Settings() {
         door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0,
         log_level: logLevel() ?? 'INFO',
         api_auth_enabled: apiAuthEnabled() ?? false,
-        api_username: apiUsername() ?? 'admin'
+        api_username: apiUsername() ?? 'admin',
+        wifi_bssid_preference: wifiBssidPreference() ?? ''
       }
 
       // Handle WiFi password: either set new password, clear it, or don't change it
@@ -301,8 +312,9 @@ function Settings() {
       }
 
       setSaveSuccess(true)
+      setHasUnsavedChanges(false)
       setTimeout(() => setSaveSuccess(false), 3000)
-      
+
       // Fetch sunrise/sunset data after saving location settings
       fetchSunriseSunsetData()
     } catch (err: any) {
@@ -439,19 +451,38 @@ function Settings() {
     }
   }
 
+  const markChanged = () => setHasUnsavedChanges(true)
+
   return (
-    <div class="card">
+    <div class="card w-full max-w-full min-w-0">
+      {/* Floating notifications */}
+      <Show when={error()}>
+        <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-auto max-w-lg">
+          <div role="alert" class="alert alert-error shadow-lg">{error()}</div>
+        </div>
+      </Show>
+      <Show when={saveSuccess()}>
+        <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-auto max-w-lg">
+          <div role="alert" class="alert alert-success shadow-lg">Settings saved successfully!</div>
+        </div>
+      </Show>
+
+      {/* Floating unsaved changes indicator */}
+      <Show when={hasUnsavedChanges() && loaded()}>
+        <div class="fixed bottom-6 left-6 z-50">
+          <div class="badge badge-warning gap-1 shadow-lg p-3">Unsaved changes</div>
+        </div>
+      </Show>
+
+      {/* Floating save button */}
+      <Show when={loaded() && !loading()}>
+        <button type="button" class="btn btn-accent shadow-lg fixed bottom-6 right-6 z-50" onClick={handleSave} disabled={!loaded()}>Save Settings</button>
+      </Show>
+
       {loading() ? (
         <p>Loading settings... <span class="loading loading-spinner loading-xl"></span></p>
       ) : (
-        <div>
-          {error() && (
-            <div role="alert" class="mb-4 alert alert-error">{error()}</div>
-          )}
-
-          {saveSuccess() && (
-            <div role="alert" class="mb-4 alert alert-success">Settings saved successfully!</div>
-          )}
+        <div onInput={markChanged} onChange={markChanged}>
 
           <h2 class="text-lg font-bold mb-4">Wifi Settings</h2>
           {apMode() ? (
@@ -880,6 +911,17 @@ function Settings() {
                 </span>
               </label>
             </div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">WiFi BSSID Preference</legend>
+            <Show when={loaded()}>
+              <input type="text" value={wifiBssidPreference()} onInput={(e) => setWifiBssidPreference(e.target.value)} placeholder="AA:BB:CC:DD:EE:FF" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <div class="fieldset-label">Preferred access point MAC address for mesh networks (leave empty for auto-select)</div>
           </fieldset>
 
           <fieldset class="fieldset mt-4">
@@ -1482,7 +1524,7 @@ function Settings() {
             </div>
           </Show>
 
-          <button class="btn btn-accent btn-soft mt-10" onClick={handleSave} disabled={!loaded()}>Save Settings</button>
+          {/* Save button is now floating - see fixed button above */}
         </div>
       )}
     </div>

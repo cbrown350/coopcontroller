@@ -286,6 +286,10 @@ bool SettingsManager::getWifiLedEnabled() const {
     return settings.wifi_led_enabled;
 }
 
+String SettingsManager::getWifiBssidPreference() const {
+    return settings.wifi_bssid_preference;
+}
+
 bool SettingsManager::getWifiChanged() const {
     return wifiChanged;
 }
@@ -494,6 +498,10 @@ void SettingsManager::setWifiLedEnabled(bool enabled) {
     settings.wifi_led_enabled = enabled;
 }
 
+void SettingsManager::setWifiBssidPreference(const String& bssid) {
+    settings.wifi_bssid_preference = bssid;
+}
+
 void SettingsManager::setWifiChanged(bool changed) {
     wifiChanged = changed;
 }
@@ -623,7 +631,8 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     }
     settings.watchdog_timeout_seconds = doc["watchdog_timeout_seconds"] | defaultSettings.watchdog_timeout_seconds;
     settings.wifi_led_enabled = doc["wifi_led_enabled"] | defaultSettings.wifi_led_enabled;
-    
+    if (doc["wifi_bssid_preference"].is<const char*>()) settings.wifi_bssid_preference = doc["wifi_bssid_preference"].as<String>();
+
     // Load buzzer settings
     settings.buzzer_enabled = doc["buzzer_enabled"] | defaultSettings.buzzer_enabled;
     settings.buzzer_type = doc["buzzer_type"] | defaultSettings.buzzer_type;
@@ -698,7 +707,8 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["wifi_ap_duration_minutes"] = settings.wifi_ap_duration_minutes;
     doc["watchdog_timeout_seconds"] = settings.watchdog_timeout_seconds;
     doc["wifi_led_enabled"] = settings.wifi_led_enabled;
-    
+    doc["wifi_bssid_preference"] = settings.wifi_bssid_preference;
+
     // Buzzer settings
     doc["buzzer_enabled"] = settings.buzzer_enabled;
     doc["buzzer_type"] = settings.buzzer_type;

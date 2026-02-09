@@ -30,6 +30,7 @@ const mockSettings = {
   water_meter_timeout_seconds: 300, // 5 minutes timeout
   pulses_per_gallon: 450.0,        // Water meter calibration
   wifi_led_enabled: true,              // WiFi status LED enabled
+  wifi_bssid_preference: '',           // Preferred WiFi BSSID (empty = auto)
   buzzer_enabled: true,           // Buzzer enabled
   buzzer_type: 'ACTIVE',          // Buzzer type
   
@@ -238,7 +239,10 @@ async function createServer() {
       cpu_freq_mhz: 240,
       flash_size: 4194304,
       wifi_rssi: -45,
-      wifi_ssid: "MyHomeWiFi"
+      wifi_ssid: "MyHomeWiFi",
+      wifi_ip: "192.168.1.100",
+      wifi_mac: "AA:BB:CC:DD:EE:FF",
+      wifi_bssid: "11:22:33:44:55:66"
     };
     
     res.setHeader("Content-Type", "application/json");
@@ -324,7 +328,10 @@ async function createServer() {
       if (settings.wifi_led_enabled !== undefined) {
         mockSettings.wifi_led_enabled = settings.wifi_led_enabled;
       }
-      
+      if (settings.wifi_bssid_preference !== undefined) {
+        mockSettings.wifi_bssid_preference = settings.wifi_bssid_preference;
+      }
+
       // Door control settings
       if (settings.door_auto_mode !== undefined) {
         mockSettings.door_auto_mode = settings.door_auto_mode;
@@ -591,6 +598,9 @@ async function createServer() {
       }
       if (settings.wifi_led_enabled !== undefined && typeof settings.wifi_led_enabled === 'boolean') {
         mockSettings.wifi_led_enabled = settings.wifi_led_enabled;
+      }
+      if (settings.wifi_bssid_preference !== undefined && typeof settings.wifi_bssid_preference === 'string') {
+        mockSettings.wifi_bssid_preference = settings.wifi_bssid_preference;
       }
       if (settings.buzzer_enabled !== undefined && typeof settings.buzzer_enabled === 'boolean') {
         mockSettings.buzzer_enabled = settings.buzzer_enabled;

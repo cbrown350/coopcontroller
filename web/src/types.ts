@@ -81,6 +81,9 @@ export interface SystemStatus {
   flash_size: number;
   wifi_rssi?: number;
   wifi_ssid?: string;
+  wifi_ip?: string;
+  wifi_mac?: string;
+  wifi_bssid?: string;
 }
 
 export interface DoorStatus {
@@ -133,4 +136,5 @@ export interface Settings {
   door_timeout_auto_calc_enabled?: boolean;
   door_auto_close_after_sunset_enabled?: boolean;
   door_auto_close_after_sunset_minutes?: number;
+  wifi_bssid_preference?: string;
 }

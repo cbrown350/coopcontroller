@@ -60,6 +60,7 @@ struct user_settings // NOSONAR
     int    wifi_ap_duration_minutes = 10;   ///< How long to stay in AP mode before retrying
     int    watchdog_timeout_seconds = 30;   ///< Watchdog timeout in seconds (range 10-120)
     bool   wifi_led_enabled = true;         ///< Enable WiFi status LED
+    String wifi_bssid_preference = "";       ///< Preferred WiFi BSSID (empty = auto-select)
 
     // ========================================================================
     // BUZZER SETTINGS
@@ -234,6 +235,7 @@ class SettingsManager // NOSONAR
     int    getWifiAPDurationMinutes();
     int    getWatchdogTimeoutSeconds();
     bool   getWifiLedEnabled() const;
+    String getWifiBssidPreference() const;
     bool   getWifiChanged() const;
     
     // Buzzer settings getters
@@ -290,6 +292,7 @@ class SettingsManager // NOSONAR
     void setWifiAPDurationMinutes(int minutes);
     void setWatchdogTimeoutSeconds(int seconds);
     void setWifiLedEnabled(bool enabled);
+    void setWifiBssidPreference(const String& bssid);
     void setWifiChanged(bool changed);
     
     // Buzzer settings setters

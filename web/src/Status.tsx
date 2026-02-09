@@ -1111,6 +1111,15 @@ function Status() {
                       <div class="stat-desc">{systemStatus()?.wifi_ssid || "Unknown"}</div>
                     </div>
                   </Show>
+
+                  <Show when={systemStatus()?.wifi_ip}>
+                    <div class="stat">
+                      <div class="stat-title">Network</div>
+                      <div class="stat-value text-lg">{systemStatus()?.wifi_ip}</div>
+                      <div class="stat-desc">MAC: {systemStatus()?.wifi_mac || "N/A"}</div>
+                      <div class="stat-desc">BSSID: {systemStatus()?.wifi_bssid || "N/A"}</div>
+                    </div>
+                  </Show>
                 </div>
               </Show>
             </div>
