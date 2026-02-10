@@ -14,7 +14,9 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
 | Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
 
-**Current Build:** RAM 17.3% (56,588 bytes), Flash 98.7% (1,293,321 bytes)
+**Current Build:** RAM 17.3% (56,588 bytes), Flash 98.5% (1,291,145 bytes)
+
+**Latest Build (2026-02-10):** Firmware and web UI builds successful
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. Actual functionality hasn't been checked for correctness.
 

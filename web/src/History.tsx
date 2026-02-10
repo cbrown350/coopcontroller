@@ -18,10 +18,20 @@ interface DataPoint {
 }
 
 function History() {
+  let initialAutoRefresh = false
+  if (typeof window !== 'undefined') {
+    try {
+      initialAutoRefresh = sessionStorage.getItem('historyAutoRefresh') === 'true'
+    } catch {
+      // Ignore storage errors (private mode, quota, etc.)
+    }
+  }
+
   const [loading, setLoading] = createSignal(true)
   const [historyData, setHistoryData] = createSignal<DataPoint[]>([])
   const [error, setError] = createSignal('')
-  const [autoRefresh, setAutoRefresh] = createSignal(false)
+  const [autoRefresh, setAutoRefresh] = createSignal(initialAutoRefresh)
+  const autoRefreshStorageKey = 'historyAutoRefresh'
 
   let tempChartRef: HTMLCanvasElement | undefined
   let pumpChartRef: HTMLCanvasElement | undefined
@@ -333,6 +343,15 @@ function History() {
 
     // Start the retry process
     setTimeout(() => tryUpdateCharts(), 0)
+  })
+
+  createEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      sessionStorage.setItem(autoRefreshStorageKey, String(autoRefresh()))
+    } catch {
+      // Ignore storage errors (private mode, quota, etc.)
+    }
   })
 
   onMount(() => {
