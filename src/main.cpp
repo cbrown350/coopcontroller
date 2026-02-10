@@ -287,10 +287,11 @@ void setup() // NOSONAR - complexity ok
     delay(2000);
     sunriseSunset.forceUpdate();
 
-    // Initialize historical data manager
+    // Initialize historical data manager (event-based capture)
     historyManager.begin(settingsManager.getHistoryEnabled(),
                          settingsManager.getHistoryBufferSize(),
-                         settingsManager.getHistorySampleIntervalSeconds());
+                         settingsManager.getHistoryTempMinIntervalSeconds(),
+                         settingsManager.getHistoryFlowMinIntervalSeconds());
     logger.logInfo("Historical data manager initialized");
 
     webServer.begin(sensorManager,
@@ -312,12 +313,6 @@ void setup() // NOSONAR - complexity ok
     unsigned long lastDoorUpdate = 0;
     unsigned long lastLightUpdate = 0;
 
-    // Event detection: track previous states for change detection
-    String prevDoorState = doorController.getStateString();
-    String prevDoorPosition = doorController.getPositionString();
-    bool prevPumpActive = pumpController.isPumpOn();
-    bool flowWasActive = false; // track if flow was non-zero
-    
     // main loop
     while(true) {
         
@@ -355,8 +350,8 @@ void setup() // NOSONAR - complexity ok
             lastSensorUpdate = currentTime;
             sensorManager.update();
 
-            // Update historical data manager with current readings (periodic sample)
-            historyManager.update(
+            // Check for state changes and record historical data (event-based)
+            historyManager.checkAndRecord(
                 sensorManager.getTemperature1F(),
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
@@ -467,40 +462,6 @@ void setup() // NOSONAR - complexity ok
             }
         }
 
-        // ============================================================
-        // Event detection: capture state changes between samples
-        // ============================================================
-        {
-            String curDoorState = doorController.getStateString();
-            String curDoorPosition = doorController.getPositionString();
-            bool curPumpActive = pumpController.isPumpOn();
-            float curFlowRate = sensorManager.getFlowRate1();
-            bool flowIsActive = (curFlowRate > 0.001f);
-
-            bool doorChanged = (curDoorState != prevDoorState || curDoorPosition != prevDoorPosition);
-            bool pumpChanged = (curPumpActive != prevPumpActive);
-            bool flowChanged = (flowIsActive != flowWasActive);
-
-            if (doorChanged || pumpChanged || flowChanged) {
-                historyManager.recordEvent(
-                    sensorManager.getTemperature1F(),
-                    curPumpActive,
-                    curFlowRate,
-                    lightController.getCurrentBrightness(),
-                    curDoorState,
-                    curDoorPosition,
-                    pumpController.getLastTriggerSourceString(),
-                    doorController.getLastTriggerSourceString(),
-                    lightController.getLastTriggerSourceString()
-                );
-
-                prevDoorState = curDoorState;
-                prevDoorPosition = curDoorPosition;
-                prevPumpActive = curPumpActive;
-                flowWasActive = flowIsActive;
-            }
-        }
-
         // Update pump controller
         if (currentTime - lastPumpUpdate >= PUMP_UPDATE_INTERVAL)
         {
@@ -510,7 +471,20 @@ void setup() // NOSONAR - complexity ok
 
             // Update pump controller with current status
             pumpController.update();
-            
+
+            // Capture pump state changes for history
+            historyManager.checkAndRecord(
+                sensorManager.getTemperature1F(),
+                pumpController.isPumpOn(),
+                sensorManager.getFlowRate1(),
+                lightController.getCurrentBrightness(),
+                doorController.getStateString(),
+                doorController.getPositionString(),
+                pumpController.getLastTriggerSourceString(),
+                doorController.getLastTriggerSourceString(),
+                lightController.getLastTriggerSourceString()
+            );
+
             // Check for pump flow error and trigger buzzer alert
             static unsigned long lastPumpErrorAlert = 0;
             if (pumpController.hasFlowError()) {
@@ -572,13 +546,39 @@ void setup() // NOSONAR - complexity ok
         {
             lastDoorUpdate = currentTime;
             doorController.update();
+
+            // Capture door state changes for history
+            historyManager.checkAndRecord(
+                sensorManager.getTemperature1F(),
+                pumpController.isPumpOn(),
+                sensorManager.getFlowRate1(),
+                lightController.getCurrentBrightness(),
+                doorController.getStateString(),
+                doorController.getPositionString(),
+                pumpController.getLastTriggerSourceString(),
+                doorController.getLastTriggerSourceString(),
+                lightController.getLastTriggerSourceString()
+            );
         }
-        
+
         // Update light controller
         if (currentTime - lastLightUpdate >= LIGHT_UPDATE_INTERVAL)
         {
             lastLightUpdate = currentTime;
             lightController.update();
+
+            // Capture light brightness changes for history
+            historyManager.checkAndRecord(
+                sensorManager.getTemperature1F(),
+                pumpController.isPumpOn(),
+                sensorManager.getFlowRate1(),
+                lightController.getCurrentBrightness(),
+                doorController.getStateString(),
+                doorController.getPositionString(),
+                pumpController.getLastTriggerSourceString(),
+                doorController.getLastTriggerSourceString(),
+                lightController.getLastTriggerSourceString()
+            );
         }
         
         // Update sunrise/sunset calculations (check every minute, but only recalculates every 24 hours)

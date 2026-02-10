@@ -210,7 +210,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void turnOn(TriggerSource trigger = TriggerSource::MANUAL);
+    void turnOn(TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Turn pump off manually
@@ -219,7 +219,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void turnOff(TriggerSource trigger = TriggerSource::MANUAL);
+    void turnOff(TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Enable or disable automatic mode
@@ -229,7 +229,7 @@ public:
      * @param enabled true to enable auto mode
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::MANUAL);
+    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Force a single pump cycle
@@ -238,7 +238,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void forceCycle(TriggerSource trigger = TriggerSource::MANUAL);
+    void forceCycle(TriggerSource trigger = TriggerSource::WEB_UI);
 
     // ========================================================================
     // STATUS METHODS

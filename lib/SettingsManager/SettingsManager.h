@@ -143,8 +143,9 @@ struct user_settings // NOSONAR
     // ========================================================================
 
     bool         history_enabled = true;             ///< Enable historical data collection
-    unsigned int history_sample_interval_seconds = 60; ///< Sample interval (default: 60 seconds)
-    unsigned int history_buffer_size = 1440;         ///< Buffer size (default: 1440 = 24 hours at 60s)
+    unsigned int history_temp_min_interval_seconds = 60; ///< Min interval for temp recordings (default: 60s)
+    unsigned int history_flow_min_interval_seconds = 10; ///< Min interval for flow recordings (default: 10s)
+    unsigned int history_buffer_size = 1440;         ///< Buffer size (default: 1440 data points)
 };
 
 /**
@@ -374,12 +375,14 @@ class SettingsManager // NOSONAR
 
     // Historical data collection getters
     bool         getHistoryEnabled() const;
-    unsigned int getHistorySampleIntervalSeconds() const;
+    unsigned int getHistoryTempMinIntervalSeconds() const;
+    unsigned int getHistoryFlowMinIntervalSeconds() const;
     unsigned int getHistoryBufferSize() const;
 
     // Historical data collection setters
     void setHistoryEnabled(bool enabled);
-    void setHistorySampleIntervalSeconds(unsigned int seconds);
+    void setHistoryTempMinIntervalSeconds(unsigned int seconds);
+    void setHistoryFlowMinIntervalSeconds(unsigned int seconds);
     void setHistoryBufferSize(unsigned int size);
 
     void factoryReset();

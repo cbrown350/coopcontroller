@@ -8,7 +8,7 @@
  * @brief Single data point in historical data
  *
  * Stores timestamp and sensor/controller values for a single moment in time.
- * Includes state information and trigger sources for debugging and analysis.
+ * Each point is a full snapshot captured when a meaningful state change occurs.
  * Uses fixed-size char arrays instead of String for vector safety.
  */
 struct DataPoint {
@@ -22,7 +22,7 @@ struct DataPoint {
     char pump_trigger[16];         ///< What triggered last pump state change
     char door_trigger[16];         ///< What triggered last door state change
     char light_trigger[16];        ///< What triggered last light state change
-    bool is_event;                 ///< true if this is an event capture, false if periodic sample
+    char event_type[16];           ///< What triggered this recording (temp, flow, pump, light, door)
 
     DataPoint()
         : timestamp(0)
@@ -30,7 +30,6 @@ struct DataPoint {
         , pump_active(false)
         , flow_rate(0.0f)
         , light_brightness(0)
-        , is_event(false)
     {
         strncpy(door_state, "UNKNOWN", sizeof(door_state) - 1);
         door_state[sizeof(door_state) - 1] = '\0';
@@ -42,52 +41,53 @@ struct DataPoint {
         door_trigger[sizeof(door_trigger) - 1] = '\0';
         strncpy(light_trigger, "unknown", sizeof(light_trigger) - 1);
         light_trigger[sizeof(light_trigger) - 1] = '\0';
+        event_type[0] = '\0';
     }
 };
 
 /**
- * @brief Manager for historical sensor and controller data
+ * @brief Manager for historical sensor and controller data (event-based)
  *
  * Collects and stores historical data in RAM using a circular buffer.
- * Provides JSON export and CSV download functionality.
+ * Data is captured on state changes rather than at fixed intervals:
+ * - Pump, light, door: recorded immediately on any state change
+ * - Temperature: recorded when change >= 0.5F with configurable min interval
+ * - Flow rate: recorded when change > 0.001 GPM with configurable min interval
  *
  * Features:
- * - Configurable sample interval (default 60 seconds)
- * - Configurable buffer size (default 1440 samples = 24 hours at 60s)
+ * - Event-based capture dramatically reduces data point count
+ * - Configurable minimum intervals for temp and flow recordings
  * - Circular buffer automatically overwrites oldest data
- * - CSV export with proper headers
- * - JSON export for web visualization
- * - Minimal RAM footprint (~35KB for 24 hours of data)
- *
- * Memory Usage:
- * - Each DataPoint: ~80 bytes (with fixed char arrays)
- * - Default buffer (1440 samples): ~115KB
- *
- * Future Enhancements:
- * - Remote database storage (InfluxDB, PostgreSQL, etc.)
- * - Compression for longer retention
- * - SD card backup
+ * - CSV and JSON export methods
  */
 class HistoricalDataManager {
 private:
     std::vector<DataPoint> buffer;           ///< Circular buffer for data points
     size_t maxSize;                          ///< Maximum buffer size
     size_t currentIndex;                     ///< Current write position
-    unsigned long lastSampleTime;            ///< Last time a sample was taken
-    unsigned int sampleIntervalSeconds;      ///< How often to sample
     bool enabled;                            ///< Enable/disable data collection
+
+    // Change detection tracking
+    float prevTemperature;
+    float prevFlowRate;
+    bool prevPumpActive;
+    uint8_t prevLightBrightness;
+    char prevDoorState[16];
+    char prevDoorPosition[16];
+    unsigned long lastTempRecordTime;        ///< millis()/1000 of last temp-triggered record
+    unsigned long lastFlowRecordTime;        ///< millis()/1000 of last flow-triggered record
+    unsigned int tempMinIntervalSeconds;     ///< Min interval for temp recordings (default 60)
+    unsigned int flowMinIntervalSeconds;     ///< Min interval for flow recordings (default 10)
+    bool firstUpdate;                        ///< Always record on first call
 
     void addPoint(const DataPoint& point);
     DataPoint createPoint(float temperature_f, bool pump_active, float flow_rate,
                           uint8_t light_brightness, const String& door_state,
                           const String& door_position, const String& pump_trigger,
                           const String& door_trigger, const String& light_trigger,
-                          bool isEvent);
+                          const String& eventType);
 
 public:
-    /**
-     * @brief Constructor
-     */
     HistoricalDataManager();
 
     /**
@@ -95,116 +95,38 @@ public:
      *
      * @param enabled Enable data collection
      * @param bufferSize Maximum number of data points to store
-     * @param intervalSeconds Sample interval in seconds
+     * @param tempMinIntervalSec Minimum seconds between temperature recordings
+     * @param flowMinIntervalSec Minimum seconds between flow rate recordings
      */
-    void begin(bool enabled, size_t bufferSize, unsigned int intervalSeconds);
+    void begin(bool enabled, size_t bufferSize, unsigned int tempMinIntervalSec, unsigned int flowMinIntervalSec);
 
     /**
-     * @brief Update - call this in loop()
+     * @brief Check current state and record if anything changed
      *
-     * Checks if it's time to take a new sample and stores it.
-     *
-     * @param temperature_f Current temperature (Fahrenheit)
-     * @param pump_active Current pump state
-     * @param flow_rate Current flow rate (GPM)
-     * @param light_brightness Current light brightness (0-100)
-     * @param door_state Current door state string (OPEN, CLOSED, OPENING, etc.)
-     * @param door_position Current door position string (OPEN, CLOSED, PARTIAL, UNKNOWN)
-     * @param pump_trigger What triggered last pump state change
-     * @param door_trigger What triggered last door state change
-     * @param light_trigger What triggered last light state change
+     * Call this frequently (every loop iteration or controller update).
+     * Internally detects what changed and records a full snapshot when:
+     * - Pump state changed (immediate)
+     * - Door state/position changed (immediate)
+     * - Light brightness changed (immediate)
+     * - Flow rate changed by >0.001 GPM (with min interval)
+     * - Temperature changed by >=0.5F (with min interval)
      */
-    void update(float temperature_f, bool pump_active, float flow_rate, uint8_t light_brightness,
-                const String& door_state, const String& door_position, const String& pump_trigger,
-                const String& door_trigger, const String& light_trigger);
+    void checkAndRecord(float temperature_f, bool pump_active, float flow_rate,
+                        uint8_t light_brightness, const String& door_state,
+                        const String& door_position, const String& pump_trigger,
+                        const String& door_trigger, const String& light_trigger);
 
-    /**
-     * @brief Record an event immediately (bypasses sample interval)
-     *
-     * Use this to capture state changes that happen between periodic samples,
-     * such as door open/close, pump on/off, or flow changes.
-     * Events are stored in the same buffer as samples but marked with is_event=true.
-     *
-     * @param temperature_f Current temperature (Fahrenheit)
-     * @param pump_active Current pump state
-     * @param flow_rate Current flow rate (GPM)
-     * @param light_brightness Current light brightness (0-100)
-     * @param door_state Current door state string
-     * @param door_position Current door position string
-     * @param pump_trigger What triggered last pump state change
-     * @param door_trigger What triggered last door state change
-     * @param light_trigger What triggered last light state change
-     */
-    void recordEvent(float temperature_f, bool pump_active, float flow_rate, uint8_t light_brightness,
-                     const String& door_state, const String& door_position, const String& pump_trigger,
-                     const String& door_trigger, const String& light_trigger);
-
-    /**
-     * @brief Get all data points as JSON array string
-     *
-     * Returns JSON array of all stored data points, ordered from oldest to newest.
-     * Format: [{"timestamp":123,"temperature_f":45.6,"pump_active":true,...},...]
-     *
-     * @return JSON string
-     */
     String getDataAsJson() const;
-
-    /**
-     * @brief Get all data points as CSV string
-     *
-     * Returns CSV formatted data with headers.
-     * Format: timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,pump_trigger,door_trigger,light_trigger
-     *
-     * @return CSV string
-     */
     String getDataAsCsv() const;
-
-    /**
-     * @brief Clear all stored data
-     */
     void clear();
-
-    /**
-     * @brief Get number of stored data points
-     *
-     * @return Number of data points currently in buffer
-     */
     size_t getDataPointCount() const;
-
-    /**
-     * @brief Get buffer capacity
-     *
-     * @return Maximum number of data points buffer can hold
-     */
     size_t getBufferCapacity() const { return maxSize; }
-
-    /**
-     * @brief Check if data collection is enabled
-     *
-     * @return true if enabled
-     */
     bool isEnabled() const { return enabled; }
-
-    /**
-     * @brief Enable/disable data collection
-     *
-     * @param enable true to enable, false to disable
-     */
     void setEnabled(bool enable) { enabled = enable; }
-
-    /**
-     * @brief Get sample interval
-     *
-     * @return Sample interval in seconds
-     */
-    unsigned int getSampleInterval() const { return sampleIntervalSeconds; }
-
-    /**
-     * @brief Set sample interval
-     *
-     * @param seconds New sample interval
-     */
-    void setSampleInterval(unsigned int seconds) { sampleIntervalSeconds = seconds; }
+    unsigned int getTempMinInterval() const { return tempMinIntervalSeconds; }
+    void setTempMinInterval(unsigned int seconds) { tempMinIntervalSeconds = seconds; }
+    unsigned int getFlowMinInterval() const { return flowMinIntervalSeconds; }
+    void setFlowMinInterval(unsigned int seconds) { flowMinIntervalSeconds = seconds; }
 };
 
 #endif // HISTORICAL_DATA_MANAGER_H

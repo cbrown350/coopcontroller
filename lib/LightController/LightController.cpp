@@ -484,9 +484,9 @@ void LightController::checkSchedule() {
 
     // Auto mode uses fades for smooth transitions
     if (shouldTurnOnBySchedule()) {
-        fadeIn(TriggerSource::AUTOMATIC);
+        fadeIn(TriggerSource::TIMER);
     } else if (shouldTurnOffBySchedule()) {
-        fadeOut(TriggerSource::AUTOMATIC);
+        fadeOut(TriggerSource::TIMER);
     }
 }
 

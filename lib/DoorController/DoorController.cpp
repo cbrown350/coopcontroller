@@ -340,10 +340,10 @@ void DoorController::checkManualSwitch() { // NOSONAR - complexity ok
             // Clear fault and toggle
             clearFault();
             if (currentPosition == DoorPosition::CLOSED || currentPosition == DoorPosition::UNKNOWN) {
-                open();
+                open(TriggerSource::MANUAL_BUTTON);
                 logger.logInfo("  Action: Cleared fault, opening door");
             } else {
-                close();
+                close(TriggerSource::MANUAL_BUTTON);
                 logger.logInfo("  Action: Cleared fault, closing door");
             }
             lastMovementDirection = DoorState::IDLE;
@@ -351,21 +351,21 @@ void DoorController::checkManualSwitch() { // NOSONAR - complexity ok
             // In stopped states (IDLE/OPEN/CLOSED), handle button press
             if (lastMovementDirection == DoorState::OPENING) {
                 // Was opening, now stopped - reverse to close
-                close();
+                close(TriggerSource::MANUAL_BUTTON);
                 lastMovementDirection = DoorState::IDLE;
                 logger.logInfo("  Action: Reversing to CLOSE");
             } else if (lastMovementDirection == DoorState::CLOSING) {
                 // Was closing, now stopped - reverse to open
-                open();
+                open(TriggerSource::MANUAL_BUTTON);
                 lastMovementDirection = DoorState::IDLE;
                 logger.logInfo("  Action: Reversing to OPEN");
             } else {
                 // Normal toggle based on position
                 if (currentPosition == DoorPosition::CLOSED || currentPosition == DoorPosition::UNKNOWN) { // NOSONAR - complexity ok
-                    open();
+                    open(TriggerSource::MANUAL_BUTTON);
                     logger.logInfo("  Action: Opening door (normal toggle)");
                 } else {
-                    close();
+                    close(TriggerSource::MANUAL_BUTTON);
                     logger.logInfo("  Action: Closing door (normal toggle)");
                 }
             }
@@ -390,11 +390,11 @@ void DoorController::checkTimeout() {
 void DoorController::checkSchedule() {
     if (lockoutEnabled) return;
     if (shouldOpenBySchedule() && currentPosition != DoorPosition::OPEN) {
-        logger.logInfo("Schedule: Opening door");
-        open(TriggerSource::AUTOMATIC);
+        logger.logInfo("Schedule: Opening door (sunrise)");
+        open(TriggerSource::SUNRISE);
     } else if (shouldCloseBySchedule() && currentPosition != DoorPosition::CLOSED) {
-        logger.logInfo("Schedule: Closing door");
-        close(TriggerSource::AUTOMATIC);
+        logger.logInfo("Schedule: Closing door (sunset)");
+        close(TriggerSource::SUNSET);
     }
 }
 

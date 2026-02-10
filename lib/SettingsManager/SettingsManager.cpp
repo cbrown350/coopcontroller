@@ -482,8 +482,12 @@ bool SettingsManager::getHistoryEnabled() const {
     return settings.history_enabled;
 }
 
-unsigned int SettingsManager::getHistorySampleIntervalSeconds() const {
-    return settings.history_sample_interval_seconds;
+unsigned int SettingsManager::getHistoryTempMinIntervalSeconds() const {
+    return settings.history_temp_min_interval_seconds;
+}
+
+unsigned int SettingsManager::getHistoryFlowMinIntervalSeconds() const {
+    return settings.history_flow_min_interval_seconds;
 }
 
 unsigned int SettingsManager::getHistoryBufferSize() const {
@@ -495,12 +499,16 @@ void SettingsManager::setHistoryEnabled(bool enabled) {
     settings.history_enabled = enabled;
 }
 
-void SettingsManager::setHistorySampleIntervalSeconds(unsigned int seconds) {
-    settings.history_sample_interval_seconds = constrain(seconds, 10, 3600); // 10s to 1 hour
+void SettingsManager::setHistoryTempMinIntervalSeconds(unsigned int seconds) {
+    settings.history_temp_min_interval_seconds = constrain(seconds, 10, 3600); // 10s to 1 hour
+}
+
+void SettingsManager::setHistoryFlowMinIntervalSeconds(unsigned int seconds) {
+    settings.history_flow_min_interval_seconds = constrain(seconds, 5, 300); // 5s to 5 minutes
 }
 
 void SettingsManager::setHistoryBufferSize(unsigned int size) {
-    settings.history_buffer_size = constrain(size, 60, 10080); // 1 hour to 1 week at 60s interval
+    settings.history_buffer_size = constrain(size, 60, 10080);
 }
 
 // Syslog configuration getters
@@ -722,7 +730,12 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
 
     // Load historical data collection settings
     settings.history_enabled = doc["history_enabled"] | defaultSettings.history_enabled;
-    settings.history_sample_interval_seconds = doc["history_sample_interval_seconds"] | defaultSettings.history_sample_interval_seconds;
+    settings.history_temp_min_interval_seconds = doc["history_temp_min_interval_seconds"] | defaultSettings.history_temp_min_interval_seconds;
+    settings.history_flow_min_interval_seconds = doc["history_flow_min_interval_seconds"] | defaultSettings.history_flow_min_interval_seconds;
+    // Backward compat: old history_sample_interval_seconds maps to temp interval
+    if (doc["history_sample_interval_seconds"].is<unsigned int>()) {
+        settings.history_temp_min_interval_seconds = doc["history_sample_interval_seconds"].as<unsigned int>();
+    }
     settings.history_buffer_size = doc["history_buffer_size"] | defaultSettings.history_buffer_size;
 }
 
@@ -812,7 +825,8 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
 
     // Historical data collection
     doc["history_enabled"] = settings.history_enabled;
-    doc["history_sample_interval_seconds"] = settings.history_sample_interval_seconds;
+    doc["history_temp_min_interval_seconds"] = settings.history_temp_min_interval_seconds;
+    doc["history_flow_min_interval_seconds"] = settings.history_flow_min_interval_seconds;
     doc["history_buffer_size"] = settings.history_buffer_size;
 
     return doc;

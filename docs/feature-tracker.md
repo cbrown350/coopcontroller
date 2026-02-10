@@ -14,7 +14,7 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
 | Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
 
-**Current Build:** RAM 17.3% (56,588 bytes), Flash 98.7% (1,293,481 bytes)
+**Current Build:** RAM 17.3% (56,596 bytes), Flash 99.5% (1,303,537 bytes)
 
 **Latest Build (2026-02-10):** Firmware and web UI builds successful
 
@@ -42,70 +42,76 @@ This document tracks all features: completed, in-progress, and planned.
 
 ## Completed Features
 
-### Historical Data Visualization ✅
+### Historical Data Visualization (Event-Based) ✅
 
-**Implemented:** 2026-02-09
+**Implemented:** 2026-02-09 (initial), 2026-02-10 (refactored to event-based)
 **Status:** Complete and tested
-**Implementation:** Direct implementation with in-RAM storage and CSV export
+**Implementation:** Event-based capture with in-RAM storage and CSV export
 
 **Summary:**
-Added historical data collection, storage, visualization, and export capabilities. Data is stored in RAM with configurable sampling and buffer size, providing 24 hours of history by default at 60-second intervals. Tracks temperature, pump state, flow rate, light brightness, door state, door position, and trigger sources for all controller state changes. Includes event-based capture for state changes that occur between periodic samples.
+Historical data collection using event-based capture instead of fixed-interval sampling. Data is recorded only when meaningful state changes occur, dramatically reducing data point count (~150-300/day vs ~1440/day with periodic sampling). Tracks temperature, pump state, flow rate, light brightness, door state, door position, and trigger sources. Each data point includes an `event_type` field indicating what triggered the recording.
+
+**Capture Strategy:**
+- **Pump, Light, Door:** Recorded immediately on any state change (no minimum interval)
+- **Temperature:** Recorded when change >= 0.5°F with configurable minimum interval (default 60s)
+- **Flow Rate:** Recorded when change > 0.001 GPM with configurable minimum interval (default 10s)
+- **First update:** Always records initial state snapshot on boot
 
 **Key Changes:**
 
 1. **Backend (HistoricalDataManager)**
-   - Created new component `lib/HistoricalDataManager/` with circular buffer for data storage
+   - Created component `lib/HistoricalDataManager/` with circular buffer for data storage
    - Stores temperature, pump state, flow rate, light brightness, door state, door position, and trigger sources
-   - Tracks what triggered each state change (manual, web, api, auto, sensor, etc.)
-   - Configurable sample interval (default: 60 seconds) and buffer size (default: 1440 samples)
-   - Memory efficient: ~96 bytes per sample, ~138KB for 24 hours
+   - Event-based `checkAndRecord()` method with internal change detection replaces periodic `update()` + `recordEvent()`
+   - Each data point has `event_type` field: "temp", "flow", "pump", "light", "door"
+   - Configurable minimum intervals for temperature and flow recordings
+   - Memory efficient: ~96 bytes per data point
    - Automatic oldest-data overwrite when buffer is full
    - JSON and CSV export methods with all fields
-   - **Event-based capture**: `recordEvent()` method immediately captures state changes (door open/close, pump on/off, flow start/stop) between periodic samples
-   - **Door position tracking**: Records physical door position (OPEN, CLOSED, PARTIAL, UNKNOWN) in addition to operational state
-   - **Event flag**: Each data point has `is_event` field distinguishing events from periodic samples
 
-2. **Backend (SettingsManager)**
-   - Added historical data settings: `history_enabled`, `history_sample_interval_seconds`, `history_buffer_size`
-   - Getters/setters with proper constraints (10s-1hr interval, 60-10080 buffer size)
-   - JSON serialization/deserialization support
+2. **Backend (TriggerSource - Granular Event Sources)**
+   - Expanded TriggerSource enum from 9 to 15 values for precise event tracking
+   - `MANUAL` → `MANUAL_BUTTON` (physical button/switch press)
+   - `AUTOMATIC` → split into: `SUNRISE`, `SUNSET`, `AUTO_CLOSE_SUNSET`, `TIMER`
+   - `SENSOR` → split into: `TEMP_THRESHOLD`, `TEMP_CYCLE`, `FLOW_FAULT`
+   - Added: `MAINTENANCE_CYCLE`
+   - All controller default params changed from `MANUAL` to `WEB_UI`
+   - DoorController: `checkManualSwitch()` uses `MANUAL_BUTTON`, `checkSchedule()` uses `SUNRISE`/`SUNSET`
+   - PumpController: Temperature triggers use `TEMP_THRESHOLD`/`TEMP_CYCLE`, maintenance uses `MAINTENANCE_CYCLE`
+   - LightController: Schedule uses `TIMER`
 
-3. **Backend (CoopControllerWebServer)**
-   - Added REST API endpoints for historical data:
+3. **Backend (SettingsManager)**
+   - Settings: `history_enabled`, `history_temp_min_interval_seconds` (default 60), `history_flow_min_interval_seconds` (default 10), `history_buffer_size`
+   - Getters/setters with proper constraints (temp: 10-3600s, flow: 5-300s)
+   - Backward compatibility: reads old `history_sample_interval_seconds` during deserialization
+
+4. **Backend (CoopControllerWebServer)**
+   - REST API endpoints for historical data:
      - `GET /data/history` - Returns JSON array of all data points
      - `GET /data/export_csv` - Downloads CSV file with proper headers
      - `POST /data/clear` - Clears all historical data (protected)
-   - Updated authentication to include new endpoints (2 public, 1 protected)
+   - `/update_settings` handles history settings (enabled, temp/flow intervals, buffer size)
 
-4. **Backend (main.cpp)**
-   - Integrated HistoricalDataManager into main loop
-   - Initialization with settings on boot
-   - Periodic `update()` call on every sensor update cycle for regular sampling
-   - Event detection: tracks previous door state/position, pump state, and flow activity
-   - Calls `recordEvent()` immediately when door, pump, or flow state changes detected
-   - Passes temperature, pump state, flow rate, light brightness, door state, door position, and trigger sources
+5. **Backend (main.cpp)**
+   - Integrated `checkAndRecord()` after each controller update for prompt state change capture
+   - Removed old event detection block (prevDoorState, prevPumpActive, flowWasActive tracking)
+   - Simplified integration: HistoricalDataManager handles all change detection internally
 
-5. **Frontend (Web UI)**
-   - Created new `History.tsx` component with Chart.js integration
-   - Added `/history` route to router (index.tsx)
-   - Added "History" tab to navigation (App.tsx)
-   - Interactive charts for temperature, pump state, flow rate, light brightness, and door state/position
-   - Chart tooltips display trigger source information for pump, light, and door state changes
-   - Door chart shows both operational state and physical position as dual datasets
-   - Event data points highlighted with red markers on all charts (pump, flow, door)
-   - Tooltips show [EVENT] tag for event-captured data points
-   - Data point counter shows breakdown of samples vs events
-   - Controls: Refresh, Download CSV, Clear History, Auto-refresh toggle
-   - Responsive design matching existing UI patterns
+6. **Frontend (Web UI)**
+   - History.tsx: Chart.js charts for temperature, pump, flow, light, door state/position
+   - Event-type-specific markers: each chart highlights its own event type with red dots
+   - Tooltips show `[event_type]` tag (e.g., [pump], [door], [temp])
+   - Data point counter shows breakdown by event type (temp/flow/pump/light/door)
+   - Settings.tsx: New "Historical Data Settings" section with enable toggle, temp/flow interval inputs, buffer size
+   - types.ts: Added history settings to Settings interface
 
 **Features:**
+- **Event-based capture** - Records only on meaningful state changes, not at fixed intervals
+- **Granular trigger sources** - 15 distinct trigger types (button, web UI, sunrise, sunset, temp threshold, etc.)
+- **Configurable intervals** - Temperature and flow minimum recording intervals adjustable via web UI
 - **Real-time visualization** - Interactive line charts with Chart.js
-- **Event-based capture** - Door, pump, and flow state changes captured immediately between samples
-- **Door position tracking** - Physical position (OPEN, CLOSED, PARTIAL) tracked alongside operational state
-- **CSV export** - Download historical data for offline analysis (includes event flag and door position)
-- **Configurable storage** - Sample interval and buffer size adjustable in settings
+- **CSV export** - Download historical data for offline analysis
 - **Memory efficient** - Circular buffer with predictable memory footprint
-- **Future-ready** - Architecture supports upgrade to remote database (marked in docs)
 
 **API Endpoints (3 total):**
 - `GET /data/history` - Public, returns JSON data array
@@ -113,16 +119,15 @@ Added historical data collection, storage, visualization, and export capabilitie
 - `POST /data/clear` - Protected, clears all history
 
 **Build Status:**
-- Firmware: Compiled successfully with zero errors
+- Firmware: Compiled successfully (RAM 17.3%, Flash 99.5%)
 - Web UI: Compiled successfully with zero TypeScript errors
-- Memory: Within acceptable limits (RAM < 20%, Flash < 97%)
+- Tests: 488/488 passing
 
 **Future Enhancements:**
 - Remote database storage (InfluxDB, PostgreSQL)
 - Data compression for longer retention
 - SD card backup for permanent storage
 - Configurable data retention policies
-- Additional metrics (door state, buzzer events)
 
 ---
 
@@ -930,7 +935,7 @@ Applied custom DaisyUI theme with warm agricultural color palette inspired by th
 
 Features organized by priority and implementation status.
 
-> **Flash Constraint Note:** Firmware is at 96.7% flash usage (42,743 bytes remaining). Features requiring significant new libraries (Email/SMTP, Telegram/HTTP client, MQTT, Chart.js, etc.) are **blocked until flash optimization is performed** (e.g., custom partition scheme, code size reduction, or moving to ESP32-S3 with larger flash).
+> **Flash Constraint Note:** Firmware is at 99.5% flash usage (7,183 bytes remaining). Features requiring any new libraries are **blocked until flash optimization is performed** (e.g., custom partition scheme, code size reduction, or moving to ESP32-S3 with larger flash).
 
 ### High Priority - Monitoring & Notifications (Blocked by Flash)
 
@@ -983,17 +988,6 @@ Features organized by priority and implementation status.
 - Reduces network traffic and improves responsiveness
 - Maintain fallback to polling for compatibility
 - Implement on ESP32 using AsyncWebServer capabilities
-
-#### Historical Data Visualization
-- Add graphs showing past week of data (with 24-hour detailed view)
-- Temperature trends from both sensors
-- Water meter flow rates and totals
-- Pump on/off states and cycle history with trigger events logged
-- Light brightness levels over time with trigger events logged
-- Door open/close states and what triggered each operation (auto, manual, timer, etc.)
-- Use lightweight charting library (Chart.js or similar)
-- Include event markers showing what triggered state changes
-- **Blocker:** Requires charting library + data storage mechanism
 
 ### Medium Priority - API Integrations (Blocked by Flash)
 

@@ -13,7 +13,7 @@
 | **Build (firmware)** | `pio run` |
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
-| **Current build** | RAM 17.3%, Flash 96.7% (1,267,977 bytes) |
+| **Current build** | RAM 17.3%, Flash 99.5% (1,303,537 bytes) |
 | **Tests** | 488/488 passing (10 components) |
 | **Web access** | `http://coopcontroller.local` |
 
@@ -82,7 +82,7 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
-- Historical Data Visualization (RAM storage, CSV export, Chart.js charts, door state/position tracking, trigger source tracking, event-based capture for door/pump/flow changes between samples, 24hr default retention)
+- Historical Data Visualization - Event-Based (pure event-driven capture: pump/light/door on any change, temp at >=0.5°F delta with 60s min, flow at >0.001GPM with 10s min; granular trigger sources with 15 enum values; configurable intervals via web UI; Chart.js charts with event-type markers; CSV export)
 - API Authentication (31 protected + 9 public endpoints)
 - Factory Reset on Boot (hardware button)
 - Scheduled Pump Maintenance Cycles

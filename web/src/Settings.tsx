@@ -110,6 +110,12 @@ function Settings() {
   // Flow calculation interval
   const [flowCalculationIntervalSeconds, setFlowCalculationIntervalSeconds] = createSignal<number | null>(null)
 
+  // History data settings
+  const [historyEnabled, setHistoryEnabled] = createSignal<boolean | null>(null)
+  const [historyTempMinIntervalSeconds, setHistoryTempMinIntervalSeconds] = createSignal<number | null>(null)
+  const [historyFlowMinIntervalSeconds, setHistoryFlowMinIntervalSeconds] = createSignal<number | null>(null)
+  const [historyBufferSize, setHistoryBufferSize] = createSignal<number | null>(null)
+
   // Unsaved changes tracking
   const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false)
 
@@ -193,6 +199,12 @@ function Settings() {
 
       // Load flow calculation interval
       setFlowCalculationIntervalSeconds(settings.flow_calculation_interval_seconds ?? 60)
+
+      // Load history data settings
+      setHistoryEnabled(settings.history_enabled ?? true)
+      setHistoryTempMinIntervalSeconds(settings.history_temp_min_interval_seconds ?? 60)
+      setHistoryFlowMinIntervalSeconds(settings.history_flow_min_interval_seconds ?? 10)
+      setHistoryBufferSize(settings.history_buffer_size ?? 500)
 
       setLoaded(true)
       setError('')
@@ -293,7 +305,11 @@ function Settings() {
         wifi_bssid_preference: wifiBssidPreference() ?? '',
         syslog_server: syslogServer() ?? '',
         syslog_port: syslogPort() ?? 514,
-        flow_calculation_interval_seconds: flowCalculationIntervalSeconds() ?? 60
+        flow_calculation_interval_seconds: flowCalculationIntervalSeconds() ?? 60,
+        history_enabled: historyEnabled() ?? true,
+        history_temp_min_interval_seconds: historyTempMinIntervalSeconds() ?? 60,
+        history_flow_min_interval_seconds: historyFlowMinIntervalSeconds() ?? 10,
+        history_buffer_size: historyBufferSize() ?? 500
       }
 
       // Handle WiFi password: either set new password, clear it, or don't change it
@@ -1289,6 +1305,65 @@ function Settings() {
         </Show>
         <div class="fieldset-label">Minutes after sunset to auto-close door (default: 0 = immediate)</div>
       </fieldset>
+
+          <h2 class="text-lg font-bold mb-4 mt-10">Historical Data Settings</h2>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">History Data Collection</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Historical Data Collection</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={historyEnabled() ?? true}
+                  onChange={(e) => setHistoryEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Collect sensor and controller state changes for historical charts. Data is stored in RAM.
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <Show when={historyEnabled()}>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Temperature Min Interval (seconds)</legend>
+                <Show when={loaded()}>
+                  <input type="number" value={historyTempMinIntervalSeconds()!} onInput={(e) => setHistoryTempMinIntervalSeconds(parseInt(e.target.value))} placeholder="60" step="1" min="10" max="3600" class="input" />
+                </Show>
+                <Show when={!loaded()}>
+                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                </Show>
+                <div class="fieldset-label">Minimum seconds between temperature recordings (10-3600, default: 60). Only records when change exceeds 0.5°F.</div>
+              </fieldset>
+
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Flow Rate Min Interval (seconds)</legend>
+                <Show when={loaded()}>
+                  <input type="number" value={historyFlowMinIntervalSeconds()!} onInput={(e) => setHistoryFlowMinIntervalSeconds(parseInt(e.target.value))} placeholder="10" step="1" min="5" max="300" class="input" />
+                </Show>
+                <Show when={!loaded()}>
+                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                </Show>
+                <div class="fieldset-label">Minimum seconds between flow rate recordings (5-300, default: 10). Only records on change.</div>
+              </fieldset>
+            </div>
+
+            <fieldset class="fieldset mt-4">
+              <legend class="fieldset-legend">Buffer Size (data points)</legend>
+              <Show when={loaded()}>
+                <input type="number" value={historyBufferSize()!} onInput={(e) => setHistoryBufferSize(parseInt(e.target.value))} placeholder="500" step="50" min="50" max="2000" class="input" />
+              </Show>
+              <Show when={!loaded()}>
+                <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+              </Show>
+              <div class="fieldset-label">Maximum data points to store in RAM (50-2000, default: 500). Oldest data is overwritten when full. Pump, light, and door events are captured immediately on any change.</div>
+            </fieldset>
+          </Show>
 
           <h2 class="text-lg font-bold mb-4 mt-10">Advanced Settings</h2>
 

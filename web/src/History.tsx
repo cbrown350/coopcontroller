@@ -16,7 +16,7 @@ interface DataPoint {
   pump_trigger: string
   door_trigger: string
   light_trigger: string
-  is_event: boolean
+  event_type: string
 }
 
 function History() {
@@ -160,8 +160,8 @@ function History() {
             backgroundColor: 'rgba(34, 197, 94, 0.2)',
             stepped: true,
             fill: true,
-            pointRadius: data.map(d => d.is_event ? 5 : 2),
-            pointBackgroundColor: data.map(d => d.is_event ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)')
+            pointRadius: data.map(d => d.event_type === 'pump' ? 5 : 2),
+            pointBackgroundColor: data.map(d => d.event_type === 'pump' ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)')
           }]
         },
         options: {
@@ -174,7 +174,7 @@ function History() {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
                   const state = dataPoint.pump_active ? 'ON' : 'OFF'
-                  const eventTag = dataPoint.is_event ? ' [EVENT]' : ''
+                  const eventTag = dataPoint.event_type ? ` [${dataPoint.event_type}]` : ''
                   return `Pump: ${state} (Trigger: ${dataPoint.pump_trigger})${eventTag}`
                 }
               }
@@ -210,8 +210,8 @@ function History() {
             borderColor: 'rgb(168, 85, 247)',
             backgroundColor: 'rgba(168, 85, 247, 0.1)',
             tension: 0.3,
-            pointRadius: data.map(d => d.is_event ? 5 : 2),
-            pointBackgroundColor: data.map(d => d.is_event ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)')
+            pointRadius: data.map(d => d.event_type === 'flow' ? 5 : 2),
+            pointBackgroundColor: data.map(d => d.event_type === 'flow' ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)')
           }]
         },
         options: {
@@ -223,7 +223,7 @@ function History() {
               callbacks: {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
-                  const eventTag = dataPoint.is_event ? ' [EVENT]' : ''
+                  const eventTag = dataPoint.event_type ? ` [${dataPoint.event_type}]` : ''
                   return `Flow: ${dataPoint.flow_rate.toFixed(3)} GPM${eventTag}`
                 }
               }
@@ -312,8 +312,8 @@ function History() {
               backgroundColor: 'rgba(168, 85, 247, 0.2)',
               stepped: true,
               fill: true,
-              pointRadius: data.map(d => d.is_event ? 5 : 2),
-              pointBackgroundColor: data.map(d => d.is_event ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)')
+              pointRadius: data.map(d => d.event_type === 'door' ? 5 : 2),
+              pointBackgroundColor: data.map(d => d.event_type === 'door' ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)')
             },
             {
               label: 'Door Position',
@@ -322,8 +322,8 @@ function History() {
               borderDash: [5, 5],
               stepped: true,
               fill: false,
-              pointRadius: data.map(d => d.is_event ? 4 : 1),
-              pointBackgroundColor: data.map(d => d.is_event ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)')
+              pointRadius: data.map(d => d.event_type === 'door' ? 4 : 1),
+              pointBackgroundColor: data.map(d => d.event_type === 'door' ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)')
             }
           ]
         },
@@ -336,7 +336,7 @@ function History() {
               callbacks: {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
-                  const eventTag = dataPoint.is_event ? ' [EVENT]' : ''
+                  const eventTag = dataPoint.event_type ? ` [${dataPoint.event_type}]` : ''
                   if (context.datasetIndex === 0) {
                     return `State: ${dataPoint.door_state} (Trigger: ${dataPoint.door_trigger})${eventTag}`
                   }
@@ -437,7 +437,12 @@ function History() {
                     <div class="stat-title">Data Points</div>
                     <div class="stat-value text-lg">{historyData().length}</div>
                     <div class="stat-desc">
-                      {historyData().filter(d => !d.is_event).length} samples, {historyData().filter(d => d.is_event).length} events
+                      {(() => {
+                        const d = historyData()
+                        const counts = { temp: 0, flow: 0, pump: 0, light: 0, door: 0 }
+                        d.forEach(p => { if (p.event_type in counts) counts[p.event_type as keyof typeof counts]++ })
+                        return `temp:${counts.temp} flow:${counts.flow} pump:${counts.pump} light:${counts.light} door:${counts.door}`
+                      })()}
                     </div>
                   </div>
                 </div>

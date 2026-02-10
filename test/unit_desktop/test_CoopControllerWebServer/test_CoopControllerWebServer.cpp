@@ -134,7 +134,7 @@ protected:
         doorController.begin(&buzzerController, &sunriseSunset);
         lightController.begin(mockHal, &sunriseSunset);
         wifiController.begin(mockHal, &settingsManager, &buzzerController, "CoopController", "CoopAP");
-        historyManager.begin(true, 1440, 60);
+        historyManager.begin(true, 1440, 60, 10);
     }
 
     void TearDown() override {

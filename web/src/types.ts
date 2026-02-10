@@ -140,4 +140,8 @@ export interface Settings {
   syslog_server?: string;
   syslog_port?: number;
   flow_calculation_interval_seconds?: number;
+  history_enabled?: boolean;
+  history_temp_min_interval_seconds?: number;
+  history_flow_min_interval_seconds?: number;
+  history_buffer_size?: number;
 }

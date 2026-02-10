@@ -44,7 +44,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
     // Update settings endpoint - uses POST with JSON body
     hal->webServerOn("/update_settings", HAL_WebRequestMethod::HTTP_POST,
-              [this, &lightController, &tempSensor, &buzzerController, &doorController, &sunriseSunset](IWebRequest *request, IWebResponse *response) // NOSONAR
+              [this, &lightController, &tempSensor, &buzzerController, &doorController, &sunriseSunset, &historyManager](IWebRequest *request, IWebResponse *response) // NOSONAR
               {
                   // Authentication check
                   if (!isAuthenticated(request)) {
@@ -316,6 +316,25 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       settingsManager.setFlowCalculationIntervalSeconds(interval);
                       tempSensor.setFlowCalculationIntervalSeconds(interval);
                       logger.logInfo(String("Flow calculation interval: ") + String(interval) + " seconds");
+                  }
+
+                  // Handle history data settings
+                  if (jsonObj["history_enabled"].is<bool>()) {
+                      settingsManager.setHistoryEnabled(jsonObj["history_enabled"].as<bool>());
+                      historyManager.setEnabled(jsonObj["history_enabled"].as<bool>());
+                  }
+                  if (jsonObj["history_temp_min_interval_seconds"].is<int>()) {
+                      unsigned int interval = jsonObj["history_temp_min_interval_seconds"].as<unsigned int>();
+                      settingsManager.setHistoryTempMinIntervalSeconds(interval);
+                      historyManager.setTempMinInterval(interval);
+                  }
+                  if (jsonObj["history_flow_min_interval_seconds"].is<int>()) {
+                      unsigned int interval = jsonObj["history_flow_min_interval_seconds"].as<unsigned int>();
+                      settingsManager.setHistoryFlowMinIntervalSeconds(interval);
+                      historyManager.setFlowMinInterval(interval);
+                  }
+                  if (jsonObj["history_buffer_size"].is<int>()) {
+                      settingsManager.setHistoryBufferSize(jsonObj["history_buffer_size"].as<unsigned int>());
                   }
 
                   // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes

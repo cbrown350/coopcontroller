@@ -216,7 +216,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void turnOn(TriggerSource trigger = TriggerSource::MANUAL);
+    void turnOn(TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Turn light off
@@ -225,7 +225,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void turnOff(TriggerSource trigger = TriggerSource::MANUAL);
+    void turnOff(TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Set light brightness percentage
@@ -233,7 +233,7 @@ public:
      * @param percent Brightness level (0-100)
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void setBrightness(int percent, TriggerSource trigger = TriggerSource::MANUAL);
+    void setBrightness(int percent, TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Start fade-in transition
@@ -242,7 +242,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void fadeIn(TriggerSource trigger = TriggerSource::MANUAL);
+    void fadeIn(TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Start fade-out transition
@@ -251,7 +251,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void fadeOut(TriggerSource trigger = TriggerSource::MANUAL);
+    void fadeOut(TriggerSource trigger = TriggerSource::WEB_UI);
 
     // ========================================================================
     // AUTOMATIC MODE CONTROL
@@ -265,7 +265,7 @@ public:
      * @param enabled true to enable auto mode, false to disable
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::MANUAL);
+    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Check if automatic mode is enabled

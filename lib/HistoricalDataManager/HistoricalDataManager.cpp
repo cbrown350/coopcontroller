@@ -5,23 +5,39 @@
 HistoricalDataManager::HistoricalDataManager()
     : maxSize(1440)
     , currentIndex(0)
-    , lastSampleTime(0)
-    , sampleIntervalSeconds(60)
     , enabled(true)
+    , prevTemperature(NAN)
+    , prevFlowRate(0.0f)
+    , prevPumpActive(false)
+    , prevLightBrightness(0)
+    , lastTempRecordTime(0)
+    , lastFlowRecordTime(0)
+    , tempMinIntervalSeconds(60)
+    , flowMinIntervalSeconds(10)
+    , firstUpdate(true)
 {
-    // Don't reserve upfront - let vector grow naturally to avoid large allocation at startup
-    // This prevents heap fragmentation on ESP32
+    prevDoorState[0] = '\0';
+    prevDoorPosition[0] = '\0';
 }
 
-void HistoricalDataManager::begin(bool enableData, size_t bufferSize, unsigned int intervalSeconds) {
+void HistoricalDataManager::begin(bool enableData, size_t bufferSize,
+                                   unsigned int tempMinIntervalSec, unsigned int flowMinIntervalSec) {
     enabled = enableData;
     maxSize = bufferSize;
-    sampleIntervalSeconds = intervalSeconds;
+    tempMinIntervalSeconds = tempMinIntervalSec;
+    flowMinIntervalSeconds = flowMinIntervalSec;
 
-    // Clear buffer but don't reserve to avoid large heap allocation
     buffer.clear();
-
-    lastSampleTime = millis() / 1000; // Initialize to current time in seconds
+    currentIndex = 0;
+    firstUpdate = true;
+    prevTemperature = NAN;
+    prevFlowRate = 0.0f;
+    prevPumpActive = false;
+    prevLightBrightness = 0;
+    prevDoorState[0] = '\0';
+    prevDoorPosition[0] = '\0';
+    lastTempRecordTime = 0;
+    lastFlowRecordTime = 0;
 }
 
 void HistoricalDataManager::addPoint(const DataPoint& point) {
@@ -37,7 +53,7 @@ DataPoint HistoricalDataManager::createPoint(float temperature_f, bool pump_acti
                                               uint8_t light_brightness, const String& door_state,
                                               const String& door_position, const String& pump_trigger,
                                               const String& door_trigger, const String& light_trigger,
-                                              bool isEvent) {
+                                              const String& eventType) {
     DataPoint point;
     unsigned long currentTime = millis() / 1000;
     time_t now = time(nullptr);
@@ -46,7 +62,6 @@ DataPoint HistoricalDataManager::createPoint(float temperature_f, bool pump_acti
     point.pump_active = pump_active;
     point.flow_rate = flow_rate;
     point.light_brightness = light_brightness;
-    point.is_event = isEvent;
 
     strncpy(point.door_state, door_state.c_str(), sizeof(point.door_state) - 1);
     point.door_state[sizeof(point.door_state) - 1] = '\0';
@@ -58,43 +73,118 @@ DataPoint HistoricalDataManager::createPoint(float temperature_f, bool pump_acti
     point.door_trigger[sizeof(point.door_trigger) - 1] = '\0';
     strncpy(point.light_trigger, light_trigger.c_str(), sizeof(point.light_trigger) - 1);
     point.light_trigger[sizeof(point.light_trigger) - 1] = '\0';
+    strncpy(point.event_type, eventType.c_str(), sizeof(point.event_type) - 1);
+    point.event_type[sizeof(point.event_type) - 1] = '\0';
 
     return point;
 }
 
-void HistoricalDataManager::update(float temperature_f, bool pump_active, float flow_rate, uint8_t light_brightness,
-                                   const String& door_state, const String& door_position, const String& pump_trigger,
-                                   const String& door_trigger, const String& light_trigger) {
-    if (!enabled) {
-        return;
-    }
+// Helper to update all previous tracking values after recording
+#define UPDATE_ALL_PREV() do { \
+    prevTemperature = temperature_f; \
+    prevFlowRate = flow_rate; \
+    prevPumpActive = pump_active; \
+    prevLightBrightness = light_brightness; \
+    strncpy(prevDoorState, door_state.c_str(), sizeof(prevDoorState) - 1); \
+    prevDoorState[sizeof(prevDoorState) - 1] = '\0'; \
+    strncpy(prevDoorPosition, door_position.c_str(), sizeof(prevDoorPosition) - 1); \
+    prevDoorPosition[sizeof(prevDoorPosition) - 1] = '\0'; \
+} while(0)
+
+void HistoricalDataManager::checkAndRecord(float temperature_f, bool pump_active, float flow_rate,
+                                            uint8_t light_brightness, const String& door_state,
+                                            const String& door_position, const String& pump_trigger,
+                                            const String& door_trigger, const String& light_trigger) {
+    if (!enabled) return;
 
     unsigned long currentTime = millis() / 1000;
 
-    if (currentTime - lastSampleTime < sampleIntervalSeconds) {
+    // On first call, record initial state and initialize tracking
+    if (firstUpdate) {
+        firstUpdate = false;
+        UPDATE_ALL_PREV();
+        lastTempRecordTime = currentTime;
+        lastFlowRecordTime = currentTime;
+        DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
+                                       door_state, door_position, pump_trigger, door_trigger,
+                                       light_trigger, "temp");
+        addPoint(point);
         return;
     }
 
-    DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
-                                   door_state, door_position, pump_trigger, door_trigger,
-                                   light_trigger, false);
-    addPoint(point);
-    lastSampleTime = currentTime;
-}
-
-void HistoricalDataManager::recordEvent(float temperature_f, bool pump_active, float flow_rate,
-                                         uint8_t light_brightness, const String& door_state,
-                                         const String& door_position, const String& pump_trigger,
-                                         const String& door_trigger, const String& light_trigger) {
-    if (!enabled) {
+    // Check for pump state change (immediate)
+    if (pump_active != prevPumpActive) {
+        DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
+                                       door_state, door_position, pump_trigger, door_trigger,
+                                       light_trigger, "pump");
+        addPoint(point);
+        UPDATE_ALL_PREV();
+        lastTempRecordTime = currentTime;
+        lastFlowRecordTime = currentTime;
         return;
     }
 
-    DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
-                                   door_state, door_position, pump_trigger, door_trigger,
-                                   light_trigger, true);
-    addPoint(point);
+    // Check for door state/position change (immediate)
+    if (strcmp(prevDoorState, door_state.c_str()) != 0 ||
+        strcmp(prevDoorPosition, door_position.c_str()) != 0) {
+        DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
+                                       door_state, door_position, pump_trigger, door_trigger,
+                                       light_trigger, "door");
+        addPoint(point);
+        UPDATE_ALL_PREV();
+        lastTempRecordTime = currentTime;
+        lastFlowRecordTime = currentTime;
+        return;
+    }
+
+    // Check for light brightness change (immediate)
+    if (light_brightness != prevLightBrightness) {
+        DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
+                                       door_state, door_position, pump_trigger, door_trigger,
+                                       light_trigger, "light");
+        addPoint(point);
+        UPDATE_ALL_PREV();
+        lastTempRecordTime = currentTime;
+        lastFlowRecordTime = currentTime;
+        return;
+    }
+
+    // Check for flow rate change (with min interval)
+    float flowDelta = fabs(flow_rate - prevFlowRate);
+    if (flowDelta > 0.001f && (currentTime - lastFlowRecordTime >= flowMinIntervalSeconds)) {
+        lastFlowRecordTime = currentTime;
+        DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
+                                       door_state, door_position, pump_trigger, door_trigger,
+                                       light_trigger, "flow");
+        addPoint(point);
+        UPDATE_ALL_PREV();
+        lastTempRecordTime = currentTime;
+        return;
+    }
+
+    // Check for temperature change (with min interval)
+    bool tempChanged = false;
+    if (isnan(prevTemperature) && !isnan(temperature_f)) {
+        tempChanged = true;
+    } else if (!isnan(prevTemperature) && isnan(temperature_f)) {
+        tempChanged = true;
+    } else if (!isnan(prevTemperature) && !isnan(temperature_f)) {
+        tempChanged = fabs(temperature_f - prevTemperature) >= 0.5f;
+    }
+
+    if (tempChanged && (currentTime - lastTempRecordTime >= tempMinIntervalSeconds)) {
+        lastTempRecordTime = currentTime;
+        DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
+                                       door_state, door_position, pump_trigger, door_trigger,
+                                       light_trigger, "temp");
+        addPoint(point);
+        UPDATE_ALL_PREV();
+        lastFlowRecordTime = currentTime;
+        return;
+    }
 }
+
+#undef UPDATE_ALL_PREV
 
 String HistoricalDataManager::getDataAsJson() const {
     JsonDocument doc;
@@ -104,11 +194,9 @@ String HistoricalDataManager::getDataAsJson() const {
         return "[]";
     }
 
-    // Determine the starting index for oldest data
     size_t startIndex = buffer.size() < maxSize ? 0 : currentIndex;
     size_t count = buffer.size();
 
-    // Add data points in chronological order (oldest first)
     for (size_t i = 0; i < count; i++) {
         size_t index = (startIndex + i) % buffer.size();
         const DataPoint& point = buffer[index];
@@ -124,7 +212,7 @@ String HistoricalDataManager::getDataAsJson() const {
         obj["pump_trigger"] = point.pump_trigger;
         obj["door_trigger"] = point.door_trigger;
         obj["light_trigger"] = point.light_trigger;
-        obj["is_event"] = point.is_event;
+        obj["event_type"] = point.event_type;
     }
 
     String jsonString;
@@ -133,17 +221,15 @@ String HistoricalDataManager::getDataAsJson() const {
 }
 
 String HistoricalDataManager::getDataAsCsv() const {
-    String csv = "timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,door_position,pump_trigger,door_trigger,light_trigger,is_event\n";
+    String csv = "timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,door_position,pump_trigger,door_trigger,light_trigger,event_type\n";
 
     if (buffer.empty()) {
         return csv;
     }
 
-    // Determine the starting index for oldest data
     size_t startIndex = buffer.size() < maxSize ? 0 : currentIndex;
     size_t count = buffer.size();
 
-    // Add data points in chronological order (oldest first)
     for (size_t i = 0; i < count; i++) {
         size_t index = (startIndex + i) % buffer.size();
         const DataPoint& point = buffer[index];
@@ -164,7 +250,7 @@ String HistoricalDataManager::getDataAsCsv() const {
         csv += String(point.pump_trigger) + ",";
         csv += String(point.door_trigger) + ",";
         csv += String(point.light_trigger) + ",";
-        csv += point.is_event ? "true" : "false";
+        csv += String(point.event_type);
         csv += "\n";
     }
 
@@ -174,7 +260,7 @@ String HistoricalDataManager::getDataAsCsv() const {
 void HistoricalDataManager::clear() {
     buffer.clear();
     currentIndex = 0;
-    lastSampleTime = millis() / 1000;
+    firstUpdate = true;
 }
 
 size_t HistoricalDataManager::getDataPointCount() const {

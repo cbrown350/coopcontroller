@@ -266,7 +266,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void open(TriggerSource trigger = TriggerSource::MANUAL);
+    void open(TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Start closing the door
@@ -275,7 +275,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void close(TriggerSource trigger = TriggerSource::MANUAL);
+    void close(TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Stop door movement
@@ -284,7 +284,7 @@ public:
      *
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void stop(TriggerSource trigger = TriggerSource::MANUAL);
+    void stop(TriggerSource trigger = TriggerSource::WEB_UI);
 
     // ========================================================================
     // AUTOMATIC MODE CONTROL
@@ -298,7 +298,7 @@ public:
      * @param enabled true to enable auto mode, false to disable
      * @param trigger What triggered this action (default: MANUAL)
      */
-    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::MANUAL);
+    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
      * @brief Check if automatic mode is enabled
