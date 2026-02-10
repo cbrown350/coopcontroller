@@ -14,7 +14,7 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
 | Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
 
-**Current Build:** RAM 17.3% (56,588 bytes), Flash 98.5% (1,291,145 bytes)
+**Current Build:** RAM 17.3% (56,588 bytes), Flash 98.7% (1,293,481 bytes)
 
 **Latest Build (2026-02-10):** Firmware and web UI builds successful
 
@@ -49,18 +49,21 @@ This document tracks all features: completed, in-progress, and planned.
 **Implementation:** Direct implementation with in-RAM storage and CSV export
 
 **Summary:**
-Added historical data collection, storage, visualization, and export capabilities. Data is stored in RAM with configurable sampling and buffer size, providing 24 hours of history by default at 60-second intervals. Tracks temperature, pump state, flow rate, light brightness, door state, and trigger sources for all controller state changes.
+Added historical data collection, storage, visualization, and export capabilities. Data is stored in RAM with configurable sampling and buffer size, providing 24 hours of history by default at 60-second intervals. Tracks temperature, pump state, flow rate, light brightness, door state, door position, and trigger sources for all controller state changes. Includes event-based capture for state changes that occur between periodic samples.
 
 **Key Changes:**
 
 1. **Backend (HistoricalDataManager)**
    - Created new component `lib/HistoricalDataManager/` with circular buffer for data storage
-   - Stores temperature, pump state, flow rate, light brightness, door state, and trigger sources
+   - Stores temperature, pump state, flow rate, light brightness, door state, door position, and trigger sources
    - Tracks what triggered each state change (manual, web, api, auto, sensor, etc.)
    - Configurable sample interval (default: 60 seconds) and buffer size (default: 1440 samples)
-   - Memory efficient: ~80 bytes per sample, ~115KB for 24 hours
+   - Memory efficient: ~96 bytes per sample, ~138KB for 24 hours
    - Automatic oldest-data overwrite when buffer is full
    - JSON and CSV export methods with all fields
+   - **Event-based capture**: `recordEvent()` method immediately captures state changes (door open/close, pump on/off, flow start/stop) between periodic samples
+   - **Door position tracking**: Records physical door position (OPEN, CLOSED, PARTIAL, UNKNOWN) in addition to operational state
+   - **Event flag**: Each data point has `is_event` field distinguishing events from periodic samples
 
 2. **Backend (SettingsManager)**
    - Added historical data settings: `history_enabled`, `history_sample_interval_seconds`, `history_buffer_size`
@@ -77,24 +80,29 @@ Added historical data collection, storage, visualization, and export capabilitie
 4. **Backend (main.cpp)**
    - Integrated HistoricalDataManager into main loop
    - Initialization with settings on boot
-   - Update call on every sensor update cycle
-   - Passes temperature, pump state, flow rate, light brightness, door state, and trigger sources
-   - TODO markers for future trigger source tracking implementation in controllers
+   - Periodic `update()` call on every sensor update cycle for regular sampling
+   - Event detection: tracks previous door state/position, pump state, and flow activity
+   - Calls `recordEvent()` immediately when door, pump, or flow state changes detected
+   - Passes temperature, pump state, flow rate, light brightness, door state, door position, and trigger sources
 
 5. **Frontend (Web UI)**
    - Created new `History.tsx` component with Chart.js integration
    - Added `/history` route to router (index.tsx)
    - Added "History" tab to navigation (App.tsx)
-   - Interactive charts for temperature, pump state, flow rate, light brightness, and door state
+   - Interactive charts for temperature, pump state, flow rate, light brightness, and door state/position
    - Chart tooltips display trigger source information for pump, light, and door state changes
-   - Door state chart visualizes OPEN, CLOSED, OPENING, CLOSING, IDLE, and FAULT states
+   - Door chart shows both operational state and physical position as dual datasets
+   - Event data points highlighted with red markers on all charts (pump, flow, door)
+   - Tooltips show [EVENT] tag for event-captured data points
+   - Data point counter shows breakdown of samples vs events
    - Controls: Refresh, Download CSV, Clear History, Auto-refresh toggle
    - Responsive design matching existing UI patterns
-   - Shows data point count and empty state message
 
 **Features:**
 - **Real-time visualization** - Interactive line charts with Chart.js
-- **CSV export** - Download historical data for offline analysis
+- **Event-based capture** - Door, pump, and flow state changes captured immediately between samples
+- **Door position tracking** - Physical position (OPEN, CLOSED, PARTIAL) tracked alongside operational state
+- **CSV export** - Download historical data for offline analysis (includes event flag and door position)
 - **Configurable storage** - Sample interval and buffer size adjustable in settings
 - **Memory efficient** - Circular buffer with predictable memory footprint
 - **Future-ready** - Architecture supports upgrade to remote database (marked in docs)

@@ -12,9 +12,11 @@ interface DataPoint {
   flow_rate: number
   light_brightness: number
   door_state: string
+  door_position: string
   pump_trigger: string
   door_trigger: string
   light_trigger: string
+  is_event: boolean
 }
 
 function History() {
@@ -157,7 +159,9 @@ function History() {
             borderColor: 'rgb(34, 197, 94)',
             backgroundColor: 'rgba(34, 197, 94, 0.2)',
             stepped: true,
-            fill: true
+            fill: true,
+            pointRadius: data.map(d => d.is_event ? 5 : 2),
+            pointBackgroundColor: data.map(d => d.is_event ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)')
           }]
         },
         options: {
@@ -170,7 +174,8 @@ function History() {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
                   const state = dataPoint.pump_active ? 'ON' : 'OFF'
-                  return `Pump: ${state} (Trigger: ${dataPoint.pump_trigger})`
+                  const eventTag = dataPoint.is_event ? ' [EVENT]' : ''
+                  return `Pump: ${state} (Trigger: ${dataPoint.pump_trigger})${eventTag}`
                 }
               }
             }
@@ -204,14 +209,25 @@ function History() {
             data: data.map(d => d.flow_rate),
             borderColor: 'rgb(168, 85, 247)',
             backgroundColor: 'rgba(168, 85, 247, 0.1)',
-            tension: 0.3
+            tension: 0.3,
+            pointRadius: data.map(d => d.is_event ? 5 : 2),
+            pointBackgroundColor: data.map(d => d.is_event ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)')
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { display: true }
+            legend: { display: true },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const dataPoint = data[context.dataIndex]
+                  const eventTag = dataPoint.is_event ? ' [EVENT]' : ''
+                  return `Flow: ${dataPoint.flow_rate.toFixed(3)} GPM${eventTag}`
+                }
+              }
+            }
           },
           scales: {
             x: { display: false },
@@ -260,13 +276,12 @@ function History() {
       })
     }
 
-    // Door Chart
+    // Door Chart - shows both state and position
     if (doorChartRef) {
       if (doorChart) {
         doorChart.destroy()
       }
 
-      // Map door states to numeric values for visualization
       const doorStateToValue = (state: string) => {
         const upperState = state.toUpperCase()
         if (upperState === 'OPEN') return 2
@@ -277,18 +292,40 @@ function History() {
         return 1 // IDLE or UNKNOWN
       }
 
+      const doorPositionToValue = (position: string) => {
+        const upper = position.toUpperCase()
+        if (upper === 'OPEN') return 2
+        if (upper === 'CLOSED') return 0
+        if (upper === 'PARTIAL') return 1
+        return 1 // UNKNOWN
+      }
+
       doorChart = new Chart(doorChartRef, {
         type: 'line',
         data: {
           labels,
-          datasets: [{
-            label: 'Door State',
-            data: data.map(d => doorStateToValue(d.door_state)),
-            borderColor: 'rgb(168, 85, 247)',
-            backgroundColor: 'rgba(168, 85, 247, 0.2)',
-            stepped: true,
-            fill: true
-          }]
+          datasets: [
+            {
+              label: 'Door State',
+              data: data.map(d => doorStateToValue(d.door_state)),
+              borderColor: 'rgb(168, 85, 247)',
+              backgroundColor: 'rgba(168, 85, 247, 0.2)',
+              stepped: true,
+              fill: true,
+              pointRadius: data.map(d => d.is_event ? 5 : 2),
+              pointBackgroundColor: data.map(d => d.is_event ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)')
+            },
+            {
+              label: 'Door Position',
+              data: data.map(d => doorPositionToValue(d.door_position || 'UNKNOWN')),
+              borderColor: 'rgb(34, 197, 94)',
+              borderDash: [5, 5],
+              stepped: true,
+              fill: false,
+              pointRadius: data.map(d => d.is_event ? 4 : 1),
+              pointBackgroundColor: data.map(d => d.is_event ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)')
+            }
+          ]
         },
         options: {
           responsive: true,
@@ -299,7 +336,11 @@ function History() {
               callbacks: {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
-                  return `State: ${dataPoint.door_state} (Trigger: ${dataPoint.door_trigger})`
+                  const eventTag = dataPoint.is_event ? ' [EVENT]' : ''
+                  if (context.datasetIndex === 0) {
+                    return `State: ${dataPoint.door_state} (Trigger: ${dataPoint.door_trigger})${eventTag}`
+                  }
+                  return `Position: ${dataPoint.door_position || 'N/A'}${eventTag}`
                 }
               }
             }
@@ -314,7 +355,7 @@ function History() {
                 stepSize: 1,
                 callback: (value) => {
                   if (value === 2) return 'OPEN'
-                  if (value === 1) return 'IDLE'
+                  if (value === 1) return 'PARTIAL/IDLE'
                   if (value === 0) return 'CLOSED'
                   if (value === -1) return 'FAULT'
                   return ''
@@ -395,7 +436,9 @@ function History() {
                   <div class="stat">
                     <div class="stat-title">Data Points</div>
                     <div class="stat-value text-lg">{historyData().length}</div>
-                    <div class="stat-desc">Samples collected</div>
+                    <div class="stat-desc">
+                      {historyData().filter(d => !d.is_event).length} samples, {historyData().filter(d => d.is_event).length} events
+                    </div>
                   </div>
                 </div>
 

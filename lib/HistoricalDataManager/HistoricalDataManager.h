@@ -18,9 +18,11 @@ struct DataPoint {
     float flow_rate;               ///< Water flow rate (GPM)
     uint8_t light_brightness;      ///< Light brightness (0-100%)
     char door_state[16];           ///< Door state (OPEN, CLOSED, OPENING, CLOSING, etc.)
+    char door_position[16];        ///< Door position (OPEN, CLOSED, PARTIAL, UNKNOWN)
     char pump_trigger[16];         ///< What triggered last pump state change
     char door_trigger[16];         ///< What triggered last door state change
     char light_trigger[16];        ///< What triggered last light state change
+    bool is_event;                 ///< true if this is an event capture, false if periodic sample
 
     DataPoint()
         : timestamp(0)
@@ -28,9 +30,12 @@ struct DataPoint {
         , pump_active(false)
         , flow_rate(0.0f)
         , light_brightness(0)
+        , is_event(false)
     {
         strncpy(door_state, "UNKNOWN", sizeof(door_state) - 1);
         door_state[sizeof(door_state) - 1] = '\0';
+        strncpy(door_position, "UNKNOWN", sizeof(door_position) - 1);
+        door_position[sizeof(door_position) - 1] = '\0';
         strncpy(pump_trigger, "unknown", sizeof(pump_trigger) - 1);
         pump_trigger[sizeof(pump_trigger) - 1] = '\0';
         strncpy(door_trigger, "unknown", sizeof(door_trigger) - 1);
@@ -72,6 +77,13 @@ private:
     unsigned int sampleIntervalSeconds;      ///< How often to sample
     bool enabled;                            ///< Enable/disable data collection
 
+    void addPoint(const DataPoint& point);
+    DataPoint createPoint(float temperature_f, bool pump_active, float flow_rate,
+                          uint8_t light_brightness, const String& door_state,
+                          const String& door_position, const String& pump_trigger,
+                          const String& door_trigger, const String& light_trigger,
+                          bool isEvent);
+
 public:
     /**
      * @brief Constructor
@@ -97,13 +109,35 @@ public:
      * @param flow_rate Current flow rate (GPM)
      * @param light_brightness Current light brightness (0-100)
      * @param door_state Current door state string (OPEN, CLOSED, OPENING, etc.)
+     * @param door_position Current door position string (OPEN, CLOSED, PARTIAL, UNKNOWN)
      * @param pump_trigger What triggered last pump state change
      * @param door_trigger What triggered last door state change
      * @param light_trigger What triggered last light state change
      */
     void update(float temperature_f, bool pump_active, float flow_rate, uint8_t light_brightness,
-                const String& door_state, const String& pump_trigger,
+                const String& door_state, const String& door_position, const String& pump_trigger,
                 const String& door_trigger, const String& light_trigger);
+
+    /**
+     * @brief Record an event immediately (bypasses sample interval)
+     *
+     * Use this to capture state changes that happen between periodic samples,
+     * such as door open/close, pump on/off, or flow changes.
+     * Events are stored in the same buffer as samples but marked with is_event=true.
+     *
+     * @param temperature_f Current temperature (Fahrenheit)
+     * @param pump_active Current pump state
+     * @param flow_rate Current flow rate (GPM)
+     * @param light_brightness Current light brightness (0-100)
+     * @param door_state Current door state string
+     * @param door_position Current door position string
+     * @param pump_trigger What triggered last pump state change
+     * @param door_trigger What triggered last door state change
+     * @param light_trigger What triggered last light state change
+     */
+    void recordEvent(float temperature_f, bool pump_active, float flow_rate, uint8_t light_brightness,
+                     const String& door_state, const String& door_position, const String& pump_trigger,
+                     const String& door_trigger, const String& light_trigger);
 
     /**
      * @brief Get all data points as JSON array string

@@ -311,6 +311,12 @@ void setup() // NOSONAR - complexity ok
     unsigned long lastPumpUpdate = 0;
     unsigned long lastDoorUpdate = 0;
     unsigned long lastLightUpdate = 0;
+
+    // Event detection: track previous states for change detection
+    String prevDoorState = doorController.getStateString();
+    String prevDoorPosition = doorController.getPositionString();
+    bool prevPumpActive = pumpController.isPumpOn();
+    bool flowWasActive = false; // track if flow was non-zero
     
     // main loop
     while(true) {
@@ -349,13 +355,14 @@ void setup() // NOSONAR - complexity ok
             lastSensorUpdate = currentTime;
             sensorManager.update();
 
-            // Update historical data manager with current readings
+            // Update historical data manager with current readings (periodic sample)
             historyManager.update(
                 sensorManager.getTemperature1F(),
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
                 doorController.getStateString(),
+                doorController.getPositionString(),
                 pumpController.getLastTriggerSourceString(),
                 doorController.getLastTriggerSourceString(),
                 lightController.getLastTriggerSourceString()
@@ -460,13 +467,47 @@ void setup() // NOSONAR - complexity ok
             }
         }
 
+        // ============================================================
+        // Event detection: capture state changes between samples
+        // ============================================================
+        {
+            String curDoorState = doorController.getStateString();
+            String curDoorPosition = doorController.getPositionString();
+            bool curPumpActive = pumpController.isPumpOn();
+            float curFlowRate = sensorManager.getFlowRate1();
+            bool flowIsActive = (curFlowRate > 0.001f);
+
+            bool doorChanged = (curDoorState != prevDoorState || curDoorPosition != prevDoorPosition);
+            bool pumpChanged = (curPumpActive != prevPumpActive);
+            bool flowChanged = (flowIsActive != flowWasActive);
+
+            if (doorChanged || pumpChanged || flowChanged) {
+                historyManager.recordEvent(
+                    sensorManager.getTemperature1F(),
+                    curPumpActive,
+                    curFlowRate,
+                    lightController.getCurrentBrightness(),
+                    curDoorState,
+                    curDoorPosition,
+                    pumpController.getLastTriggerSourceString(),
+                    doorController.getLastTriggerSourceString(),
+                    lightController.getLastTriggerSourceString()
+                );
+
+                prevDoorState = curDoorState;
+                prevDoorPosition = curDoorPosition;
+                prevPumpActive = curPumpActive;
+                flowWasActive = flowIsActive;
+            }
+        }
+
         // Update pump controller
         if (currentTime - lastPumpUpdate >= PUMP_UPDATE_INTERVAL)
         {
             lastPumpUpdate = currentTime;
-            
+
             // Flow error detection is now handled inside PumpController
-            
+
             // Update pump controller with current status
             pumpController.update();
             

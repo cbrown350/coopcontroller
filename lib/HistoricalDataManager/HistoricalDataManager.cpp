@@ -24,33 +24,34 @@ void HistoricalDataManager::begin(bool enableData, size_t bufferSize, unsigned i
     lastSampleTime = millis() / 1000; // Initialize to current time in seconds
 }
 
-void HistoricalDataManager::update(float temperature_f, bool pump_active, float flow_rate, uint8_t light_brightness,
-                                   const String& door_state, const String& pump_trigger,
-                                   const String& door_trigger, const String& light_trigger) {
-    if (!enabled) {
-        return;
+void HistoricalDataManager::addPoint(const DataPoint& point) {
+    if (buffer.size() < maxSize) {
+        buffer.push_back(point);
+    } else {
+        buffer[currentIndex] = point;
+        currentIndex = (currentIndex + 1) % maxSize;
     }
+}
 
-    unsigned long currentTime = millis() / 1000; // Boot time in seconds for interval checking
-
-    // Check if it's time for a new sample
-    if (currentTime - lastSampleTime < sampleIntervalSeconds) {
-        return;
-    }
-
-    // Create new data point
+DataPoint HistoricalDataManager::createPoint(float temperature_f, bool pump_active, float flow_rate,
+                                              uint8_t light_brightness, const String& door_state,
+                                              const String& door_position, const String& pump_trigger,
+                                              const String& door_trigger, const String& light_trigger,
+                                              bool isEvent) {
     DataPoint point;
-    // Use actual Unix time if available from NTP, otherwise use boot time
+    unsigned long currentTime = millis() / 1000;
     time_t now = time(nullptr);
-    point.timestamp = (now > 1000000000) ? now : currentTime; // Use Unix time if NTP synced, else boot time
+    point.timestamp = (now > 1000000000) ? now : currentTime;
     point.temperature_f = temperature_f;
     point.pump_active = pump_active;
     point.flow_rate = flow_rate;
     point.light_brightness = light_brightness;
+    point.is_event = isEvent;
 
-    // Copy strings safely into fixed-size char arrays
     strncpy(point.door_state, door_state.c_str(), sizeof(point.door_state) - 1);
     point.door_state[sizeof(point.door_state) - 1] = '\0';
+    strncpy(point.door_position, door_position.c_str(), sizeof(point.door_position) - 1);
+    point.door_position[sizeof(point.door_position) - 1] = '\0';
     strncpy(point.pump_trigger, pump_trigger.c_str(), sizeof(point.pump_trigger) - 1);
     point.pump_trigger[sizeof(point.pump_trigger) - 1] = '\0';
     strncpy(point.door_trigger, door_trigger.c_str(), sizeof(point.door_trigger) - 1);
@@ -58,16 +59,41 @@ void HistoricalDataManager::update(float temperature_f, bool pump_active, float 
     strncpy(point.light_trigger, light_trigger.c_str(), sizeof(point.light_trigger) - 1);
     point.light_trigger[sizeof(point.light_trigger) - 1] = '\0';
 
-    // Add to buffer (circular buffer behavior)
-    if (buffer.size() < maxSize) {
-        buffer.push_back(point);
-    } else {
-        // Overwrite oldest entry (circular buffer)
-        buffer[currentIndex] = point;
-        currentIndex = (currentIndex + 1) % maxSize;
+    return point;
+}
+
+void HistoricalDataManager::update(float temperature_f, bool pump_active, float flow_rate, uint8_t light_brightness,
+                                   const String& door_state, const String& door_position, const String& pump_trigger,
+                                   const String& door_trigger, const String& light_trigger) {
+    if (!enabled) {
+        return;
     }
 
+    unsigned long currentTime = millis() / 1000;
+
+    if (currentTime - lastSampleTime < sampleIntervalSeconds) {
+        return;
+    }
+
+    DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
+                                   door_state, door_position, pump_trigger, door_trigger,
+                                   light_trigger, false);
+    addPoint(point);
     lastSampleTime = currentTime;
+}
+
+void HistoricalDataManager::recordEvent(float temperature_f, bool pump_active, float flow_rate,
+                                         uint8_t light_brightness, const String& door_state,
+                                         const String& door_position, const String& pump_trigger,
+                                         const String& door_trigger, const String& light_trigger) {
+    if (!enabled) {
+        return;
+    }
+
+    DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
+                                   door_state, door_position, pump_trigger, door_trigger,
+                                   light_trigger, true);
+    addPoint(point);
 }
 
 String HistoricalDataManager::getDataAsJson() const {
@@ -94,9 +120,11 @@ String HistoricalDataManager::getDataAsJson() const {
         obj["flow_rate"] = point.flow_rate;
         obj["light_brightness"] = point.light_brightness;
         obj["door_state"] = point.door_state;
+        obj["door_position"] = point.door_position;
         obj["pump_trigger"] = point.pump_trigger;
         obj["door_trigger"] = point.door_trigger;
         obj["light_trigger"] = point.light_trigger;
+        obj["is_event"] = point.is_event;
     }
 
     String jsonString;
@@ -105,7 +133,7 @@ String HistoricalDataManager::getDataAsJson() const {
 }
 
 String HistoricalDataManager::getDataAsCsv() const {
-    String csv = "timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,pump_trigger,door_trigger,light_trigger\n";
+    String csv = "timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,door_position,pump_trigger,door_trigger,light_trigger,is_event\n";
 
     if (buffer.empty()) {
         return csv;
@@ -132,9 +160,12 @@ String HistoricalDataManager::getDataAsCsv() const {
         csv += String(point.flow_rate, 3) + ",";
         csv += String(point.light_brightness) + ",";
         csv += String(point.door_state) + ",";
+        csv += String(point.door_position) + ",";
         csv += String(point.pump_trigger) + ",";
         csv += String(point.door_trigger) + ",";
-        csv += String(point.light_trigger) + "\n";
+        csv += String(point.light_trigger) + ",";
+        csv += point.is_event ? "true" : "false";
+        csv += "\n";
     }
 
     return csv;

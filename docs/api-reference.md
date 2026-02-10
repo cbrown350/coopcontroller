@@ -315,7 +315,7 @@ upload_flags = --auth=<password>
 
 Get historical sensor and controller data. **Public** (read-only).
 
-Returns an array of data points collected at configured sample interval (default: 60 seconds).
+Returns an array of data points collected at configured sample interval (default: 60 seconds) plus event-triggered captures when door, pump, or flow states change between samples.
 
 **Response:**
 
@@ -328,20 +328,24 @@ Returns an array of data points collected at configured sample interval (default
     "flow_rate": 2.5,
     "light_brightness": 80,
     "door_state": "OPEN",
+    "door_position": "OPEN",
     "pump_trigger": "auto",
     "door_trigger": "auto",
-    "light_trigger": "manual"
+    "light_trigger": "manual",
+    "is_event": false
   },
   {
-    "timestamp": 1673892060,
-    "temperature_f": 35.5,
-    "pump_active": true,
-    "flow_rate": 2.4,
+    "timestamp": 1673892030,
+    "temperature_f": 35.3,
+    "pump_active": false,
+    "flow_rate": 0.0,
     "light_brightness": 80,
-    "door_state": "OPEN",
+    "door_state": "CLOSING",
+    "door_position": "PARTIAL",
     "pump_trigger": "auto",
     "door_trigger": "auto",
-    "light_trigger": "manual"
+    "light_trigger": "manual",
+    "is_event": true
   }
 ]
 ```
@@ -352,15 +356,19 @@ Returns an array of data points collected at configured sample interval (default
 - `pump_active` - Pump state (true = ON, false = OFF)
 - `flow_rate` - Water flow rate in GPM
 - `light_brightness` - Light brightness percentage (0-100)
-- `door_state` - Door state string (OPEN, CLOSED, OPENING, CLOSING, IDLE, FAULT)
+- `door_state` - Door operational state string (OPEN, CLOSED, OPENING, CLOSING, IDLE, FAULT)
+- `door_position` - Door physical position string (OPEN, CLOSED, PARTIAL, UNKNOWN)
 - `pump_trigger` - What triggered last pump state change (unknown, manual, web, api, auto, sensor, etc.)
 - `door_trigger` - What triggered last door state change (unknown, manual, web, api, auto, sensor, etc.)
 - `light_trigger` - What triggered last light state change (unknown, manual, web, api, auto, sensor, etc.)
+- `is_event` - Whether this data point was captured by event detection (true) or periodic sampling (false)
 
 **Notes:**
 - Buffer size configurable via settings (default: 1440 samples = 24 hours at 60s interval)
 - Circular buffer automatically overwrites oldest data when full
 - Data stored in RAM only (cleared on reboot)
+- Events are captured immediately when door state/position, pump state, or flow activity changes
+- Events share the same buffer as periodic samples
 
 ### GET `/data/export_csv`
 
@@ -371,9 +379,9 @@ Returns CSV file with headers for download.
 **Response:** CSV file with `Content-Disposition: attachment` header
 
 ```csv
-timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,pump_trigger,door_trigger,light_trigger
-1673892000,35.2,true,2.5,80,OPEN,auto,auto,manual
-1673892060,35.5,true,2.4,80,OPEN,auto,auto,manual
+timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,door_position,pump_trigger,door_trigger,light_trigger,is_event
+1673892000,35.2,true,2.5,80,OPEN,OPEN,auto,auto,manual,false
+1673892030,35.3,false,0.0,80,CLOSING,PARTIAL,auto,auto,manual,true
 ```
 
 **File format:**
