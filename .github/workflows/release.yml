@@ -1,0 +1,173 @@
+name: Release Build & Publish
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v3
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-platformio-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-platformio-
+
+      - name: Install PlatformIO Core
+        run: pip install platformio
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Determine Version
+        id: version
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No previous tags found. Starting at v0.1.0"
+            NEW_VERSION="v0.1.0"
+          else
+            echo "Latest tag: $LATEST_TAG"
+
+            # Extract version components
+            MAJOR=$(echo $LATEST_TAG | cut -d. -f1 | sed 's/v//')
+            MINOR=$(echo $LATEST_TAG | cut -d. -f2)
+            PATCH=$(echo $LATEST_TAG | cut -d. -f3)
+
+            # Get commits since last tag
+            COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s %b" 2>/dev/null || echo "")
+
+            # Determine version bump using conventional commits
+            BUMP_TYPE="PATCH"
+            if echo "$COMMITS" | grep -qi "BREAKING CHANGE"; then
+              BUMP_TYPE="MAJOR"
+            elif echo "$COMMITS" | grep -qi "^feat"; then
+              BUMP_TYPE="MINOR"
+            fi
+
+            # Apply version bump
+            case "$BUMP_TYPE" in
+              MAJOR)
+                NEW_MAJOR=$((MAJOR + 1))
+                NEW_VERSION="v${NEW_MAJOR}.0.0"
+                ;;
+              MINOR)
+                NEW_MINOR=$((MINOR + 1))
+                NEW_VERSION="v${MAJOR}.${NEW_MINOR}.0"
+                ;;
+              PATCH)
+                NEW_PATCH=$((PATCH + 1))
+                NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+                ;;
+            esac
+
+            echo "Version bump type: $BUMP_TYPE"
+          fi
+
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "NEW_VERSION=$NEW_VERSION"
+
+      - name: Build Firmware (Release)
+        env:
+          FIRMWARE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Building firmware with version: ${{ steps.version.outputs.version }}"
+          pio run -e esp32-release
+
+      - name: Extract Firmware Artifacts
+        run: |
+          mkdir -p artifacts
+          cp .pio/build/esp32-release/firmware.bin artifacts/firmware.bin
+          cp .pio/build/esp32-release/littlefs.bin artifacts/littlefs.bin
+          ls -lh artifacts/
+          echo "FIRMWARE_SIZE=$(stat -c%s artifacts/firmware.bin)" >> $GITHUB_ENV
+          echo "FILESYSTEM_SIZE=$(stat -c%s artifacts/littlefs.bin)" >> $GITHUB_ENV
+
+      - name: Calculate Checksums
+        run: |
+          cd artifacts
+          sha256sum firmware.bin > firmware.bin.sha256
+          sha256sum littlefs.bin > littlefs.bin.sha256
+          cat firmware.bin.sha256
+
+          echo "FIRMWARE_SHA256=$(cut -d' ' -f1 firmware.bin.sha256)" >> $GITHUB_ENV
+          echo "FILESYSTEM_SHA256=$(cut -d' ' -f1 littlefs.bin.sha256)" >> $GITHUB_ENV
+
+      - name: Build Web UI
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: Run Tests
+        run: pio test
+
+      - name: Generate Version Manifest
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          FIRMWARE_SHA256: ${{ env.FIRMWARE_SHA256 }}
+          FILESYSTEM_SHA256: ${{ env.FILESYSTEM_SHA256 }}
+          FIRMWARE_SIZE: ${{ env.FIRMWARE_SIZE }}
+          FILESYSTEM_SIZE: ${{ env.FILESYSTEM_SIZE }}
+        run: |
+          python3 build_scripts/generate_version_manifest.py \
+            --version "${{ steps.version.outputs.version }}" \
+            --firmware-path "artifacts/firmware.bin" \
+            --filesystem-path "artifacts/littlefs.bin"
+
+          cp version_manifest.json artifacts/version_manifest.json
+          cat artifacts/version_manifest.json
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          files: |
+            artifacts/firmware.bin
+            artifacts/littlefs.bin
+            artifacts/version_manifest.json
+            artifacts/firmware.bin.sha256
+            artifacts/littlefs.bin.sha256
+          body: |
+            # Firmware Release ${{ steps.version.outputs.version }}
+
+            ## Download Firmware
+            - **Firmware Binary:** firmware.bin
+            - **Filesystem Binary:** littlefs.bin
+            - **Version Manifest:** version_manifest.json (for OTA updates)
+
+            ## Checksums
+            **Firmware SHA256:** ${{ env.FIRMWARE_SHA256 }}
+            **Filesystem SHA256:** ${{ env.FILESYSTEM_SHA256 }}
+
+            ## Build Artifacts
+            - Firmware Size: ${{ env.FIRMWARE_SIZE }} bytes
+            - Filesystem Size: ${{ env.FILESYSTEM_SIZE }} bytes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
