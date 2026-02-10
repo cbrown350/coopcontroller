@@ -8,6 +8,7 @@
 #include "LightController.h"
 #include "SunriseSunset.h"
 #include "WifiController.h"
+#include "HistoricalDataManager.h"
 #include "SettingsManager.h"
 #include "Logger.h"
 #include "IHAL.h"
@@ -94,6 +95,7 @@ protected:
     LightController lightController;
     WifiController wifiController;
     SunriseSunsetCalculator sunriseSunset;
+    HistoricalDataManager historyManager;
 
     void SetUp() override {
         // Create mock HAL instance
@@ -132,6 +134,7 @@ protected:
         doorController.begin(&buzzerController, &sunriseSunset);
         lightController.begin(mockHal, &sunriseSunset);
         wifiController.begin(mockHal, &settingsManager, &buzzerController, "CoopController", "CoopAP");
+        historyManager.begin(true, 1440, 60);
     }
 
     void TearDown() override {
@@ -145,7 +148,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, BeginDoesNotCrash) {
     CoopControllerWebServer server(mockHal, 8080);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     SUCCEED();
 }
 
@@ -154,7 +157,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, FullInitializationSequence) {
     CoopControllerWebServer server(mockHal, 80);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     server.loop();
     SUCCEED();
 }
@@ -164,10 +167,10 @@ TEST_F(CoopControllerWebServerIntegrationTest, MultipleBeginCalls) {
     CoopControllerWebServer server(mockHal, 80);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     SUCCEED();
 }
 
@@ -176,7 +179,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, LoopCallsWork) {
     CoopControllerWebServer server(mockHal, 80);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     for (int i = 0; i < 10; i++) {
         server.loop();
     }
@@ -191,13 +194,13 @@ TEST_F(CoopControllerWebServerIntegrationTest, DifferentPortValues) {
 
     server1.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     server2.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     server3.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     SUCCEED();
 }
 
@@ -206,7 +209,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, ServerLifetimeManagement) {
     CoopControllerWebServer* server = new CoopControllerWebServer(mockHal, 80);
     server->begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     server->loop();
     delete server;
     SUCCEED();
@@ -217,7 +220,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, AllEndpointsRegistered) {
     CoopControllerWebServer server(mockHal, 8080);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     SUCCEED();
 }
 
@@ -226,7 +229,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, OTAIntegrated) {
     CoopControllerWebServer server(mockHal, 8080);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     server.loop();
     SUCCEED();
 }
@@ -236,7 +239,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, FilesystemInitialized) {
     CoopControllerWebServer server(mockHal, 8080);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     SUCCEED();
 }
 
@@ -245,7 +248,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, AllComponentsHandledCorrectly) {
     CoopControllerWebServer server(mockHal, 8080);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     server.loop();
     SUCCEED();
 }
@@ -255,7 +258,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, SPARoutesRegistered) {
     CoopControllerWebServer server(mockHal, 8080);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     SUCCEED();
 }
 
@@ -264,7 +267,7 @@ TEST_F(CoopControllerWebServerIntegrationTest, LoopCallsOTAHandlers) {
     CoopControllerWebServer server(mockHal, 80);
     server.begin(sensorManager, pumpController, buzzerController,
               doorController, lightController, wifiController,
-              sunriseSunset);
+              sunriseSunset, historyManager);
     server.loop();
     server.loop();
     server.loop();
