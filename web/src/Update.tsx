@@ -9,6 +9,10 @@ interface VersionInfo {
   build_time: string;
 }
 
+// Build-time constants injected by Vite
+declare const __BUILD_DATE__: string;
+declare const __BUILD_TIME__: string;
+
 function Update() {
   const [loading, setLoading] = createSignal(true);
   const [versionInfo, setVersionInfo] = createSignal<VersionInfo | null>(null);
@@ -33,8 +37,10 @@ function Update() {
             <div>
               <p>Firmware Version: {versionInfo()!.firmware_version}</p>
               <p>Chip Family: {versionInfo()!.chip_family}</p>
-              <p>Build Date: {versionInfo()!.build_date}</p>
-              <p>Build Time: {versionInfo()!.build_time}</p>
+              <p>FW Build Date: {versionInfo()!.build_date}</p>
+              <p>FW Build Time: {versionInfo()!.build_time}</p>
+              <p>UI/FS Build Date: {__BUILD_DATE__}</p>
+              <p>UI/FS Build Time: {__BUILD_TIME__}</p>
             </div>
           )}
           <iframe class="w-full h-160" src="/update" title="Firmware OTA Update"></iframe>
