@@ -462,12 +462,38 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
   }
 
   server_->on(uri, httpMethod,
-              [handler](AsyncWebServerRequest *request, JsonVariant &json) {
+              // Request handler - called when request is complete
+              [handler](AsyncWebServerRequest *request) {
                 ESP32WebRequestWrapper wrappedRequest(request);
                 ESP32WebResponseWrapper wrappedResponse(request);
-                wrappedRequest.setJsonBody(json);
-                // Handler signature now takes both request and response
+
+                // If body was collected, try to parse as JSON
+                if (request->_tempObject != nullptr) {
+                  JsonDocument doc;
+                  DeserializationError error = deserializeJson(doc, (const char *)request->_tempObject);
+                  if (!error) {
+                    wrappedRequest.setJsonBody(doc.as<JsonVariant>());
+                  }
+                  // _tempObject is freed by AsyncWebServerRequest destructor
+                }
+
                 handler(&wrappedRequest, &wrappedResponse);
+              },
+              nullptr, // upload handler
+              // Body handler - collect POST/PUT body data
+              [](AsyncWebServerRequest *request, uint8_t *data, size_t len,
+                 size_t index, size_t total) {
+                if (total == 0 || total > 16384)
+                  return;
+                if (index == 0) {
+                  request->_tempObject = malloc(total + 1);
+                }
+                if (request->_tempObject != nullptr) {
+                  memcpy((uint8_t *)request->_tempObject + index, data, len);
+                  if (index + len == total) {
+                    ((char *)request->_tempObject)[total] = '\0';
+                  }
+                }
               });
 
   Serial.printf("[HAL_ESP32] %s webServerOn: %s\n", methodStr.c_str(), uri);
