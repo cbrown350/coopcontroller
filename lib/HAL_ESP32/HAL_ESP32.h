@@ -35,6 +35,14 @@ public:
    */
   ~HAL_ESP32() override;
 
+private:
+  // NTP time caching to avoid 200ms getLocalTime() timeout on every getTime() call
+  static constexpr unsigned long NTP_RECHECK_INTERVAL_MS = 5000; ///< Re-check NTP every 5s
+  bool ntpTimeAvailable_ = false;          ///< Whether NTP time has been successfully obtained
+  unsigned long lastNtpCheckMs_ = 0;       ///< Last time we attempted NTP check
+
+public:
+
   // ========================================================================
   // EXISTING METHODS - DO NOT MODIFY
   // ========================================================================

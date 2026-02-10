@@ -39,17 +39,29 @@ bool HAL_ESP32::begin() {
 }
 
 unsigned long HAL_ESP32::getTime() {
+  // If NTP time hasn't been obtained yet, skip the expensive getLocalTime()
+  // call (which blocks for its full timeout) and just use millis().
+  // Re-check periodically in case NTP synced after WiFi connected.
+  if (!ntpTimeAvailable_) {
+    if (millis() - lastNtpCheckMs_ < NTP_RECHECK_INTERVAL_MS) {
+      return millis();
+    }
+    lastNtpCheckMs_ = millis();
+  }
+
   time_t now;
   if (struct tm timeinfo;
-      !getLocalTime(&timeinfo, 200)) { // Add timeout to prevent hanging
+      !getLocalTime(&timeinfo, 10)) { // Short timeout - NTP sync is fast when available
+    ntpTimeAvailable_ = false;
     if (static unsigned long warned = 0;
-        millis() - warned > 30000 || warned == 0) { // Warn at most once per X
+        millis() - warned > 30000 || warned == 0) { // Warn at most once per 30s
       warned = millis();
       Serial.println("Failed to obtain time"); // Can't call logger since it may
                                                // call getTime()
     }
     return millis();
   }
+  ntpTimeAvailable_ = true;
   time(&now);
   return now;
 }
