@@ -1,6 +1,7 @@
 #include "CoopControllerWebServer.h"
 #include "config.h"
 #include "IHAL.h"
+#include "build_timestamp.h"
 
 #include "Logger.h"
 #include "SensorManager.h"
@@ -923,8 +924,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   JsonDocument jsonDoc;
                   jsonDoc["firmware_version"] = firmwareVersion;
                   jsonDoc["chip_family"]      = chipFamily;
-                  jsonDoc["build_date"]       = __DATE__;
-                  jsonDoc["build_time"]       = __TIME__;
+                  jsonDoc["build_date"]       = BUILD_TIMESTAMP_DATE;
+                  jsonDoc["build_time"]       = BUILD_TIMESTAMP_TIME;
                   
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);

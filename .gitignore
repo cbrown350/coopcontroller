@@ -27,3 +27,4 @@ tmp/
 
 __pycache__
 .playwright-mcp/*.log
+include/build_timestamp.h

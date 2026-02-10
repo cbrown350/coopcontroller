@@ -39,8 +39,8 @@ function Update() {
               <p>Chip Family: {versionInfo()!.chip_family}</p>
               <p>FW Build Date: {versionInfo()!.build_date}</p>
               <p>FW Build Time: {versionInfo()!.build_time}</p>
-              <p>UI/FS Build Date: {__BUILD_DATE__}</p>
-              <p>UI/FS Build Time: {__BUILD_TIME__}</p>
+              <p>UI/FS Build Date: {__BUILD_DATE__} UTC</p>
+              <p>UI/FS Build Time: {__BUILD_TIME__} UTC</p>
             </div>
           )}
           <iframe class="w-full h-160" src="/update" title="Firmware OTA Update"></iframe>
