@@ -3,6 +3,7 @@
 
 #include "BuzzerController.h"
 #include "SunriseSunset.h"
+#include "TriggerSource.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -104,6 +105,9 @@ private:
     unsigned long totalOpenTime;   ///< Cumulative time spent opening
     unsigned long totalCloseTime;  ///< Cumulative time spent closing
     unsigned long totalCycles;     ///< Number of complete open/close cycles
+
+    // Trigger source tracking
+    TriggerSource lastTriggerSource_;  ///< What triggered the last state change
 
     // Static instance for ISR access
     static DoorController* instance; ///< Static pointer for interrupt handlers
@@ -259,22 +263,28 @@ public:
      * @brief Start opening the door
      *
      * Activates motor to open door. Stops when hall open sensor triggers.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void open();
+    void open(TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Start closing the door
      *
      * Activates motor to close door. Stops when hall closed sensor triggers.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void close();
+    void close(TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Stop door movement
      *
      * Immediately stops the motor. Door remains in current position.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void stop();
+    void stop(TriggerSource trigger = TriggerSource::MANUAL);
 
     // ========================================================================
     // AUTOMATIC MODE CONTROL
@@ -286,8 +296,9 @@ public:
      * When enabled, door automatically opens/closes based on schedule.
      *
      * @param enabled true to enable auto mode, false to disable
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void setAutoMode(bool enabled);
+    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Check if automatic mode is enabled
@@ -358,6 +369,20 @@ public:
      * @return Progress percentage (0-100) or 0 if not moving
      */
     int getProgressPercentage() const;
+
+    /**
+     * @brief Get last trigger source
+     *
+     * @return TriggerSource that caused the last state change
+     */
+    TriggerSource getLastTriggerSource() const { return lastTriggerSource_; }
+
+    /**
+     * @brief Get last trigger source as string
+     *
+     * @return String representation of last trigger source
+     */
+    String getLastTriggerSourceString() const { return triggerSourceToString(lastTriggerSource_); }
 
     // ========================================================================
     // LOCKOUT CONTROL

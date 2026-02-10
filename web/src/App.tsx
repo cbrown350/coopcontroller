@@ -28,6 +28,10 @@ function App(props: ParentProps) {
           Settings
         </A>
 
+        <A href="/history" class={`tab ${isActive('/history') ? 'tab-active' : ''}`}>
+          History
+        </A>
+
         <A href="/log" class={`tab ${isActive('/log') ? 'tab-active' : ''}`}>
           Logs
         </A>

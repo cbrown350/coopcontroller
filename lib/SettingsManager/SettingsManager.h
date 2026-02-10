@@ -137,6 +137,14 @@ struct user_settings // NOSONAR
     bool   api_auth_enabled = false;        ///< Enable/disable API authentication
     String api_username = "admin";          ///< API authentication username
     String api_password = "";               ///< API authentication password (empty = no auth)
+
+    // ========================================================================
+    // HISTORICAL DATA COLLECTION
+    // ========================================================================
+
+    bool         history_enabled = true;             ///< Enable historical data collection
+    unsigned int history_sample_interval_seconds = 60; ///< Sample interval (default: 60 seconds)
+    unsigned int history_buffer_size = 1440;         ///< Buffer size (default: 1440 = 24 hours at 60s)
 };
 
 /**
@@ -363,6 +371,16 @@ class SettingsManager // NOSONAR
     void setApiAuthEnabled(bool enabled);
     void setApiUsername(const String& username);
     void setApiPassword(const String& password);
+
+    // Historical data collection getters
+    bool         getHistoryEnabled() const;
+    unsigned int getHistorySampleIntervalSeconds() const;
+    unsigned int getHistoryBufferSize() const;
+
+    // Historical data collection setters
+    void setHistoryEnabled(bool enabled);
+    void setHistorySampleIntervalSeconds(unsigned int seconds);
+    void setHistoryBufferSize(unsigned int size);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);

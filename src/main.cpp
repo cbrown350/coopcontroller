@@ -60,6 +60,7 @@
 #include "DoorController.h"
 #include "SunriseSunset.h"
 #include "WifiController.h"
+#include "HistoricalDataManager.h"
 
 
 /**
@@ -201,6 +202,7 @@ void setup() // NOSONAR - complexity ok
     LightController lightController;
     SunriseSunsetCalculator sunriseSunset;
     WifiController wifiController;
+    HistoricalDataManager historyManager;
 
     settingsManager.begin(&hal);
     settingsManager.load();
@@ -284,14 +286,21 @@ void setup() // NOSONAR - complexity ok
     // Wait a moment for NTP to sync, then calculate sunrise/sunset
     delay(2000);
     sunriseSunset.forceUpdate();
-    
+
+    // Initialize historical data manager
+    historyManager.begin(settingsManager.getHistoryEnabled(),
+                         settingsManager.getHistoryBufferSize(),
+                         settingsManager.getHistorySampleIntervalSeconds());
+    logger.logInfo("Historical data manager initialized");
+
     webServer.begin(sensorManager,
                     pumpController,
                     buzzerController,
                     doorController,
                     lightController,
                     wifiController,
-                    sunriseSunset);
+                    sunriseSunset,
+                    historyManager);
     logger.logInfo("Web server started");
 
     logger.logInfo("System initialization complete");
@@ -339,7 +348,19 @@ void setup() // NOSONAR - complexity ok
         {
             lastSensorUpdate = currentTime;
             sensorManager.update();
-            
+
+            // Update historical data manager with current readings
+            historyManager.update(
+                sensorManager.getTemperature1F(),
+                pumpController.isPumpOn(),
+                sensorManager.getFlowRate1(),
+                lightController.getCurrentBrightness(),
+                doorController.getStateString(),
+                pumpController.getLastTriggerSourceString(),
+                doorController.getLastTriggerSourceString(),
+                lightController.getLastTriggerSourceString()
+            );
+
             // Log temperature readings periodically
             static unsigned long lastTempLog = 0;
             if (currentTime - lastTempLog >= 60000) // Log every minute

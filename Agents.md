@@ -82,7 +82,8 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
-- API Authentication (30 protected + 7 public endpoints)
+- Historical Data Visualization (RAM storage, CSV export, Chart.js charts, door state tracking, trigger source tracking, 24hr default retention)
+- API Authentication (31 protected + 9 public endpoints)
 - Factory Reset on Boot (hardware button)
 - Scheduled Pump Maintenance Cycles
 - Hardware Emulator (7 scenarios + custom + recordings + temp emulation)

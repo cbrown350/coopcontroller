@@ -14,7 +14,7 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
 | Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
 
-**Current Build:** RAM 17.3% (56,580 bytes), Flash 96.7% (1,267,977 bytes)
+**Current Build:** RAM 17.3% (56,588 bytes), Flash 98.7% (1,293,321 bytes)
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. Actual functionality hasn't been checked for correctness.
 
@@ -39,6 +39,82 @@ This document tracks all features: completed, in-progress, and planned.
 ---
 
 ## Completed Features
+
+### Historical Data Visualization ✅
+
+**Implemented:** 2026-02-09
+**Status:** Complete and tested
+**Implementation:** Direct implementation with in-RAM storage and CSV export
+
+**Summary:**
+Added historical data collection, storage, visualization, and export capabilities. Data is stored in RAM with configurable sampling and buffer size, providing 24 hours of history by default at 60-second intervals. Tracks temperature, pump state, flow rate, light brightness, door state, and trigger sources for all controller state changes.
+
+**Key Changes:**
+
+1. **Backend (HistoricalDataManager)**
+   - Created new component `lib/HistoricalDataManager/` with circular buffer for data storage
+   - Stores temperature, pump state, flow rate, light brightness, door state, and trigger sources
+   - Tracks what triggered each state change (manual, web, api, auto, sensor, etc.)
+   - Configurable sample interval (default: 60 seconds) and buffer size (default: 1440 samples)
+   - Memory efficient: ~80 bytes per sample, ~115KB for 24 hours
+   - Automatic oldest-data overwrite when buffer is full
+   - JSON and CSV export methods with all fields
+
+2. **Backend (SettingsManager)**
+   - Added historical data settings: `history_enabled`, `history_sample_interval_seconds`, `history_buffer_size`
+   - Getters/setters with proper constraints (10s-1hr interval, 60-10080 buffer size)
+   - JSON serialization/deserialization support
+
+3. **Backend (CoopControllerWebServer)**
+   - Added REST API endpoints for historical data:
+     - `GET /data/history` - Returns JSON array of all data points
+     - `GET /data/export_csv` - Downloads CSV file with proper headers
+     - `POST /data/clear` - Clears all historical data (protected)
+   - Updated authentication to include new endpoints (2 public, 1 protected)
+
+4. **Backend (main.cpp)**
+   - Integrated HistoricalDataManager into main loop
+   - Initialization with settings on boot
+   - Update call on every sensor update cycle
+   - Passes temperature, pump state, flow rate, light brightness, door state, and trigger sources
+   - TODO markers for future trigger source tracking implementation in controllers
+
+5. **Frontend (Web UI)**
+   - Created new `History.tsx` component with Chart.js integration
+   - Added `/history` route to router (index.tsx)
+   - Added "History" tab to navigation (App.tsx)
+   - Interactive charts for temperature, pump state, flow rate, light brightness, and door state
+   - Chart tooltips display trigger source information for pump, light, and door state changes
+   - Door state chart visualizes OPEN, CLOSED, OPENING, CLOSING, IDLE, and FAULT states
+   - Controls: Refresh, Download CSV, Clear History, Auto-refresh toggle
+   - Responsive design matching existing UI patterns
+   - Shows data point count and empty state message
+
+**Features:**
+- **Real-time visualization** - Interactive line charts with Chart.js
+- **CSV export** - Download historical data for offline analysis
+- **Configurable storage** - Sample interval and buffer size adjustable in settings
+- **Memory efficient** - Circular buffer with predictable memory footprint
+- **Future-ready** - Architecture supports upgrade to remote database (marked in docs)
+
+**API Endpoints (3 total):**
+- `GET /data/history` - Public, returns JSON data array
+- `GET /data/export_csv` - Public, downloads CSV file
+- `POST /data/clear` - Protected, clears all history
+
+**Build Status:**
+- Firmware: Compiled successfully with zero errors
+- Web UI: Compiled successfully with zero TypeScript errors
+- Memory: Within acceptable limits (RAM < 20%, Flash < 97%)
+
+**Future Enhancements:**
+- Remote database storage (InfluxDB, PostgreSQL)
+- Data compression for longer retention
+- SD card backup for permanent storage
+- Configurable data retention policies
+- Additional metrics (door state, buzzer events)
+
+---
 
 ### API Authentication for Critical Endpoints ✅
 

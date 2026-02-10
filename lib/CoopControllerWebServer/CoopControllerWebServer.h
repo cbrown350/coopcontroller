@@ -12,6 +12,7 @@
 #include "SunriseSunset.h"
 #include "WifiController.h"
 #include "SettingsManager.h"
+#include "HistoricalDataManager.h"
 
 /**
  * @brief Web server for chicken coop controller
@@ -94,6 +95,7 @@ class CoopControllerWebServer
      * @param lightController Reference to light controller
      * @param wifiController Reference to WiFi controller
      * @param sunriseSunset Reference to sunrise/sunset calculator
+     * @param historyManager Reference to historical data manager
      */
     void begin(SensorManager& tempSensor,
             PumpController& pumpController,
@@ -101,7 +103,8 @@ class CoopControllerWebServer
             DoorController& doorController,
             LightController& lightController,
             const WifiController& wifiController,
-            SunriseSunsetCalculator& sunriseSunset);
+            SunriseSunsetCalculator& sunriseSunset,
+            HistoricalDataManager& historyManager);
 
     /**
      * @brief Process web server events (call in main loop)

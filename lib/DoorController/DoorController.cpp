@@ -47,6 +47,9 @@ DoorController::DoorController() {
     totalOpenTime = 0;
     totalCloseTime = 0;
     totalCycles = 0;
+
+    // Trigger source tracking
+    lastTriggerSource_ = TriggerSource::STARTUP;
 }
 
 void DoorController::begin(BuzzerController* _buzzerController, SunriseSunsetCalculator* _sunriseSunset) {
@@ -388,41 +391,47 @@ void DoorController::checkSchedule() {
     if (lockoutEnabled) return;
     if (shouldOpenBySchedule() && currentPosition != DoorPosition::OPEN) {
         logger.logInfo("Schedule: Opening door");
-        open();
+        open(TriggerSource::AUTOMATIC);
     } else if (shouldCloseBySchedule() && currentPosition != DoorPosition::CLOSED) {
         logger.logInfo("Schedule: Closing door");
-        close();
+        close(TriggerSource::AUTOMATIC);
     }
 }
 
 // Manual control methods
-void DoorController::open() {
+void DoorController::open(TriggerSource trigger) {
     if (lockoutEnabled) {
         logger.logWarning("Door open blocked - lockout is enabled");
         return;
     }
     if (currentState == DoorState::IDLE || currentState == DoorState::CLOSED) {
+        lastTriggerSource_ = trigger;
         setState(DoorState::OPENING);
+        logger.logfInfo("Door opening (trigger: %s)", triggerSourceToString(trigger).c_str());
     } else {
         logger.logfWarning("Cannot open door - current state: %s", getStateString().c_str());
     }
 }
 
-void DoorController::close() {
+void DoorController::close(TriggerSource trigger) {
     if (lockoutEnabled) {
         logger.logWarning("Door close blocked - lockout is enabled");
         return;
     }
     if (currentState == DoorState::IDLE || currentState == DoorState::OPEN) {
+        lastTriggerSource_ = trigger;
         setState(DoorState::CLOSING);
+        logger.logfInfo("Door closing (trigger: %s)", triggerSourceToString(trigger).c_str());
     } else {
         logger.logfWarning("Cannot close door - current state: %s", getStateString().c_str());
     }
 }
 
-void DoorController::stop() {
+void DoorController::stop(TriggerSource trigger) {
     if (currentState == DoorState::OPENING || currentState == DoorState::CLOSING) {
+        lastTriggerSource_ = trigger;
         setState(DoorState::IDLE);
+        logger.logfInfo("Door stopped (trigger: %s)", triggerSourceToString(trigger).c_str());
     }
 }
 
@@ -479,9 +488,10 @@ int DoorController::getCloseTimingCount() const {
 }
 
 // Mode control
-void DoorController::setAutoMode(bool enabled) {
+void DoorController::setAutoMode(bool enabled, TriggerSource trigger) {
     autoMode = enabled;
-    logger.logfInfo("Door auto mode: %s", enabled ? "ENABLED" : "DISABLED");
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Door auto mode: %s (trigger: %s)", enabled ? "ENABLED" : "DISABLED", triggerSourceToString(trigger).c_str());
 }
 
 bool DoorController::isAutoMode() const {

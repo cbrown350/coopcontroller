@@ -26,7 +26,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                                       DoorController& doorController,
                                       LightController& lightController,
                                       const WifiController& wifiController,
-                                      SunriseSunsetCalculator& sunriseSunset)
+                                      SunriseSunsetCalculator& sunriseSunset,
+                                      HistoricalDataManager& historyManager)
 {
     hal->webServerBegin(port);
 
@@ -807,6 +808,14 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
               [](IWebRequest *request, IWebResponse *response)
               {
                   String jsonResponse = logger.getLogsAsJson();
+
+                  // Check if JSON generation was successful
+                  if (jsonResponse.length() == 0) {
+                      // Return empty logs array if generation failed
+                      response->send(200, "application/json", "{\"logs\":[]}");
+                      return;
+                  }
+
                   response->send(200, "application/json", jsonResponse.c_str());
               });
     
@@ -1161,6 +1170,35 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
     // Serve static files from LittleFS - LittleFS kept for AsyncWebServer serveStatic() only
     // Web assets are served from /www/ subdirectory to protect sensitive files in root
+    // Historical Data Endpoints
+    hal->webServerOn("/data/history", HAL_WebRequestMethod::HTTP_GET,
+              [&historyManager](IWebRequest *request, IWebResponse *response)
+              {
+                  String jsonResponse = historyManager.getDataAsJson();
+                  response->send(200, "application/json", jsonResponse.c_str());
+              });
+
+    hal->webServerOn("/data/export_csv", HAL_WebRequestMethod::HTTP_GET,
+              [&historyManager](IWebRequest *request, IWebResponse *response)
+              {
+                  String csvData = historyManager.getDataAsCsv();
+                  response->addHeader("Content-Disposition", "attachment; filename=coop_history.csv");
+                  response->send(200, "text/csv", csvData.c_str());
+              });
+
+    hal->webServerOn("/data/clear", HAL_WebRequestMethod::HTTP_POST,
+              [this, &historyManager](IWebRequest *request, IWebResponse *response)
+              {
+                  // Authentication check
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+
+                  historyManager.clear();
+                  response->send(200, "application/json", R"({"success":true})");
+              });
+
     if(!hal->fsBegin()) {
         logger.logError("Failed to initialize filesystem for web server static file serving");
     }
@@ -1180,7 +1218,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
             uri.equals("/update") || uri.startsWith("/buzzer/") || uri.startsWith("/door/") ||
             uri.startsWith("/light/") || uri.equals("/sun/times") ||
             uri.equals("/system_status") || uri.equals("/factory_reset") ||
-            uri.equals("/reboot") || uri.startsWith("/settings/")) {
+            uri.equals("/reboot") || uri.startsWith("/settings/") || uri.startsWith("/data/")) {
             response->send(404, "text/plain", "Not Found");
             return;
         }

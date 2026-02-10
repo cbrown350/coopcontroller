@@ -477,6 +477,32 @@ void SettingsManager::setApiPassword(const String& password) {
     settings.api_password = password;
 }
 
+// Historical data collection getters
+bool SettingsManager::getHistoryEnabled() const {
+    return settings.history_enabled;
+}
+
+unsigned int SettingsManager::getHistorySampleIntervalSeconds() const {
+    return settings.history_sample_interval_seconds;
+}
+
+unsigned int SettingsManager::getHistoryBufferSize() const {
+    return settings.history_buffer_size;
+}
+
+// Historical data collection setters
+void SettingsManager::setHistoryEnabled(bool enabled) {
+    settings.history_enabled = enabled;
+}
+
+void SettingsManager::setHistorySampleIntervalSeconds(unsigned int seconds) {
+    settings.history_sample_interval_seconds = constrain(seconds, 10, 3600); // 10s to 1 hour
+}
+
+void SettingsManager::setHistoryBufferSize(unsigned int size) {
+    settings.history_buffer_size = constrain(size, 60, 10080); // 1 hour to 1 week at 60s interval
+}
+
 // Syslog configuration getters
 String SettingsManager::getSyslogServer() const {
     return settings.syslog_server;
@@ -693,6 +719,11 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
 
     // Load flow calculation interval
     settings.flow_calculation_interval_seconds = doc["flow_calculation_interval_seconds"] | defaultSettings.flow_calculation_interval_seconds;
+
+    // Load historical data collection settings
+    settings.history_enabled = doc["history_enabled"] | defaultSettings.history_enabled;
+    settings.history_sample_interval_seconds = doc["history_sample_interval_seconds"] | defaultSettings.history_sample_interval_seconds;
+    settings.history_buffer_size = doc["history_buffer_size"] | defaultSettings.history_buffer_size;
 }
 
 JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
@@ -778,6 +809,11 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
 
     // Flow calculation interval
     doc["flow_calculation_interval_seconds"] = settings.flow_calculation_interval_seconds;
+
+    // Historical data collection
+    doc["history_enabled"] = settings.history_enabled;
+    doc["history_sample_interval_seconds"] = settings.history_sample_interval_seconds;
+    doc["history_buffer_size"] = settings.history_buffer_size;
 
     return doc;
 }

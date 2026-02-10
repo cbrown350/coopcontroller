@@ -55,6 +55,9 @@ void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSens
     status.scheduled_cycle_active = false;
     status.time_until_next_scheduled = 0;
 
+    // Initialize trigger source tracking
+    lastTriggerSource_ = TriggerSource::STARTUP;
+
     pinMode(pumpPin, OUTPUT);
     digitalWrite(pumpPin, LOW);
     
@@ -228,6 +231,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
             cycleStartTime = currentTime;
             cyclingActive = true;
             currentlyInOnPhase = true;
+            lastTriggerSource_ = TriggerSource::SENSOR;
             setPumpState(true);
             clearFlowError();
             status.total_cycles++;
@@ -246,6 +250,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
                     // Switch to off phase
                     currentlyInOnPhase = false;
                     offPhaseStartTime = currentTime;
+                    lastTriggerSource_ = TriggerSource::AUTOMATIC;
                     setPumpState(false);
                     logger.logfInfo("Pump cycle: switching to OFF phase for %u seconds", settingsManager.getPumpOffTimeSeconds());
                 } else if (cycleElapsed % 10000 < 1000) {
@@ -258,6 +263,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
                     // Start new cycle
                     cycleStartTime = currentTime;
                     currentlyInOnPhase = true;
+                    lastTriggerSource_ = TriggerSource::AUTOMATIC;
                     setPumpState(true);
                     clearFlowError();
                     status.total_cycles++;
@@ -274,6 +280,7 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
         // Temperature is above OFF threshold - turn off pump and reset cycle
         // Don't interfere with scheduled maintenance cycles (handled separately)
         if ((status.is_active && !scheduledCycleActive_) || cyclingActive) {
+            lastTriggerSource_ = TriggerSource::SENSOR;
             setPumpState(false);
             // no clearFlowError(); // don't clear, keep flow error flag so it's known it happened
             cycleStartTime = 0; // Reset cycle
@@ -341,14 +348,15 @@ void PumpController::updateStatistics() {
     }
 }
 
-void PumpController::turnOn() {
+void PumpController::turnOn(TriggerSource trigger) {
     status.state = PumpState::PUMP_ON;
     scheduledCycleActive_ = false;
     status.scheduled_cycle_active = false;
-    logger.logInfo("Pump set to manual ON mode");
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Pump set to manual ON mode (trigger: %s)", triggerSourceToString(trigger).c_str());
 }
 
-void PumpController::turnOff() {
+void PumpController::turnOff(TriggerSource trigger) {
     status.state = PumpState::PUMP_OFF;
     cycleStartTime = 0; // Reset any auto cycle
     cyclingActive = false;
@@ -356,24 +364,26 @@ void PumpController::turnOff() {
     scheduledCycleActive_ = false;
     status.scheduled_cycle_active = false;
     setPumpState(false); // Force pump off immediately
-    logger.logInfo("Pump set to manual OFF mode");
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Pump set to manual OFF mode (trigger: %s)", triggerSourceToString(trigger).c_str());
 }
 
-void PumpController::setAutoMode(bool enabled) {
+void PumpController::setAutoMode(bool enabled, TriggerSource trigger) {
+    lastTriggerSource_ = trigger;
     if (enabled) {
         status.state = PumpState::PUMP_AUTO;
         cycleStartTime = 0; // Reset cycle to start fresh
         cyclingActive = false;
         scheduledCycleActive_ = false;
         status.scheduled_cycle_active = false;
-        logger.logInfo("Pump set to AUTO mode");
+        logger.logfInfo("Pump set to AUTO mode (trigger: %s)", triggerSourceToString(trigger).c_str());
     } else {
         status.state = PumpState::PUMP_OFF;
         cyclingActive = false;
         scheduledCycleActive_ = false;
         status.scheduled_cycle_active = false;
         setPumpState(false);
-        logger.logInfo("Pump AUTO mode disabled");
+        logger.logfInfo("Pump AUTO mode disabled (trigger: %s)", triggerSourceToString(trigger).c_str());
     }
     if (enabled != settingsManager.getPumpAutoMode()) {
         settingsManager.setPumpAutoMode(enabled);
@@ -381,13 +391,14 @@ void PumpController::setAutoMode(bool enabled) {
     }
 }
 
-void PumpController::forceCycle() {
+void PumpController::forceCycle(TriggerSource trigger) {
     if (status.state == PumpState::PUMP_AUTO) {
         cycleStartTime = 0; // Reset to start new cycle immediately
         cyclingActive = false;
         scheduledCycleActive_ = false;
         status.scheduled_cycle_active = false;
-        logger.logInfo("Pump cycle forced to restart");
+        lastTriggerSource_ = trigger;
+        logger.logfInfo("Pump cycle forced to restart (trigger: %s)", triggerSourceToString(trigger).c_str());
     }
 }
 
@@ -568,6 +579,7 @@ void PumpController::handleScheduledCycles(unsigned long currentTime) {
         unsigned long cycleElapsed = currentTime - scheduledCycleStartTime_;
         if (cycleElapsed >= runDurationMs) {
             // Scheduled cycle complete
+            lastTriggerSource_ = TriggerSource::AUTOMATIC;
             setPumpState(false);
             scheduledCycleActive_ = false;
             status.scheduled_cycle_active = false;
@@ -600,6 +612,7 @@ void PumpController::handleScheduledCycles(unsigned long currentTime) {
         scheduledCycleStartTime_ = currentTime;
         status.scheduled_cycle_active = true;
         status.time_until_next_scheduled = 0;
+        lastTriggerSource_ = TriggerSource::AUTOMATIC;
         setPumpState(true);
         logger.logInfo("Starting scheduled maintenance pump cycle");
     } else {

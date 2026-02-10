@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "SensorManager.h"
+#include "TriggerSource.h"
 #include <stdint.h>
 
 /**
@@ -102,6 +103,9 @@ private:
     unsigned long lastCompletedCycleTime_;   ///< When last pump cycle completed (any type)
     bool scheduledCycleActive_;              ///< Is a scheduled maintenance cycle running
     unsigned long scheduledCycleStartTime_;  ///< When current scheduled cycle started
+
+    // Trigger source tracking
+    TriggerSource lastTriggerSource_;        ///< What triggered the last state change
 
     // ========================================================================
     // PRIVATE METHODS
@@ -203,15 +207,19 @@ public:
      * @brief Turn pump on manually
      *
      * Switches to PUMP_ON state regardless of temperature.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void turnOn();
+    void turnOn(TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Turn pump off manually
      *
      * Switches to PUMP_OFF state regardless of temperature.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void turnOff();
+    void turnOff(TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Enable or disable automatic mode
@@ -219,15 +227,18 @@ public:
      * In auto mode, pump cycles based on temperature thresholds.
      *
      * @param enabled true to enable auto mode
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void setAutoMode(bool enabled);
+    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Force a single pump cycle
      *
      * Runs one on/off cycle regardless of temperature.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void forceCycle();
+    void forceCycle(TriggerSource trigger = TriggerSource::MANUAL);
 
     // ========================================================================
     // STATUS METHODS
@@ -295,6 +306,20 @@ public:
      * @return Timestamp when current run started
      */
     unsigned long getCurrentRunStartTime() const;
+
+    /**
+     * @brief Get last trigger source
+     *
+     * @return TriggerSource that caused the last state change
+     */
+    TriggerSource getLastTriggerSource() const { return lastTriggerSource_; }
+
+    /**
+     * @brief Get last trigger source as string
+     *
+     * @return String representation of last trigger source
+     */
+    String getLastTriggerSourceString() const { return triggerSourceToString(lastTriggerSource_); }
 
     // ========================================================================
     // STATISTICS

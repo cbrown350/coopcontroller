@@ -32,7 +32,8 @@ LightController::LightController() :
     totalOnTime(0),
     totalFadeInTime(0),
     totalFadeOutTime(0),
-    totalCycles(0)
+    totalCycles(0),
+    lastTriggerSource_(TriggerSource::STARTUP)
 {}
 
 void LightController::begin(IHAL* _hal, SunriseSunsetCalculator* _sunriseSunset) {
@@ -73,9 +74,10 @@ void LightController::update() {
     checkSchedule();
 }
 
-void LightController::turnOn() {
-    logger.logInfo("Light turned on manually");
-    
+void LightController::turnOn(TriggerSource trigger) {
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Light turned on (trigger: %s)", triggerSourceToString(trigger).c_str());
+
     // Manual control: Turn on immediately at max brightness (no fade)
     currentBrightness = maxBrightness;
     targetBrightness = maxBrightness;
@@ -83,9 +85,10 @@ void LightController::turnOn() {
     setState(LightState::ON);
 }
 
-void LightController::turnOff() {
-    logger.logInfo("Light turned off manually");
-    
+void LightController::turnOff(TriggerSource trigger) {
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Light turned off (trigger: %s)", triggerSourceToString(trigger).c_str());
+
     // Manual control: Turn off immediately (no fade)
     currentBrightness = 0;
     targetBrightness = 0;
@@ -93,35 +96,39 @@ void LightController::turnOff() {
     setState(LightState::OFF);
 }
 
-void LightController::setBrightness(int percent) {
+void LightController::setBrightness(int percent, TriggerSource trigger) {
     targetBrightness = constrain(percent, 0, 100);
     currentBrightness = targetBrightness;
+    lastTriggerSource_ = trigger;
     updatePWM();
-    
-    logger.logInfo(String("Light brightness set to ") + String(targetBrightness) + "%");
+
+    logger.logfInfo("Light brightness set to %d%% (trigger: %s)", targetBrightness, triggerSourceToString(trigger).c_str());
 }
 
-void LightController::fadeIn() {
+void LightController::fadeIn(TriggerSource trigger) {
     // Fade can be started from any state (allows interruption)
-    logger.logInfo("Starting fade in");
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Starting fade in (trigger: %s)", triggerSourceToString(trigger).c_str());
     fadeStartTime = millis();
     fadeStartBrightness = currentBrightness;
     fadeTargetBrightness = maxBrightness;
     setState(LightState::FADING_IN);
 }
 
-void LightController::fadeOut() {
+void LightController::fadeOut(TriggerSource trigger) {
     // Fade can be started from any state (allows interruption)
-    logger.logInfo("Starting fade out");
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Starting fade out (trigger: %s)", triggerSourceToString(trigger).c_str());
     fadeStartTime = millis();
     fadeStartBrightness = currentBrightness;
     fadeTargetBrightness = 0;
     setState(LightState::FADING_OUT);
 }
 
-void LightController::setAutoMode(bool enabled) {
+void LightController::setAutoMode(bool enabled, TriggerSource trigger) {
     autoMode = enabled;
-    logger.logInfo(String("Light auto mode ") + String(enabled ? "enabled" : "disabled"));
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Light auto mode %s (trigger: %s)", enabled ? "enabled" : "disabled", triggerSourceToString(trigger).c_str());
 }
 
 bool LightController::isAutoMode() const {
@@ -474,12 +481,12 @@ void LightController::checkSchedule() {
     if (!autoMode) {
         return;
     }
-    
+
     // Auto mode uses fades for smooth transitions
     if (shouldTurnOnBySchedule()) {
-        fadeIn();
+        fadeIn(TriggerSource::AUTOMATIC);
     } else if (shouldTurnOffBySchedule()) {
-        fadeOut();
+        fadeOut(TriggerSource::AUTOMATIC);
     }
 }
 

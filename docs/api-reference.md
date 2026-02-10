@@ -309,12 +309,102 @@ upload_flags = --auth=<password>
 
 ---
 
+## Historical Data (Public/Protected)
+
+### GET `/data/history`
+
+Get historical sensor and controller data. **Public** (read-only).
+
+Returns an array of data points collected at configured sample interval (default: 60 seconds).
+
+**Response:**
+
+```json
+[
+  {
+    "timestamp": 1673892000,
+    "temperature_f": 35.2,
+    "pump_active": true,
+    "flow_rate": 2.5,
+    "light_brightness": 80,
+    "door_state": "OPEN",
+    "pump_trigger": "auto",
+    "door_trigger": "auto",
+    "light_trigger": "manual"
+  },
+  {
+    "timestamp": 1673892060,
+    "temperature_f": 35.5,
+    "pump_active": true,
+    "flow_rate": 2.4,
+    "light_brightness": 80,
+    "door_state": "OPEN",
+    "pump_trigger": "auto",
+    "door_trigger": "auto",
+    "light_trigger": "manual"
+  }
+]
+```
+
+**Fields:**
+- `timestamp` - Unix timestamp (seconds since epoch, or boot time if NTP not synced)
+- `temperature_f` - Temperature in Fahrenheit (NaN if no sensor)
+- `pump_active` - Pump state (true = ON, false = OFF)
+- `flow_rate` - Water flow rate in GPM
+- `light_brightness` - Light brightness percentage (0-100)
+- `door_state` - Door state string (OPEN, CLOSED, OPENING, CLOSING, IDLE, FAULT)
+- `pump_trigger` - What triggered last pump state change (unknown, manual, web, api, auto, sensor, etc.)
+- `door_trigger` - What triggered last door state change (unknown, manual, web, api, auto, sensor, etc.)
+- `light_trigger` - What triggered last light state change (unknown, manual, web, api, auto, sensor, etc.)
+
+**Notes:**
+- Buffer size configurable via settings (default: 1440 samples = 24 hours at 60s interval)
+- Circular buffer automatically overwrites oldest data when full
+- Data stored in RAM only (cleared on reboot)
+
+### GET `/data/export_csv`
+
+Download historical data as CSV file. **Public** (read-only).
+
+Returns CSV file with headers for download.
+
+**Response:** CSV file with `Content-Disposition: attachment` header
+
+```csv
+timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,pump_trigger,door_trigger,light_trigger
+1673892000,35.2,true,2.5,80,OPEN,auto,auto,manual
+1673892060,35.5,true,2.4,80,OPEN,auto,auto,manual
+```
+
+**File format:**
+- Comma-separated values
+- Headers included
+- Boolean values as `true`/`false`
+- Floating point with appropriate precision
+- Filename: `coop_history.csv`
+
+### POST `/data/clear` (Protected)
+
+Clear all historical data from buffer.
+
+**Response:**
+
+```json
+{
+  "success": true
+}
+```
+
+**Note:** This operation cannot be undone. Data is permanently cleared from RAM.
+
+---
+
 ## Authentication
 
 When `api_auth_enabled` is true in settings:
 
-- **Protected endpoints (30):** All state-modifying endpoints listed above
-- **Public endpoints (7):** `/sensor_status`, `/system_status`, `/logs`, `/version`, `/sun/times`, `/get_settings`, `/settings/backup`
+- **Protected endpoints (31):** All state-modifying endpoints listed above
+- **Public endpoints (9):** `/sensor_status`, `/system_status`, `/logs`, `/version`, `/sun/times`, `/get_settings`, `/settings/backup`, `/data/history`, `/data/export_csv`
 - **Method:** HTTP Basic Authentication (Base64-encoded credentials)
 - **401 Response:** Includes `WWW-Authenticate: Basic realm="Coop Controller"` header
 

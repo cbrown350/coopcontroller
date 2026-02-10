@@ -167,6 +167,21 @@ graph TB
 - **Syslog integration** - Optional remote logging to syslog server
 - **Serial output** - Simultaneous logging to Serial monitor
 
+### HistoricalDataManager (`HistoricalDataManager.h` / `HistoricalDataManager.cpp`)
+
+- **In-RAM data storage** - Circular buffer stores historical sensor and controller data
+- **Configurable sampling** - Sample interval (default: 60 seconds) and buffer size (default: 1440 samples = 24 hours)
+- **Multi-metric tracking** - Records temperature, pump state, flow rate, and light brightness
+- **Circular buffer** - Automatically overwrites oldest data when buffer is full
+- **CSV export** - Download historical data as CSV file for offline analysis
+- **JSON API** - Real-time access to historical data via REST endpoint
+- **Memory efficient** - ~24 bytes per data point (~35KB for 24 hours of data at 60s interval)
+- **Clear functionality** - Ability to clear all historical data via authenticated endpoint
+- **Web visualization** - Chart.js-based visualization in History.tsx with interactive charts
+- **Future expansion** - Architecture supports upgrade to remote database storage (InfluxDB, PostgreSQL, etc.)
+
+**Note:** Data is stored in RAM only and cleared on reboot. For permanent storage, consider implementing remote database integration (marked in docs for future upgrade).
+
 ### LightController (`LightController.h` / `LightController.cpp`)
 
 - **PWM dimming control** - ESP32 LEDC (LED Control) peripheral with 8-bit resolution

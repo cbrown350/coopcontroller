@@ -3,6 +3,7 @@
 
 #include "SunriseSunset.h"
 #include "IHAL.h"
+#include "TriggerSource.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -86,6 +87,9 @@ private:
     unsigned long totalFadeInTime;     ///< Cumulative fade-in time
     unsigned long totalFadeOutTime;    ///< Cumulative fade-out time
     unsigned long totalCycles;         ///< Number of on/off cycles
+
+    // Trigger source tracking
+    TriggerSource lastTriggerSource_;  ///< What triggered the last state change
 
     // ========================================================================
     // INTERNAL METHODS
@@ -209,36 +213,45 @@ public:
      * @brief Turn light on at max brightness
      *
      * Immediately sets light to maximum configured brightness.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void turnOn();
+    void turnOn(TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Turn light off
      *
      * Immediately turns off the light.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void turnOff();
+    void turnOff(TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Set light brightness percentage
      *
      * @param percent Brightness level (0-100)
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void setBrightness(int percent);
+    void setBrightness(int percent, TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Start fade-in transition
      *
      * Smoothly fades light from current to max brightness.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void fadeIn();
+    void fadeIn(TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Start fade-out transition
      *
      * Smoothly fades light from current to off.
+     *
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void fadeOut();
+    void fadeOut(TriggerSource trigger = TriggerSource::MANUAL);
 
     // ========================================================================
     // AUTOMATIC MODE CONTROL
@@ -250,8 +263,9 @@ public:
      * When enabled, light automatically turns on/off based on schedule.
      *
      * @param enabled true to enable auto mode, false to disable
+     * @param trigger What triggered this action (default: MANUAL)
      */
-    void setAutoMode(bool enabled);
+    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::MANUAL);
 
     /**
      * @brief Check if automatic mode is enabled
@@ -319,6 +333,20 @@ public:
      * @return Fade progress (0-100) or 0 if not fading
      */
     int getFadeProgressPercentage() const;
+
+    /**
+     * @brief Get last trigger source
+     *
+     * @return TriggerSource that caused the last state change
+     */
+    TriggerSource getLastTriggerSource() const { return lastTriggerSource_; }
+
+    /**
+     * @brief Get last trigger source as string
+     *
+     * @return String representation of last trigger source
+     */
+    String getLastTriggerSourceString() const { return triggerSourceToString(lastTriggerSource_); }
 
     // ========================================================================
     // CONFIGURATION GETTERS/SETTERS

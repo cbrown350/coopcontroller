@@ -217,6 +217,11 @@ void Logger::logfError(const char *format, ...) const // NOSONAR
 
 String Logger::getLogsAsJson() const
 {
+  // Defensive check: ensure HAL is initialized
+  if (hal == nullptr) {
+    return R"({"error":"Logger not initialized","logs":[]})";
+  }
+
   logger.logDebug(String("Free heap before JSON log: ") + String(hal->getFreeHeap()) + " bytes");
 
   JsonDocument jsonDoc;
@@ -237,15 +242,20 @@ String Logger::getLogsAsJson() const
     logEntry["message"] = logBuffer[bufferIndex].message;
     logEntry["level"] = logLevelToString(logBuffer[bufferIndex].level);
   }
-  
+
   if (jsonDoc.overflowed()) {
     logWarning("JSON document overflowed - logs may be truncated");
     return R"({"error":"JSON overflow","logs":[]})";
   }
 
   String jsonResponse;
-  serializeJson(jsonDoc, jsonResponse);
-  
+  size_t serializedSize = serializeJson(jsonDoc, jsonResponse);
+
+  // Defensive check: ensure serialization produced valid output
+  if (serializedSize == 0 || jsonResponse.length() == 0) {
+    return R"({"error":"JSON serialization failed","logs":[]})";
+  }
+
   logger.logDebug(String("JSON log response entries: ") + String(totalEntries) + ", size: " + String(jsonResponse.length()) + " bytes, free heap: " + String(hal->getFreeHeap()) + " bytes");
   return jsonResponse;
 }
