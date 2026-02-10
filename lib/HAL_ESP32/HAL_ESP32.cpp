@@ -279,11 +279,19 @@ size_t HAL_ESP32::fsSize(HalFile file) {
 class ESP32WebRequestWrapper : public IWebRequest {
 private:
   AsyncWebServerRequest *request_;
+  JsonDocument jsonDoc_;
   JsonVariant jsonBody_;
 
 public:
   explicit ESP32WebRequestWrapper(AsyncWebServerRequest *request)
       : request_(request) {}
+
+  void parseJsonBody(const char *body) {
+    DeserializationError error = deserializeJson(jsonDoc_, body);
+    if (!error) {
+      jsonBody_ = jsonDoc_.as<JsonVariant>();
+    }
+  }
 
   String url() const override { return request_->url(); }
 
@@ -468,13 +476,9 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
                 ESP32WebResponseWrapper wrappedResponse(request);
 
                 // If body was collected, try to parse as JSON
+                // Document is owned by wrappedRequest so it outlives the JsonVariant references
                 if (request->_tempObject != nullptr) {
-                  JsonDocument doc;
-                  DeserializationError error = deserializeJson(doc, (const char *)request->_tempObject);
-                  if (!error) {
-                    wrappedRequest.setJsonBody(doc.as<JsonVariant>());
-                  }
-                  // _tempObject is freed by AsyncWebServerRequest destructor
+                  wrappedRequest.parseJsonBody((const char *)request->_tempObject);
                 }
 
                 handler(&wrappedRequest, &wrappedResponse);
