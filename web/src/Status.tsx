@@ -228,11 +228,10 @@ function Status() {
       await new Promise(resolve => setTimeout(resolve, 100))
     }
 
-    const formData = new FormData()
-    formData.append('brightness', value.toString())
     await authenticatedFetch('/light/set_brightness', {
       method: 'POST',
-      body: formData
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brightness: value })
     })
   }
 

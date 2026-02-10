@@ -748,8 +748,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  String brightnessStr = request->param("brightness");
-                  int brightness = brightnessStr.toInt();
+                  const JsonVariant &json = request->jsonBody();
+                  int brightness = json.isNull() ? -1 : (json["brightness"] | -1);
                   if (brightness < 0 || brightness > 100) {
                       response->send(400, "text/plain", "Brightness must be 0-100");
                       return;
