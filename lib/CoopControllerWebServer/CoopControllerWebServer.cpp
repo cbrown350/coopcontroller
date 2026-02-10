@@ -932,8 +932,9 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  // Check for confirmation parameter
-                  String confirm = request->param("confirm");
+                  // Check for confirmation parameter (from JSON body)
+                  const JsonVariant &json = request->jsonBody();
+                  String confirm = json.isNull() ? "" : (json["confirm"] | "");
                   if (confirm != "RESET") {
                       response->send(400, "text/plain", "Invalid confirmation value");
                       return;
@@ -961,8 +962,9 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  // Check for confirmation parameter
-                  String confirm = request->param("confirm");
+                  // Check for confirmation parameter (from JSON body)
+                  const JsonVariant &json = request->jsonBody();
+                  String confirm = json.isNull() ? "" : (json["confirm"] | "");
                   if (confirm != "REBOOT") {
                       response->send(400, "text/plain", "Invalid confirmation value");
                       return;

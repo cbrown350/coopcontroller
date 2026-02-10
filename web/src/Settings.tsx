@@ -342,47 +342,45 @@ function Settings() {
 
   const handleFactoryReset = async () => {
     try {
-      const formData = new FormData()
-      formData.append('confirm', 'RESET')
-
       const response = await authenticatedFetch('/factory_reset', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'RESET' })
       })
       
       if (response.ok) {
         alert('Factory reset complete! Device is restarting...')
-        // Reload page after a delay
         setTimeout(() => window.location.reload(), 5000)
       } else {
         const error = await response.text()
         alert(`Factory reset failed: ${error}`)
       }
-    } catch (error) {
-      alert(`Factory reset error: ${error}`)
+    } catch {
+      // Network error is expected - device is rebooting after factory reset
+      alert('Factory reset complete! Device is restarting...')
+      setTimeout(() => window.location.reload(), 10000)
     }
   }
 
   const handleReboot = async () => {
     try {
-      const formData = new FormData()
-      formData.append('confirm', 'REBOOT')
-
       const response = await authenticatedFetch('/reboot', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'REBOOT' })
       })
       
       if (response.ok) {
         alert('Device is rebooting...')
-        // Reload page after a delay
         setTimeout(() => window.location.reload(), 5000)
       } else {
         const error = await response.text()
         alert(`Reboot failed: ${error}`)
       }
-    } catch (error) {
-      alert(`Reboot error: ${error}`)
+    } catch {
+      // Network error is expected - device is rebooting
+      alert('Device is rebooting...')
+      setTimeout(() => window.location.reload(), 10000)
     }
   }
 
