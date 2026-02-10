@@ -13,7 +13,7 @@
 | **Build (firmware)** | `pio run` |
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
-| **Current build** | RAM 17.3%, Flash 96.7% |
+| **Current build** | RAM 17.3%, Flash 96.7% (1,267,977 bytes) |
 | **Tests** | 488/488 passing (10 components) |
 | **Web access** | `http://coopcontroller.local` |
 
@@ -86,6 +86,9 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - Factory Reset on Boot (hardware button)
 - Scheduled Pump Maintenance Cycles
 - Hardware Emulator (7 scenarios + custom + recordings + temp emulation)
+- WiFi BSSID Preference (connect to specific access point)
+- Web UI Theming (custom DaisyUI theme with logo)
+- System Status Display, IP/MAC Display, Reboot Controls (audited & documented)
 
 See [Feature Tracker](docs/feature-tracker.md) for full details and planned roadmap.
 

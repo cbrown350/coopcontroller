@@ -112,6 +112,12 @@ bool HAL_ESP32::wifiBegin(const char *ssid, const char *password) {
   return true;
 }
 
+bool HAL_ESP32::wifiBeginWithBSSID(const char *ssid, const char *password, const uint8_t *bssid) {
+  WiFiClass::mode(WIFI_STA);
+  WiFi.begin(ssid, password, 0, bssid);
+  return true;
+}
+
 bool HAL_ESP32::wifiBeginAP(const char *ssid, const char *password) {
   WiFiClass::mode(WIFI_AP);
   if (password != nullptr) {

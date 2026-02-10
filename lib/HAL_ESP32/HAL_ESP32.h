@@ -71,6 +71,7 @@ public:
   // ========================================================================
 
   bool wifiBegin(const char *ssid, const char *password) override;
+  bool wifiBeginWithBSSID(const char *ssid, const char *password, const uint8_t *bssid) override;
   bool wifiBeginAP(const char *ssid, const char *password = nullptr) override;
   bool wifiSetHostname(const char *hostName_) override;
   bool wifiIsConnected() override;

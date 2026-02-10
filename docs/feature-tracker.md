@@ -14,7 +14,7 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
 | Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
 
-**Current Build:** RAM 17.3% (56,580 bytes), Flash 96.7% (1,266,841 bytes)
+**Current Build:** RAM 17.3% (56,580 bytes), Flash 96.7% (1,267,977 bytes)
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. Actual functionality hasn't been checked for correctness.
 
@@ -653,18 +653,200 @@ WiFi management code extracted from main.cpp to dedicated WifiController class. 
 
 ---
 
+## Completed Features (Previously Listed as Planned)
+
+The following features were found to already be implemented during a project-wide audit (February 2026):
+
+### System Status Display ✅
+
+**Status:** Already implemented (discovered during audit)
+
+**Summary:**
+System status information is fully displayed in the web UI Status page.
+
+**Implementation:**
+- `/system_status` REST endpoint returns heap memory (free/total/percent), uptime (seconds + formatted), chip model, CPU frequency, flash size, WiFi info (RSSI, SSID, IP, MAC, BSSID)
+- Status.tsx "System Status" card displays all system info with memory progress bar
+- main.cpp logs system status every 10 seconds at VERBOSE level
+- Low memory alert triggers buzzer when heap usage > 80%
+
+---
+
+### IP Address and MAC Address Display ✅
+
+**Status:** Already implemented (discovered during audit)
+
+**Summary:**
+ESP32 network information displayed in web UI and API.
+
+**Implementation:**
+- `/system_status` endpoint returns `wifi_ip`, `wifi_mac`, `wifi_bssid`
+- Status.tsx displays IP address, MAC address, and BSSID in the System Status card
+- HAL methods: `wifiGetLocalIP()`, `wifiGetMacAddress()`, `wifiGetBSSID()`
+
+---
+
+### Reboot Controls ✅
+
+**Status:** Already implemented (discovered during audit)
+
+**Summary:**
+Web UI reboot button with confirmation dialog.
+
+**Implementation:**
+- `/reboot` POST endpoint with `confirm=REBOOT` parameter (auth required)
+- Settings.tsx reboot button with confirmation dialog
+- 3-second delay before restart for response delivery
+- Logged at WARNING level
+
+---
+
+### Floating UI Elements for Settings Page ✅
+
+**Status:** Already implemented (discovered during audit)
+
+**Summary:**
+Floating notifications, save button, and unsaved changes indicator in Settings page.
+
+**Implementation:**
+- **Floating error toast:** Fixed position top-center with z-50, auto-dismiss
+- **Floating success toast:** Fixed position top-center with z-50, "Settings saved successfully!"
+- **Floating unsaved changes badge:** Fixed position bottom-left with z-50, warning badge
+- **Floating save button:** Fixed position bottom-right with z-50, accent button
+- All elements use CSS `fixed` positioning with proper z-index
+- Responsive across mobile, tablet, desktop
+
+---
+
+### Improved Connection Status ✅
+
+**Status:** Already implemented (discovered during audit)
+
+**Summary:**
+Water meter sensors show "connected" only when pulses are actively detected within a configurable timeout.
+
+**Implementation:**
+- `isActivelyConnected()` method in SensorManager checks pulse_count > 0 and time since last pulse < configurable timeout
+- `water_meter_timeout_seconds` setting (default 300s) controls disconnect threshold
+- `actively_connected` field in sensor status API response
+- `getTimeSinceLastPulse()` provides elapsed time since last pulse
+- Status strings: "Water Meter - Connected (Active)", "Water Meter - Connected (Idle)", "Water Meter - Configured (No Pulses Detected)"
+
+---
+
+### Door Control ✅
+
+**Status:** Already implemented (full DoorController with all sub-features)
+
+**Summary:**
+Complete door automation with motor control, hall sensors, fault detection, scheduling, lockout, and auto-calculated timeouts.
+
+**Implementation:**
+- Bidirectional motor control using DRV8833 (HAL abstracted)
+- Hall effect position sensors for open/closed detection
+- Fault detection with timeout and DRV8833 fault pin
+- Manual control from web UI (open/close/stop buttons)
+- Manual switch input for physical control
+- Auto mode with sunrise/sunset scheduling and configurable offsets
+- Auto-close after sunset with configurable delay
+- Door lockout (blocks all operations when enabled)
+- Auto-calculated timeouts from operation history (circular buffer of 10 entries)
+- Progress percentage calculation during operations
+- Complete REST API with 7 endpoints (all auth-protected)
+- 68 unit tests covering all functionality
+
+---
+
+### Network Safety (NTP Guard) ✅
+
+**Status:** Already implemented
+
+**Summary:**
+Network calls are guarded against WiFi disconnection for currently implemented services.
+
+**Implementation:**
+- `configTime()` NTP call wrapped in `wifiController.isConnected()` check
+- Warning logged when NTP sync deferred due to no WiFi
+- Syslog uses UDP (fails gracefully without WiFi)
+- mDNS only started after WiFi connects
+- Web server operates in both STA and AP modes
+- Note: Additional guards for future services (Email, Telegram, MQTT, OpenWeather) will be added when those features are implemented
+
+---
+
+### WiFi BSSID Preference ✅
+
+**Implemented:** 2026-02-09
+**Status:** Complete and tested
+
+**Summary:**
+Added support for connecting to a specific WiFi access point by BSSID (MAC address), useful for mesh networks with multiple APs sharing the same SSID.
+
+**Key Changes:**
+- Added `wifiBeginWithBSSID(ssid, password, bssid)` method to HAL interface (IHAL.h)
+- Implemented in HAL_ESP32 using `WiFi.begin(ssid, password, 0, bssid)` for channel-agnostic BSSID connection
+- Added mock implementation in MockHAL.h for desktop testing
+- WifiController parses BSSID preference string ("AA:BB:CC:DD:EE:FF" format) and uses BSSID-aware connection
+- `parseBSSID()` helper with hex validation and format checking
+- Falls back to auto-select (standard `wifiBegin`) when BSSID is empty or invalid
+- BSSID preference used in both initial connection and reconnection paths
+- Setting, getter/setter, JSON serialization, web server handler, and Settings UI input field were already in place
+
+**Files Modified:**
+- `lib/HAL/IHAL.h` - Added `wifiBeginWithBSSID()` pure virtual method
+- `lib/HAL_ESP32/HAL_ESP32.h` - Added override declaration
+- `lib/HAL_ESP32/HAL_ESP32.cpp` - Implemented with `WiFi.begin(ssid, password, 0, bssid)`
+- `lib/WifiController/WifiController.h` - Added `parseBSSID()` declaration
+- `lib/WifiController/WifiController.cpp` - BSSID-aware connection in `wifiSetup()` and `checkWifiConnection()`
+- `test/common/mocks/MockHAL.h` - Added mock implementation
+
+**Build Verification:**
+- ESP32: ✅ RAM: 56,580 bytes (17.3%), Flash: 1,267,977 bytes (96.7%) - +1,136 bytes
+- Web UI: ✅ TypeScript compilation successful (UI already existed)
+- Tests: ✅ 488/488 passing
+
+---
+
+### Web UI Theming Based on Logo ✅
+
+**Implemented:** 2026-02-09
+**Status:** Complete
+
+**Summary:**
+Applied custom DaisyUI theme with warm agricultural color palette inspired by the coop logo, with automatic dark/light mode support.
+
+**Key Changes:**
+- Created custom "coop" light theme with warm earthy palette (barn-red primary, forest-green secondary, golden accent, cream base)
+- Created custom "coop-dark" dark theme with earthy dark tones
+- Both themes use oklch color space for perceptually uniform colors
+- Added logo display in App header (logo.webp alongside title)
+- Title styled with primary color for brand consistency
+- Responsive logo sizing (8x8 mobile, 10x10 desktop)
+- Themes automatically switch based on `prefers-color-scheme`
+
+**Theme Colors:**
+- **Primary:** Warm barn red-brown (controls, buttons)
+- **Secondary:** Forest green (secondary actions)
+- **Accent:** Golden amber (highlights, accent elements)
+- **Base:** Warm cream (light) / Dark earth (dark)
+- **Info/Success/Warning/Error:** Appropriate semantic colors
+
+**Files Modified:**
+- `web/src/index.css` - Custom DaisyUI theme definitions
+- `web/src/App.tsx` - Logo in header with responsive sizing
+
+**Build Verification:**
+- Web UI: ✅ TypeScript compilation successful
+
+---
+
 ## Planned Features
 
 Features organized by priority and implementation status.
 
-### High Priority - Safety & Reliability
+> **Flash Constraint Note:** Firmware is at 96.7% flash usage (42,743 bytes remaining). Features requiring significant new libraries (Email/SMTP, Telegram/HTTP client, MQTT, Chart.js, etc.) are **blocked until flash optimization is performed** (e.g., custom partition scheme, code size reduction, or moving to ESP32-S3 with larger flash).
 
-#### Improved Connection Status
-- Only show "connected" if water meter pulse detected
-- More accurate connection state reporting
-- Helps identify sensor vs network issues
-
-### High Priority - Monitoring & Notifications
+### High Priority - Monitoring & Notifications (Blocked by Flash)
 
 #### Email Notifications
 - SMTP server/port, TLS and credentials configuration in web UI settings
@@ -674,6 +856,7 @@ Features organized by priority and implementation status.
 - Notify on API failures (OpenWeather, OpenAI)
 - Daily status and forecast reports
 - Configurable notification times
+- **Blocker:** Requires SMTP/TLS library (~20-40KB flash)
 
 #### Telegram Integration
 - Bot commands for basic controls (pump on/off, door open/close, get status)
@@ -681,6 +864,7 @@ Features organized by priority and implementation status.
 - Alert notifications for critical events
 - Daily forecast and automation plan
 - Approval/confirmation commands for AI door recommendations
+- **Blocker:** Requires HTTP client library for Telegram API (~15-30KB flash)
 
 #### External Pushbutton for Manual Pump Cycle
 - Add support for external momentary pushbutton
@@ -690,26 +874,7 @@ Features organized by priority and implementation status.
 - Debouncing and interrupt-driven detection
 - Visual/audio feedback when activated
 
-#### System Status Display
-- Show heap memory, CPU usage in web UI
-- Display uptime since last reboot
-- Log periodic status if verbose logging enabled
-- Help identify memory leaks or performance issues
-
 ### Medium Priority - Door Automation
-
-#### Door Control
-- Bidirectional motor control using DRV8833 (OUT_DOOR_A_OPEN_POS_PIN / OUT_DOOR_A_OPEN_NEG_PIN)
-- Hall effect position sensors (DOOR_A_HALL_SENSOR_OPEN_B_PIN / DOOR_A_HALL_SENSOR_CLOSED_B_PIN)
-- Fault detection with input from DRV8833 board and internal timeout (DOOR_A_FAULT_B_PIN active LOW)
-- Manual control from external switch, hit switch to open/close door
-- Configurable timeout values
-- Manual control from web UI
-- Automatic control based on:
-  - Sunrise/sunset with configurable offsets
-  - Weather conditions via OpenWeather API
-  - AI recommendations via OpenAI-compatible API
-  - User approval/override required daily
 
 #### AI-Powered Door Decisions
 - Daily AI recommendation based on:
@@ -722,6 +887,7 @@ Features organized by priority and implementation status.
   - Web UI button
   - Home Assistant integration
 - Safety override: manual control always available
+- **Blocker:** Requires HTTP client for OpenAI API + significant flash
 
 ### Medium Priority - UI Improvements
 
@@ -732,30 +898,6 @@ Features organized by priority and implementation status.
 - Maintain fallback to polling for compatibility
 - Implement on ESP32 using AsyncWebServer capabilities
 
-#### Web UI Routing Fix
-- Fix error when refreshing page on non-root routes
-- Configure proper fallback routing in Vite and web server
-- Serve index.html for all unknown routes (SPA behavior)
-- Test all routes work correctly after refresh
-- Ensure proper 404 handling for actual missing resources
-
-#### Web UI Theming Based on Logo
-- Design color scheme based on provided logo.webp
-- Update Tailwind/DaisyUI theme configuration
-- Create cohesive visual identity
-- Consider dark/light mode variations
-- Apply consistently across all pages
-
-#### Floating UI Elements for Settings Page
-- **Floating Notifications for Settings Changes** - Notifications when changes are made should float so they're visible wherever the user has scrolled on the screen (not fixed in one location under tabs)
-- **Floating Save Settings Button** - The save settings button should float so it's easy to click from anywhere on the page
-- **Floating Unsaved Changes Indicator** - A similarly floating notification that stays visible if there are unsaved settings changes, alerting the user that changes need to be saved
-- Use CSS fixed positioning with appropriate z-index to ensure visibility above other page elements
-- Position in bottom-right or bottom-left corner of viewport for easy access
-- Ensure floating elements don't obscure critical content or controls
-- Add smooth transitions for showing/hiding floating elements
-- Maintain visibility across all screen sizes (mobile, tablet, desktop)
-
 #### Historical Data Visualization
 - Add graphs showing past week of data (with 24-hour detailed view)
 - Temperature trends from both sensors
@@ -765,8 +907,9 @@ Features organized by priority and implementation status.
 - Door open/close states and what triggered each operation (auto, manual, timer, etc.)
 - Use lightweight charting library (Chart.js or similar)
 - Include event markers showing what triggered state changes
+- **Blocker:** Requires charting library + data storage mechanism
 
-### Medium Priority - API Integrations
+### Medium Priority - API Integrations (Blocked by Flash)
 
 #### OpenWeather API
 - API key configuration in web UI settings
@@ -774,6 +917,7 @@ Features organized by priority and implementation status.
 - Daily weather forecast retrieval
 - Historical weather data for AI decision making
 - Integration with door and pump automation
+- **Blocker:** Requires HTTP client + JSON parsing (~15-25KB flash)
 
 #### OpenAI-Compatible API
 - Base URL and API key configuration in web UI
@@ -781,13 +925,15 @@ Features organized by priority and implementation status.
 - Decision engine for door recommendations
 - Analysis of weather patterns and event history
 - Customizable prompts from web UI
+- **Blocker:** Requires HTTP client + JSON processing
 
 #### GPS/Location Services
 - Enter zip code OR latitude/longitude in web UI
 - Request geolocation from browser
-- Used for sunrise/sunset calculations
+- Used for sunrise/sunset calculations (lat/long settings already exist)
 - Used for OpenWeather API queries
 - Store in settings for persistent use
+- Note: Manual lat/long entry already works in Settings page
 
 #### Home Assistant Integration
 - MQTT settings configuration in web UI (broker, port, credentials)
@@ -797,6 +943,7 @@ Features organized by priority and implementation status.
 - Automation integration
 - Alert notifications via HA
 - Auto discovery in Home Assistant
+- **Blocker:** Requires MQTT library (~20-30KB flash)
 
 #### Interactive Map for Location Setting
 - Add interactive map component to Settings page
@@ -805,21 +952,7 @@ Features organized by priority and implementation status.
 - Use lightweight map library (Leaflet or similar)
 - Fall back to manual coordinate entry if map unavailable
 - Show selected coordinates and approximate address
-
-#### IP Address and MAC Address Display
-- Display ESP32 IP address on Status page
-- Display MAC address for network identification
-- Useful for router configuration and debugging
-- Show in system information section
-- Include in `/sensor_status` API response
-
-#### WiFi BSSID Preference
-- Add BSSID preference field in WiFi settings
-- Allow users to specify preferred access point MAC address
-- Useful when multiple APs share same SSID (mesh networks)
-- Optional - leave empty to connect to strongest signal
-- Helps ensure consistent connection to specific AP
-- Display current connected BSSID in status
+- **Blocker:** Map library too large for ESP32 LittleFS
 
 ### Medium Priority - Code Refactoring
 
@@ -859,17 +992,6 @@ Features organized by priority and implementation status.
 - Update diagrams and architecture docs
 - Add troubleshooting guides
 - Add full method and class Doxygen headers
-
-#### Reboot Controls
-- Add reboot button to web UI
-- Option to schedule reboots
-- Clear indication before reboot executes
-
-#### Network Safety
-- Ensure no web-related calls when not connected to WiFi
-- Prevent OpenWeather/OpenAI/email/Telegram calls without connection
-- Queue requests for when connection restored
-- Graceful degradation in offline mode
 
 ---
 

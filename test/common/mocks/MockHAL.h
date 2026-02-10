@@ -201,6 +201,13 @@ public:
         return true;
     }
 
+    bool wifiBeginWithBSSID(const char* ssid, const char* password, const uint8_t* bssid) override {
+        mockSSID = String(ssid);
+        mockWiFiPassword = String(password);
+        (void)bssid;  // BSSID not used in mock
+        return true;
+    }
+
     bool wifiBeginAP(const char* ssid, const char* password = nullptr) override {
         // Store the AP SSID for testing
         if (ssid != nullptr) {

@@ -17,6 +17,7 @@ void WifiController::begin(IHAL* hal, SettingsManager* settings, BuzzerControlle
     buzzerController_ = buzzer;
     hostName_ = _hostName;
     apPasswd_ = _apPasswd;
+    bssidReconnectAttempt_ = false;
 
     // Initialize WiFi LED if enabled
     if (settingsManager_->getWifiLedEnabled()) {
@@ -172,8 +173,24 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
         // Disable auto-reconnect and persistent storage - credentials managed by settingsManager
         _hal->wifiSetAutoReconnect(false); // Disable auto-reconnect, we handle it manually
         
-        logger.logInfo("Connecting to WiFi: " + ssid);
-        _hal->wifiBegin(ssid.c_str(), password.c_str());
+        // Check for BSSID preference
+        String bssidPref = settingsManager_->getWifiBssidPreference();
+        bool usingBssid = false;
+        if (bssidPref.length() > 0) {
+            uint8_t bssid[6];
+            if (parseBSSID(bssidPref, bssid)) {
+                logger.logInfo("Connecting to WiFi: " + ssid + " (BSSID: " + bssidPref + ")");
+                _hal->wifiBeginWithBSSID(ssid.c_str(), password.c_str(), bssid);
+                usingBssid = true;
+            } else {
+                logger.logWarning("Invalid BSSID format: " + bssidPref + ", connecting without BSSID preference");
+                logger.logInfo("Connecting to WiFi: " + ssid);
+                _hal->wifiBegin(ssid.c_str(), password.c_str());
+            }
+        } else {
+            logger.logInfo("Connecting to WiFi: " + ssid);
+            _hal->wifiBegin(ssid.c_str(), password.c_str());
+        }
         
         int maxRetries = settingsManager_->getWifiMaxRetries();
         int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
@@ -189,6 +206,20 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             // Add some debugging
             logger.logDebug("WiFi status: " + String(_hal->wifiGetStatus()) + ", attempt " + 
                     String(wifiRetryCount) + "/" + String(maxRetries));
+        }
+
+        // If BSSID connection failed, fall back to auto-BSSID before giving up
+        if (!_hal->wifiIsConnected() && usingBssid) {
+            logger.logWarning("Failed to connect to preferred BSSID " + bssidPref + ", falling back to any available AP");
+            _hal->wifiBegin(ssid.c_str(), password.c_str());
+            wifiRetryCount = 0;
+            while (!_hal->wifiIsConnected() && wifiRetryCount < maxRetries) {
+                _hal->taskWdtReset();
+                delay(retryDelay * 1000);
+                wifiRetryCount++;
+                logger.logDebug("WiFi fallback status: " + String(_hal->wifiGetStatus()) + ", attempt " + 
+                        String(wifiRetryCount) + "/" + String(maxRetries));
+            }
         }
 
         logger.logDebug(""); // New line after dots
@@ -258,7 +289,21 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             String password = settingsManager_->getPassword();
             
             if (ssid.length() != 0) {
-                _hal->wifiBegin(ssid.c_str(), password.c_str());
+                String bssidPref = settingsManager_->getWifiBssidPreference();
+                if (bssidPref.length() > 0) {
+                    uint8_t bssid[6];
+                    if (parseBSSID(bssidPref, bssid)) {
+                        logger.logInfo("Reconnecting to WiFi with BSSID preference: " + bssidPref);
+                        _hal->wifiBeginWithBSSID(ssid.c_str(), password.c_str(), bssid);
+                        bssidReconnectAttempt_ = true;
+                    } else {
+                        _hal->wifiBegin(ssid.c_str(), password.c_str());
+                        bssidReconnectAttempt_ = false;
+                    }
+                } else {
+                    _hal->wifiBegin(ssid.c_str(), password.c_str());
+                    bssidReconnectAttempt_ = false;
+                }
                 wifiReconnectStart = millis();
                 isReconnecting = true;
                 wifiRetryCount = 0;
@@ -274,11 +319,21 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             unsigned int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
 
             if (millis() - wifiReconnectStart >= (static_cast<unsigned long>(retryDelay) * 1000UL * maxRetries)) {
-                logger.logWarning("WiFi reconnection timeout, switching to AP mode");
-                settingsManager_->setAPMode(true);
-                settingsManager_->save();
-                delay(1000);
-                _hal->restart();
+                // If we were trying with BSSID, fall back to auto-BSSID before giving up
+                if (bssidReconnectAttempt_) {
+                    logger.logWarning("BSSID reconnection failed, falling back to any available AP");
+                    bssidReconnectAttempt_ = false;
+                    String ssid = settingsManager_->getSSID();
+                    String password = settingsManager_->getPassword();
+                    _hal->wifiBegin(ssid.c_str(), password.c_str());
+                    wifiReconnectStart = millis(); // Reset timer for fallback attempt
+                } else {
+                    logger.logWarning("WiFi reconnection timeout, switching to AP mode");
+                    settingsManager_->setAPMode(true);
+                    settingsManager_->save();
+                    delay(1000);
+                    _hal->restart();
+                }
             }
         }
     } else {
@@ -340,4 +395,32 @@ void WifiController::updateWifiLed() {
         ledState = false;
         lastLedToggle = currentMillis; // Prevent unnecessary checks
     }
+}
+
+bool WifiController::parseBSSID(const String& bssidStr, uint8_t* bssid) {
+    if (bssidStr.length() != 17) return false;  // "AA:BB:CC:DD:EE:FF" = 17 chars
+    
+    for (int i = 0; i < 6; i++) {
+        int offset = i * 3;
+        char high = bssidStr.charAt(offset);
+        char low = bssidStr.charAt(offset + 1);
+        
+        // Validate separator (except after last byte)
+        if (i < 5 && bssidStr.charAt(offset + 2) != ':') return false;
+        
+        // Convert hex chars to byte
+        uint8_t val = 0;
+        if (high >= '0' && high <= '9') val = (high - '0') << 4;
+        else if (high >= 'A' && high <= 'F') val = (high - 'A' + 10) << 4;
+        else if (high >= 'a' && high <= 'f') val = (high - 'a' + 10) << 4;
+        else return false;
+        
+        if (low >= '0' && low <= '9') val |= (low - '0');
+        else if (low >= 'A' && low <= 'F') val |= (low - 'A' + 10);
+        else if (low >= 'a' && low <= 'f') val |= (low - 'a' + 10);
+        else return false;
+        
+        bssid[i] = val;
+    }
+    return true;
 }

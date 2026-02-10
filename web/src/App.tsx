@@ -14,7 +14,10 @@ function App(props: ParentProps) {
 
   return (
     <div class="flex flex-col items-center min-h-screen pt-4 sm:pt-10 bg-base-200 overflow-x-hidden w-full max-w-full">
-      <h1 class="text-xl font-bold w-full max-w-5xl px-2 sm:pl-1 pb-4">Coop Controller</h1>
+      <div class="flex items-center gap-3 w-full max-w-5xl px-2 sm:pl-1 pb-4">
+        <img src="/logo.webp" alt="Coop Controller" class="w-8 h-8 sm:w-10 sm:h-10 rounded" />
+        <h1 class="text-xl font-bold text-primary">Coop Controller</h1>
+      </div>
       <div class="tabs tabs-lift w-full max-w-5xl text-xs sm:text-sm">
 
         <A href="/status" class={`tab ${isActive('/status') ? 'tab-active' : ''}`}>

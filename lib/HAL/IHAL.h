@@ -302,6 +302,15 @@ public:
   virtual bool wifiBegin(const char *ssid, const char *password) = 0;
 
   /**
+   * @brief Connect to WiFi network with specific BSSID
+   * @param ssid Network SSID
+   * @param password Network password
+   * @param bssid 6-byte BSSID to connect to (nullptr = auto-select)
+   * @return true if connection initiated successfully
+   */
+  virtual bool wifiBeginWithBSSID(const char *ssid, const char *password, const uint8_t *bssid) = 0;
+
+  /**
    * @brief Start WiFi Access Point mode
    * @param ssid AP SSID
    * @param password AP password (nullptr for open network)

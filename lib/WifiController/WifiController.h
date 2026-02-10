@@ -73,6 +73,7 @@ private:
     bool isReconnecting;                ///< Currently in reconnect loop
     bool isInAPMode_;                   ///< Currently in AP mode
     int wifiRetryCount;                 ///< Current retry attempt number
+    bool bssidReconnectAttempt_;        ///< Whether current reconnect uses BSSID preference
 
     // WiFi LED control variables
     unsigned long lastLedToggle;        ///< Last time LED was toggled
@@ -85,6 +86,14 @@ private:
     // ========================================================================
     // PRIVATE METHODS
     // ========================================================================
+
+    /**
+     * @brief Parse BSSID string "AA:BB:CC:DD:EE:FF" to 6-byte array
+     * @param bssidStr BSSID string in colon-separated hex format
+     * @param bssid Output 6-byte array
+     * @return true if parsing succeeded
+     */
+    bool parseBSSID(const String& bssidStr, uint8_t* bssid);
 
     /**
      * @brief Handle WiFi connection failure
