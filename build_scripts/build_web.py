@@ -30,7 +30,7 @@ def before_buildfs(source, target, env): # NOSONAR - complexity OK
     print(f"Creating {data_dir}...")
     os.makedirs(data_dir, exist_ok=True)
     
-    # If user_settins.json exists in data dir, copy it to data_dir
+    # Copy project data dir to data_dir
     static_data_src = os.path.join(env.subst('$PROJECT_DIR'), "data")
     if os.path.exists(static_data_src):
         # copy all files and folders except those with "example" in the name
@@ -75,9 +75,11 @@ def before_buildfs(source, target, env): # NOSONAR - complexity OK
         env.Exit(1)
     
     # Clean up old files
-    print(f"Cleaning up old www files in {build_data_dir}...")
+    print(f"Cleaning up old www files in {build_data_dir} and {www_dir}...")
     if os.path.exists(build_data_dir):
         shutil.rmtree(build_data_dir)
+    if os.path.exists(www_dir):
+        shutil.rmtree(www_dir)
     
     # Create www directory
     print(f"Creating {www_dir}...")
@@ -140,6 +142,7 @@ def before_buildfs(source, target, env): # NOSONAR - complexity OK
                         with gzip.open(gzip_path, 'wb') as f_out:
                             f_out.writelines(f_in)
                     print(f"Gzipped: {file_path}")
+                    os.remove(file_path) # remove original file after gzipping
                     gzipped_count += 1
                 except Exception as e:
                     print(f"Error gzipping {file_path}: {e}")
@@ -153,6 +156,98 @@ def before_buildfs(source, target, env): # NOSONAR - complexity OK
     print("Web UI build complete!")
 
 
+def verify_littlefs_bin(source, target, env):
+    """Verify the LittleFS binary was created successfully by checking file contents"""
+    littlefs_bin = os.path.join(env.subst('$BUILD_DIR'), "littlefs.bin")
+    
+    if not os.path.exists(littlefs_bin):
+        print(f"ERROR: LittleFS binary not found at {littlefs_bin}")
+        env.Exit(1)
+        return
+    
+    bin_size = os.path.getsize(littlefs_bin)
+    
+    # Check the LittleFS superblock magic bytes at expected offset
+    try:
+        with open(littlefs_bin, 'rb') as f:
+            f.seek(8)
+            magic = f.read(8)
+            if magic != b'littlefs':
+                print(f"ERROR: LittleFS binary at {littlefs_bin} has invalid magic bytes - filesystem image may be corrupt!")
+                print(f"  Expected: b'littlefs', Got: {magic}")
+                print("  This usually means the filesystem ran out of space.")
+                print(f"  Binary size: {bin_size} bytes")
+                env.Exit(1)
+                return
+    except Exception as e:
+        print(f"ERROR: Failed to verify LittleFS binary: {e}")
+        env.Exit(1)
+        return
+    
+    # Verify all source files fit by comparing total data size vs image size
+    # LittleFS has metadata overhead, so data must be LESS than image size
+    data_dir = os.path.join(env.subst('$BUILD_DIR'), "data")
+    if os.path.exists(data_dir):
+        total_data_size = 0
+        source_files = []
+        for root, dirs, files in os.walk(data_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                file_size = os.path.getsize(file_path)
+                total_data_size += file_size
+                rel_path = os.path.relpath(file_path, data_dir)
+                source_files.append((rel_path, file_size))
+        
+        print(f"LittleFS image size: {bin_size} bytes, data content: {total_data_size} bytes")
+        
+        if total_data_size > bin_size:
+            print(f"ERROR: Data content ({total_data_size} bytes) exceeds LittleFS image size ({bin_size} bytes)!")
+            print("  The filesystem image is full - not all files were written successfully.")
+            print(f"  Overflow: {total_data_size - bin_size} bytes over capacity")
+            print("  Source files:")
+            for rel_path, file_size in sorted(source_files, key=lambda x: -x[1]):
+                print(f"    {file_size:>10,} bytes  {rel_path}")
+            env.Exit(1)
+            return
+        
+        # Also verify using mklittlefs --list to count files in the image
+        try:
+            mklittlefs = env.subst(env.get("MKFSTOOL", "mklittlefs"))
+            result = subprocess.run(
+                [mklittlefs, "-l", littlefs_bin],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                # Count non-empty lines that represent files (mklittlefs -l output)
+                listed_files = [
+                    line.strip() for line in result.stdout.strip().splitlines()
+                    if line.strip() and not line.strip().startswith('<')
+                ]
+                image_file_count = len(listed_files)
+                source_file_count = len(source_files)
+                
+                if image_file_count < source_file_count:
+                    print(f"ERROR: LittleFS image contains {image_file_count} files but source has {source_file_count} files!")
+                    print("  Some files were not written to the image (filesystem full).")
+                    print(f"  mklittlefs listing:\n{result.stdout}")
+                    env.Exit(1)
+                    return
+                
+                print(f"LittleFS image verified: {image_file_count}/{source_file_count} files, "
+                      f"{bin_size:,} bytes (data: {total_data_size:,} bytes, "
+                      f"free: ~{bin_size - total_data_size:,} bytes)")
+            else:
+                # mklittlefs --list failed, fall back to size-only check
+                print(f"Warning: Could not list LittleFS image contents (mklittlefs returned {result.returncode})")
+                print(f"LittleFS image size check passed: {bin_size:,} bytes (data: {total_data_size:,} bytes)")
+        except FileNotFoundError:
+            print(f"Warning: mklittlefs not found, skipping file count verification")
+            print(f"LittleFS image size check passed: {bin_size:,} bytes (data: {total_data_size:,} bytes)")
+    else:
+        print(f"LittleFS image verified: {bin_size} bytes")
+
+
 env.AddPreAction("$BUILD_DIR/littlefs.bin", before_buildfs) # type: ignore
+env.AddPostAction("$BUILD_DIR/littlefs.bin", verify_littlefs_bin) # type: ignore
 # clean up files
 env.AddPostAction("$BUILD_DIR/littlefs.bin", lambda target, source, env: shutil.rmtree(str(source[0]))) # type: ignore
