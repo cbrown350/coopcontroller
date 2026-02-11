@@ -11,8 +11,11 @@
 #include "LightController.h"
 #include "SunriseSunset.h"
 #include "WifiController.h"
+#include "TriggerSource.h"
 
 #include <stdint.h>
+#include <memory>
+#include <algorithm>
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ElegantOTA.h>
@@ -461,8 +464,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  pumpController.turnOn();
-                  logger.logInfo("Pump turned on (manual)");
+                  pumpController.turnOn(TriggerSource::WEB_UI);
+                  logger.logInfo("Pump turned on via web UI");
                   response->send(200, "text/plain", "Pump turned on");
               });
 
@@ -474,8 +477,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  pumpController.turnOff();
-                  logger.logInfo("Pump turned off (manual)");
+                  pumpController.turnOff(TriggerSource::WEB_UI);
+                  logger.logInfo("Pump turned off via web UI");
                   response->send(200, "text/plain", "Pump turned off");
               });
 
@@ -487,7 +490,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  pumpController.setAutoMode(true);
+                  pumpController.setAutoMode(true, TriggerSource::WEB_UI);
                   response->send(200, "text/plain", "Pump set to auto mode");
               });
 
@@ -499,7 +502,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  pumpController.forceCycle();
+                  pumpController.forceCycle(TriggerSource::WEB_UI);
                   response->send(200, "text/plain", "Pump cycle forced");
               });
 
@@ -616,7 +619,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  doorController.open();
+                  doorController.open(TriggerSource::WEB_UI);
                   response->send(200, "text/plain", "Door opening");
               });
     
@@ -628,7 +631,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  doorController.close();
+                  doorController.close(TriggerSource::WEB_UI);
                   response->send(200, "text/plain", "Door closing");
               });
     
@@ -640,7 +643,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  doorController.stop();
+                  doorController.stop(TriggerSource::WEB_UI);
                   response->send(200, "text/plain", "Door stopped");
               });
     
@@ -654,7 +657,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                   String autoStr = request->param("auto");
                   bool autoMode = (autoStr == "true" || autoStr == "1");
-                  doorController.setAutoMode(autoMode);
+                  doorController.setAutoMode(autoMode, TriggerSource::WEB_UI);
                   response->send(200, "text/plain", autoMode ? "Door auto mode enabled" : "Door auto mode disabled");
               });
     
@@ -719,8 +722,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  lightController.turnOn();
-                  logger.logInfo("Light turned on (manual)");
+                  lightController.turnOn(TriggerSource::WEB_UI);
+                  logger.logInfo("Light turned on via web UI");
                   response->send(200, "text/plain", "Light turned on");
               });
     
@@ -732,8 +735,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  lightController.turnOff();
-                  logger.logInfo("Light turned off (manual)");
+                  lightController.turnOff(TriggerSource::WEB_UI);
+                  logger.logInfo("Light turned off via web UI");
                   response->send(200, "text/plain", "Light turned off");
               });
     
@@ -745,7 +748,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  lightController.fadeIn();
+                  lightController.fadeIn(TriggerSource::WEB_UI);
                   response->send(200, "text/plain", "Light fading in");
               });
     
@@ -757,7 +760,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  lightController.fadeOut();
+                  lightController.fadeOut(TriggerSource::WEB_UI);
                   response->send(200, "text/plain", "Light fading out");
               });
     
@@ -776,7 +779,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
                   
-                  lightController.setBrightness(brightness);
+                  lightController.setBrightness(brightness, TriggerSource::WEB_UI);
                   String msg = "Light brightness set to " + String(brightness) + "%";
                   response->send(200, "text/plain", msg.c_str());
               });
@@ -791,7 +794,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                   String autoStr = request->param("auto");
                   bool autoMode = (autoStr == "true" || autoStr == "1");
-                  lightController.setAutoMode(autoMode);
+                  lightController.setAutoMode(autoMode, TriggerSource::WEB_UI);
                   settingsManager.setLightAutoMode(autoMode);
                   settingsManager.save();
                   response->send(200, "text/plain", autoMode ? "Light auto mode enabled" : "Light auto mode disabled");
@@ -945,7 +948,20 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   jsonDoc["chip_family"]      = chipFamily;
                   jsonDoc["build_date"]       = BUILD_TIMESTAMP_DATE;
                   jsonDoc["build_time"]       = BUILD_TIMESTAMP_TIME;
-                  
+
+                  // Add GitHub repo if defined
+                  #ifdef GITHUB_REPO
+                  jsonDoc["github_repo"] = TOSTRING(GITHUB_REPO);
+                  #endif
+
+                  // Add version manifest URL if defined (non-empty)
+                  #ifdef VERSION_MANIFEST_URL
+                  const char* manifestUrl = TOSTRING(VERSION_MANIFEST_URL);
+                  if (manifestUrl && strlen(manifestUrl) > 0) {
+                      jsonDoc["manifest_url"] = manifestUrl;
+                  }
+                  #endif
+
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
                   response->send(200, "application/json", jsonResponse.c_str());
@@ -1190,20 +1206,202 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
     // Serve static files from LittleFS - LittleFS kept for AsyncWebServer serveStatic() only
     // Web assets are served from /www/ subdirectory to protect sensitive files in root
-    // Historical Data Endpoints
+    // Historical Data Endpoints (chunked streaming to avoid memory exhaustion)
     hal->webServerOn("/data/history", HAL_WebRequestMethod::HTTP_GET,
               [&historyManager](IWebRequest *request, IWebResponse *response)
               {
-                  String jsonResponse = historyManager.getDataAsJson();
-                  response->send(200, "application/json", jsonResponse.c_str());
+                  size_t totalPoints = historyManager.getDataPointCount();
+
+                  // Shared state for chunked callback
+                  struct StreamState {
+                      size_t total;
+                      size_t current;
+                      String overflow;
+                      bool started;
+                      bool closedBracket;
+                      const HistoricalDataManager* mgr;
+                  };
+                  auto state = std::make_shared<StreamState>();
+                  state->total = totalPoints;
+                  state->current = 0;
+                  state->started = false;
+                  state->closedBracket = false;
+                  state->mgr = &historyManager;
+
+                  response->sendChunked(200, "application/json",
+                      [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                          if (state->closedBracket && state->overflow.length() == 0) return 0;
+
+                          size_t written = 0;
+
+                          // Flush overflow from previous call
+                          if (state->overflow.length() > 0) {
+                              size_t toWrite = std::min(static_cast<size_t>(state->overflow.length()), maxLen);
+                              memcpy(buffer, state->overflow.c_str(), toWrite);
+                              written += toWrite;
+                              if (toWrite < state->overflow.length()) {
+                                  state->overflow = state->overflow.substring(toWrite);
+                              } else {
+                                  state->overflow = "";
+                              }
+                              if (written >= maxLen) return written;
+                          }
+
+                          // Opening bracket
+                          if (!state->started) {
+                              buffer[written++] = '[';
+                              state->started = true;
+                              if (written >= maxLen) return written;
+                          }
+
+                          // Write data points one at a time
+                          while (state->current < state->total && written < maxLen) {
+                              size_t bufIdx = state->mgr->getOrderedIndex(state->current);
+                              const DataPoint& dp = state->mgr->getDataPointAt(bufIdx);
+
+                              String point;
+                              if (state->current > 0) point += ",";
+                              point += "{\"timestamp\":";
+                              point += String((unsigned long)dp.timestamp);
+                              point += ",\"temperature_f\":";
+                              if (isnan(dp.temperature_f)) {
+                                  point += "null";
+                              } else {
+                                  point += String(dp.temperature_f, 2);
+                              }
+                              point += ",\"pump_active\":";
+                              point += dp.pump_active ? "true" : "false";
+                              point += ",\"flow_rate\":";
+                              point += String(dp.flow_rate, 3);
+                              point += ",\"light_brightness\":";
+                              point += String(dp.light_brightness);
+                              point += ",\"door_state\":\"";
+                              point += dp.door_state;
+                              point += "\",\"door_position\":\"";
+                              point += dp.door_position;
+                              point += "\",\"pump_trigger\":\"";
+                              point += dp.pump_trigger;
+                              point += "\",\"door_trigger\":\"";
+                              point += dp.door_trigger;
+                              point += "\",\"light_trigger\":\"";
+                              point += dp.light_trigger;
+                              point += "\",\"event_type\":\"";
+                              point += dp.event_type;
+                              point += "\"}";
+
+                              state->current++;
+
+                              size_t available = maxLen - written;
+                              size_t toWrite = std::min(static_cast<size_t>(point.length()), available);
+                              memcpy(buffer + written, point.c_str(), toWrite);
+                              written += toWrite;
+
+                              if (toWrite < point.length()) {
+                                  state->overflow = point.substring(toWrite);
+                                  return written;
+                              }
+                          }
+
+                          // Closing bracket
+                          if (state->current >= state->total && !state->closedBracket) {
+                              if (written < maxLen) {
+                                  buffer[written++] = ']';
+                                  state->closedBracket = true;
+                              } else {
+                                  state->overflow = "]";
+                              }
+                          }
+
+                          return written;
+                      });
               });
 
     hal->webServerOn("/data/export_csv", HAL_WebRequestMethod::HTTP_GET,
               [&historyManager](IWebRequest *request, IWebResponse *response)
               {
-                  String csvData = historyManager.getDataAsCsv();
+                  size_t totalPoints = historyManager.getDataPointCount();
+
+                  struct CsvStreamState {
+                      size_t total;
+                      size_t current;
+                      String overflow;
+                      bool headerSent;
+                      const HistoricalDataManager* mgr;
+                  };
+                  auto state = std::make_shared<CsvStreamState>();
+                  state->total = totalPoints;
+                  state->current = 0;
+                  state->headerSent = false;
+                  state->mgr = &historyManager;
+
                   response->addHeader("Content-Disposition", "attachment; filename=coop_history.csv");
-                  response->send(200, "text/csv", csvData.c_str());
+                  response->sendChunked(200, "text/csv",
+                      [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                          size_t written = 0;
+
+                          // Flush overflow
+                          if (state->overflow.length() > 0) {
+                              size_t toWrite = std::min(static_cast<size_t>(state->overflow.length()), maxLen);
+                              memcpy(buffer, state->overflow.c_str(), toWrite);
+                              written += toWrite;
+                              if (toWrite < state->overflow.length()) {
+                                  state->overflow = state->overflow.substring(toWrite);
+                              } else {
+                                  state->overflow = "";
+                              }
+                              if (written >= maxLen) return written;
+                          }
+
+                          // CSV header
+                          if (!state->headerSent) {
+                              String hdr = "timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,door_position,pump_trigger,door_trigger,light_trigger,event_type\n";
+                              state->headerSent = true;
+                              size_t available = maxLen - written;
+                              size_t toWrite = std::min(static_cast<size_t>(hdr.length()), available);
+                              memcpy(buffer + written, hdr.c_str(), toWrite);
+                              written += toWrite;
+                              if (toWrite < hdr.length()) {
+                                  state->overflow = hdr.substring(toWrite);
+                                  return written;
+                              }
+                          }
+
+                          // Write rows
+                          while (state->current < state->total && written < maxLen) {
+                              size_t bufIdx = state->mgr->getOrderedIndex(state->current);
+                              const DataPoint& dp = state->mgr->getDataPointAt(bufIdx);
+
+                              String row = String((unsigned long)dp.timestamp) + ",";
+                              if (isnan(dp.temperature_f)) {
+                                  row += ",";
+                              } else {
+                                  row += String(dp.temperature_f, 2) + ",";
+                              }
+                              row += dp.pump_active ? "true," : "false,";
+                              row += String(dp.flow_rate, 3) + ",";
+                              row += String(dp.light_brightness) + ",";
+                              row += String(dp.door_state) + ",";
+                              row += String(dp.door_position) + ",";
+                              row += String(dp.pump_trigger) + ",";
+                              row += String(dp.door_trigger) + ",";
+                              row += String(dp.light_trigger) + ",";
+                              row += String(dp.event_type) + "\n";
+
+                              state->current++;
+
+                              size_t available = maxLen - written;
+                              size_t toWrite = std::min(static_cast<size_t>(row.length()), available);
+                              memcpy(buffer + written, row.c_str(), toWrite);
+                              written += toWrite;
+
+                              if (toWrite < row.length()) {
+                                  state->overflow = row.substring(toWrite);
+                                  return written;
+                              }
+                          }
+
+                          return written;
+                      });
               });
 
     hal->webServerOn("/data/clear", HAL_WebRequestMethod::HTTP_POST,

@@ -13,6 +13,6 @@ export default defineConfig({
   plugins: [solid(), tailwindcss()],
   define: {
     __BUILD_DATE__: JSON.stringify(buildDate),
-    __BUILD_TIME__: JSON.stringify(buildTime),
+    __BUILD_TIME__: JSON.stringify(buildTime) + ' UTC',
   },
 });

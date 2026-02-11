@@ -257,6 +257,15 @@ String HistoricalDataManager::getDataAsCsv() const {
     return csv;
 }
 
+size_t HistoricalDataManager::getOrderedIndex(size_t i) const {
+    size_t startIndex = buffer.size() < maxSize ? 0 : currentIndex;
+    return (startIndex + i) % buffer.size();
+}
+
+const DataPoint& HistoricalDataManager::getDataPointAt(size_t rawIndex) const {
+    return buffer[rawIndex];
+}
+
 void HistoricalDataManager::clear() {
     buffer.clear();
     currentIndex = 0;

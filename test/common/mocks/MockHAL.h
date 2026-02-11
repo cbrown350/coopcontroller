@@ -102,6 +102,27 @@ public:
         responseHeaders[name] = value;
     }
 
+    void sendChunked(int code, const char* contentType, ChunkedFillCallback callback) override {
+        lastCode = code;
+        lastContentType = contentType;
+        // Simulate chunked response by calling callback to collect all data
+        chunkedBody = "";
+        uint8_t buf[1024];
+        size_t idx = 0;
+        size_t bytesRead;
+        do {
+            bytesRead = callback(buf, sizeof(buf), idx);
+            if (bytesRead > 0) {
+                // Arduino String doesn't have append(ptr, len), use char-by-char
+                for (size_t i = 0; i < bytesRead; i++) {
+                    chunkedBody += static_cast<char>(buf[i]);
+                }
+                idx += bytesRead;
+            }
+        } while (bytesRead > 0);
+        lastBody = chunkedBody.c_str();
+    }
+
     // Test helpers
     int getLastCode() const { return lastCode; }
     const char* getLastContentType() const { return lastContentType; }
@@ -113,6 +134,7 @@ private:
     int lastCode = 200;
     const char* lastContentType = "";
     const char* lastBody = "";
+    String chunkedBody;
 };
 
 // ============================================================================

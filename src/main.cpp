@@ -344,6 +344,13 @@ void setup() // NOSONAR - complexity ok
             hal.restart();
         }
 
+        // Helper: get best available temperature (sensor 1 preferred, fallback to sensor 2)
+        auto getBestTemperature = [&sensorManager]() -> float {
+            float temp = sensorManager.getTemperature1F();
+            if (isnan(temp)) temp = sensorManager.getTemperature2F();
+            return temp;
+        };
+
         // Update temperature sensors
         if (currentTime - lastSensorUpdate >= SENSOR_UPDATE_INTERVAL)
         {
@@ -352,7 +359,7 @@ void setup() // NOSONAR - complexity ok
 
             // Check for state changes and record historical data (event-based)
             historyManager.checkAndRecord(
-                sensorManager.getTemperature1F(),
+                getBestTemperature(),
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
@@ -467,14 +474,9 @@ void setup() // NOSONAR - complexity ok
         {
             lastPumpUpdate = currentTime;
 
-            // Flow error detection is now handled inside PumpController
-
-            // Update pump controller with current status
-            pumpController.update();
-
-            // Capture pump state changes for history
+            // Capture web-triggered pump changes BEFORE update() potentially changes trigger
             historyManager.checkAndRecord(
-                sensorManager.getTemperature1F(),
+                getBestTemperature(),
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
@@ -484,6 +486,9 @@ void setup() // NOSONAR - complexity ok
                 doorController.getLastTriggerSourceString(),
                 lightController.getLastTriggerSourceString()
             );
+
+            // Update pump controller with current status
+            pumpController.update();
 
             // Check for pump flow error and trigger buzzer alert
             static unsigned long lastPumpErrorAlert = 0;
@@ -545,11 +550,10 @@ void setup() // NOSONAR - complexity ok
         if (currentTime - lastDoorUpdate >= DOOR_UPDATE_INTERVAL)
         {
             lastDoorUpdate = currentTime;
-            doorController.update();
 
-            // Capture door state changes for history
+            // Capture web-triggered door changes BEFORE update() potentially changes trigger
             historyManager.checkAndRecord(
-                sensorManager.getTemperature1F(),
+                getBestTemperature(),
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
@@ -559,17 +563,18 @@ void setup() // NOSONAR - complexity ok
                 doorController.getLastTriggerSourceString(),
                 lightController.getLastTriggerSourceString()
             );
+
+            doorController.update();
         }
 
         // Update light controller
         if (currentTime - lastLightUpdate >= LIGHT_UPDATE_INTERVAL)
         {
             lastLightUpdate = currentTime;
-            lightController.update();
 
-            // Capture light brightness changes for history
+            // Capture web-triggered light changes BEFORE update() potentially changes trigger
             historyManager.checkAndRecord(
-                sensorManager.getTemperature1F(),
+                getBestTemperature(),
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
@@ -579,6 +584,8 @@ void setup() // NOSONAR - complexity ok
                 doorController.getLastTriggerSourceString(),
                 lightController.getLastTriggerSourceString()
             );
+
+            lightController.update();
         }
         
         // Update sunrise/sunset calculations (check every minute, but only recalculates every 24 hours)

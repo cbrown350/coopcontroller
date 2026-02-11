@@ -118,6 +118,21 @@ public:
 
     String getDataAsJson() const;
     String getDataAsCsv() const;
+
+    /**
+     * @brief Get ordered index for iteration (handles circular buffer wrapping)
+     * @param i Sequential index (0 = oldest point)
+     * @return Raw buffer index
+     */
+    size_t getOrderedIndex(size_t i) const;
+
+    /**
+     * @brief Get const reference to a data point by raw buffer index
+     * @param rawIndex Raw buffer index from getOrderedIndex()
+     * @return Reference to the data point
+     */
+    const DataPoint& getDataPointAt(size_t rawIndex) const;
+
     void clear();
     size_t getDataPointCount() const;
     size_t getBufferCapacity() const { return maxSize; }

@@ -23,7 +23,7 @@ def generate_timestamp_header(source, target, env):
 #ifndef BUILD_TIMESTAMP_H
 #define BUILD_TIMESTAMP_H
 
-#define BUILD_TIMESTAMP_DATE "{build_date} UTC"
+#define BUILD_TIMESTAMP_DATE "{build_date}"
 #define BUILD_TIMESTAMP_TIME "{build_time} UTC"
 
 #endif // BUILD_TIMESTAMP_H

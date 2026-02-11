@@ -143,6 +143,28 @@ public:
    * @param value Header value
    */
   virtual void addHeader(const char *name, const char *value) = 0;
+
+  /**
+   * @brief Callback type for chunked response filling
+   * @param buffer Output buffer to write data into
+   * @param maxLen Maximum bytes to write
+   * @param index Cumulative bytes sent so far
+   * @return Number of bytes written, 0 when complete
+   */
+  typedef std::function<size_t(uint8_t* buffer, size_t maxLen, size_t index)> ChunkedFillCallback;
+
+  /**
+   * @brief Send chunked HTTP response using a fill callback
+   *
+   * For large responses that cannot fit in memory at once.
+   * The callback is called repeatedly to fill the response buffer.
+   * Return 0 from the callback to signal end of data.
+   *
+   * @param code HTTP status code
+   * @param contentType Content type (e.g., "application/json")
+   * @param callback Function called to fill each chunk
+   */
+  virtual void sendChunked(int code, const char* contentType, ChunkedFillCallback callback) = 0;
 };
 
 /**

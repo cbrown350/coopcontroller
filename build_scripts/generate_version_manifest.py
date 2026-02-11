@@ -145,7 +145,7 @@ def main():
     with open(args.output, 'w') as f:
         json.dump(manifest, f, indent=2)
     
-    print(f"\n✅ Manifest generated successfully: {args.output}")
+    print(f"\n[OK] Manifest generated successfully: {args.output}")
     print(f"\nManifest contents:")
     print(json.dumps(manifest, indent=2))
     

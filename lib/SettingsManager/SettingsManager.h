@@ -146,6 +146,14 @@ struct user_settings // NOSONAR
     unsigned int history_temp_min_interval_seconds = 60; ///< Min interval for temp recordings (default: 60s)
     unsigned int history_flow_min_interval_seconds = 10; ///< Min interval for flow recordings (default: 10s)
     unsigned int history_buffer_size = 1440;         ///< Buffer size (default: 1440 data points)
+
+    // ========================================================================
+    // OTA UPDATE SETTINGS
+    // ========================================================================
+
+    bool         auto_update_enabled = false;        ///< Enable automatic update checks
+    unsigned int update_check_interval_hours = 24;   ///< Check interval in hours (1-168)
+    String       manifest_url = "";                  ///< URL to version_manifest.json
 };
 
 /**
@@ -384,6 +392,16 @@ class SettingsManager // NOSONAR
     void setHistoryTempMinIntervalSeconds(unsigned int seconds);
     void setHistoryFlowMinIntervalSeconds(unsigned int seconds);
     void setHistoryBufferSize(unsigned int size);
+
+    // OTA update settings getters
+    bool         getAutoUpdateEnabled() const;
+    unsigned int getUpdateCheckIntervalHours() const;
+    String       getManifestUrl() const;
+
+    // OTA update settings setters
+    void setAutoUpdateEnabled(bool enabled);
+    void setUpdateCheckIntervalHours(unsigned int hours);
+    void setManifestUrl(const String& url);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);

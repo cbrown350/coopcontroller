@@ -407,6 +407,18 @@ public:
   void addHeader(const char *name, const char *value) override {
     headers_.push_back(std::make_pair(String(name), String(value)));
   }
+
+  void sendChunked(int code, const char* contentType, ChunkedFillCallback callback) override {
+    auto response = request_->beginChunkedResponse(contentType,
+        [callback](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+            return callback(buffer, maxLen, index);
+        });
+    response->setCode(code);
+    for (const auto& header : headers_) {
+      response->addHeader(header.first, header.second);
+    }
+    request_->send(response);
+  }
 };
 
 bool HAL_ESP32::webServerBegin(uint16_t port) {
