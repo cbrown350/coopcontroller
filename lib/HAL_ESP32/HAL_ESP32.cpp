@@ -9,9 +9,11 @@
 #include <FS.h>
 #include <LittleFS.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h> // For HTTPS client
 #include <esp32-hal-ledc.h> // For LEDC functions
 #include <esp_system.h>     // For esp_reset_reason()
 #include <esp_task_wdt.h>   // For esp_task_wdt_reset()
+#include <mbedtls/sha256.h>  // For SHA256 verification
 
 /**
  * @brief Constructor
@@ -613,3 +615,215 @@ void HAL_ESP32::digitalWrite(uint8_t pin, uint8_t value) {
 int HAL_ESP32::getCoreID() { return xPortGetCoreID(); }
 
 void *HAL_ESP32::getCurrentTaskHandle() { return xTaskGetCurrentTaskHandle(); }
+
+// ========================================================================
+// HTTP CLIENT FUNCTIONS - For OTA Updates
+// ========================================================================
+
+String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
+  // Use WiFiClientSecure for HTTPS connections
+  WiFiClientSecure client;
+  client.setInsecure();  // Disable certificate verification (for now)
+
+  // Parse URL to extract host and path
+  String host = url;
+  String path = "/";
+
+  int slashIndex = url.indexOf("://");
+  if (slashIndex != -1) {
+    host = url.substring(slashIndex + 3);
+  }
+
+  int pathIndex = host.indexOf("/");
+  if (pathIndex != -1) {
+    path = host.substring(pathIndex);
+    host = host.substring(0, pathIndex);
+  }
+
+  // Determine port
+  int port = 443;  // Default HTTPS
+  if (url.startsWith("http://")) {
+    port = 80;
+  }
+
+  // Remove port from host if present
+  int portIndex = host.indexOf(":");
+  if (portIndex != -1) {
+    port = host.substring(portIndex + 1).toInt();
+    host = host.substring(0, portIndex);
+  }
+
+  // Connect with timeout
+  unsigned long startTime = ::millis();
+  if (!client.connect(host.c_str(), port)) {
+    return "";
+  }
+
+  // Send HTTP GET request
+  String request = "GET " + path + " HTTP/1.1\r\n";
+  request += "Host: " + host + "\r\n";
+  request += "Connection: close\r\n";
+  request += "\r\n";
+
+  client.print(request);
+
+  // Read response
+  String response = "";
+  bool headerDone = false;
+  unsigned long lastActivity = ::millis();
+
+  while (client.connected() || client.available()) {
+    if (::millis() - startTime > timeout_ms) {
+      break;  // Timeout
+    }
+
+    if (client.available()) {
+      String line = client.readStringUntil('\n');
+
+      if (!headerDone) {
+        if (line == "\r") {
+          headerDone = true;
+        }
+      } else {
+        response += line;
+      }
+      lastActivity = ::millis();
+    } else {
+      if (::millis() - lastActivity > 1000) {
+        break;  // No data for 1 second
+      }
+      delay(10);
+    }
+  }
+
+  client.stop();
+  return response;
+}
+
+bool HAL_ESP32::httpGetBinary(const String& url, HttpProgressCallback on_progress,
+                               unsigned long timeout_ms) {
+  // Use WiFiClientSecure for HTTPS connections
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  // Parse URL
+  String host = url;
+  String path = "/";
+
+  int slashIndex = url.indexOf("://");
+  if (slashIndex != -1) {
+    host = url.substring(slashIndex + 3);
+  }
+
+  int pathIndex = host.indexOf("/");
+  if (pathIndex != -1) {
+    path = host.substring(pathIndex);
+    host = host.substring(0, pathIndex);
+  }
+
+  int port = 443;
+  if (url.startsWith("http://")) {
+    port = 80;
+  }
+
+  int portIndex = host.indexOf(":");
+  if (portIndex != -1) {
+    port = host.substring(portIndex + 1).toInt();
+    host = host.substring(0, portIndex);
+  }
+
+  // Connect
+  unsigned long startTime = ::millis();
+  if (!client.connect(host.c_str(), port)) {
+    return false;
+  }
+
+  // Send request
+  String request = "GET " + path + " HTTP/1.1\r\n";
+  request += "Host: " + host + "\r\n";
+  request += "Connection: close\r\n";
+  request += "\r\n";
+
+  client.print(request);
+
+  // Skip HTTP headers
+  bool headerDone = false;
+  uint32_t contentLength = 0;
+  uint32_t bytesDownloaded = 0;
+
+  while (client.connected() && !headerDone) {
+    if (::millis() - startTime > timeout_ms) {
+      return false;
+    }
+
+    if (client.available()) {
+      String line = client.readStringUntil('\n');
+
+      // Look for Content-Length header
+      if (line.startsWith("Content-Length:")) {
+        contentLength = line.substring(15).toInt();
+      }
+
+      if (line == "\r") {
+        headerDone = true;
+      }
+    } else {
+      delay(10);
+    }
+  }
+
+  // Download binary data
+  uint8_t buffer[1024];
+  while (client.connected() || client.available()) {
+    if (::millis() - startTime > timeout_ms) {
+      return false;
+    }
+
+    if (client.available()) {
+      int bytesRead = client.read(buffer, sizeof(buffer));
+      if (bytesRead > 0) {
+        bytesDownloaded += bytesRead;
+
+        // Call progress callback
+        if (on_progress) {
+          if (!on_progress(bytesDownloaded, contentLength > 0 ? contentLength : bytesDownloaded)) {
+            client.stop();
+            return false;  // User aborted
+          }
+        }
+      }
+    } else {
+      delay(10);
+    }
+  }
+
+  client.stop();
+  return true;
+}
+
+bool HAL_ESP32::sha256Verify(const uint8_t *data, size_t data_length,
+                              const String& expected_hash) {
+  // Use mbedtls for SHA256 calculation
+  unsigned char hash[32];  // SHA256 = 32 bytes
+  mbedtls_sha256_context ctx;
+
+  mbedtls_sha256_init(&ctx);
+  mbedtls_sha256_starts_ret(&ctx, false);  // false = SHA256 (not SHA224)
+  mbedtls_sha256_update_ret(&ctx, data, data_length);
+  mbedtls_sha256_finish_ret(&ctx, hash);
+  mbedtls_sha256_free(&ctx);
+
+  // Convert hash to hex string
+  char hashHex[65];
+  for (int i = 0; i < 32; i++) {
+    sprintf(hashHex + (i * 2), "%02x", hash[i]);
+  }
+  hashHex[64] = '\0';
+
+  // Compare (case-insensitive)
+  return expected_hash.equalsIgnoreCase(hashHex);
+}
+
+unsigned long HAL_ESP32::millis() {
+  return ::millis();
+}

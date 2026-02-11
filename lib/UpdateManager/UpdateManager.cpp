@@ -1,17 +1,24 @@
 #include "UpdateManager.h"
 #include "Logger.h"
 #include "SettingsManager.h"
+#include "config.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Update.h>
 
-// Helper macros for build flags
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-
 void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
     hal_ = hal;
-    manifest_url_ = manifest_url;
+
+    // If manifest_url is provided, use it; otherwise construct from GITHUB_REPO
+    if (manifest_url.length() > 0) {
+        manifest_url_ = manifest_url;
+    } else {
+        String repo = githubRepo;
+        if (repo.length() > 0) {
+            manifest_url_ = "https://github.com/" + repo + "/releases/latest/download/version_manifest.json";
+        }
+    }
+
     status_ = UpdateStatus::IDLE;
     error_ = UpdateError::NONE;
     bytes_downloaded_ = 0;
@@ -21,14 +28,10 @@ void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
     current_operation_start_ = 0;
     last_error_message_ = "";
 
-    // Try to read current version from build flag
-    #ifdef FIRMWARE_VERSION_RAW
-    device_version_ = TOSTRING(FIRMWARE_VERSION_RAW);
-    #else
-    device_version_ = "0.0.0";
-    #endif
+    device_version_ = firmwareVersion;
 
     logger.logDebug("UpdateManager initialized with version: " + device_version_);
+    logger.logDebug("Manifest URL: " + manifest_url_);
 }
 
 bool UpdateManager::parseVersion(const String& version, int& major, int& minor, int& patch) const {

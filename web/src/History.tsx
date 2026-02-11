@@ -1,9 +1,36 @@
 import { createSignal, onMount, onCleanup, Show, createEffect } from 'solid-js'
 import { Chart, registerables } from 'chart.js'
+import zoomPlugin from 'chartjs-plugin-zoom'
 import { authenticatedFetch } from './utils/api'
 
-// Register Chart.js components
-Chart.register(...registerables)
+// Register Chart.js components and zoom plugin
+Chart.register(...registerables, zoomPlugin)
+
+// Event type to point style mapping
+const EVENT_POINT_STYLES: Record<string, { style: string; radius: number; color: string }> = {
+  temp:  { style: 'circle',   radius: 5, color: 'rgb(59, 130, 246)' },
+  pump:  { style: 'rectRot',  radius: 6, color: 'rgb(239, 68, 68)' },
+  flow:  { style: 'triangle', radius: 6, color: 'rgb(168, 85, 247)' },
+  light: { style: 'star',     radius: 7, color: 'rgb(234, 179, 8)' },
+  door:  { style: 'rectRounded', radius: 6, color: 'rgb(239, 68, 68)' },
+}
+
+const DEFAULT_POINT = { style: 'circle' as const, radius: 2, color: 'rgb(156, 163, 175)' }
+
+// Zoom plugin options shared across all charts
+const zoomOptions = {
+  zoom: {
+    wheel: { enabled: true },
+    pinch: { enabled: true },
+    mode: 'x' as const,
+  },
+  pan: {
+    enabled: true,
+    mode: 'x' as const,
+  },
+}
+
+type TimePeriod = '1h' | '6h' | '24h' | 'all'
 
 interface DataPoint {
   timestamp: number
@@ -33,6 +60,7 @@ function History() {
   const [historyData, setHistoryData] = createSignal<DataPoint[]>([])
   const [error, setError] = createSignal('')
   const [autoRefresh, setAutoRefresh] = createSignal(initialAutoRefresh)
+  const [timePeriod, setTimePeriod] = createSignal<TimePeriod>('all')
   const autoRefreshStorageKey = 'historyAutoRefresh'
 
   let tempChartRef: HTMLCanvasElement | undefined
@@ -62,6 +90,18 @@ function History() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const filteredData = () => {
+    const data = historyData()
+    const period = timePeriod()
+    if (period === 'all' || data.length === 0) return data
+
+    const now = Math.max(...data.map(d => d.timestamp))
+    const hoursMap: Record<string, number> = { '1h': 1, '6h': 6, '24h': 24 }
+    const cutoff = now - (hoursMap[period] || 24) * 3600
+
+    return data.filter(d => d.timestamp >= cutoff)
   }
 
   const downloadCSV = async () => {
@@ -106,35 +146,56 @@ function History() {
     return date.toLocaleTimeString()
   }
 
+  const getPointStyle = (eventType: string) => {
+    return EVENT_POINT_STYLES[eventType] || DEFAULT_POINT
+  }
+
+  const resetZoom = () => {
+    [tempChart, pumpChart, flowChart, lightChart, doorChart].forEach(chart => {
+      if (chart) chart.resetZoom()
+    })
+  }
+
   const updateCharts = () => {
-    const data = historyData()
+    const data = filteredData()
     if (data.length === 0) return
 
     const labels = data.map(d => formatTimestamp(d.timestamp))
 
     // Temperature Chart
     if (tempChartRef) {
-      if (tempChart) {
-        tempChart.destroy()
-      }
+      if (tempChart) tempChart.destroy()
       tempChart = new Chart(tempChartRef, {
         type: 'line',
         data: {
           labels,
           datasets: [{
-            label: 'Temperature (°F)',
+            label: 'Temperature (\u00B0F)',
             data: data.map(d => isNaN(d.temperature_f) ? null : d.temperature_f),
             borderColor: 'rgb(59, 130, 246)',
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             tension: 0.3,
-            spanGaps: true
+            spanGaps: true,
+            pointStyle: data.map(d => getPointStyle(d.event_type).style) as any,
+            pointRadius: data.map(d => d.event_type === 'temp' ? getPointStyle('temp').radius : 1),
+            pointBackgroundColor: data.map(d => d.event_type === 'temp' ? getPointStyle('temp').color : 'rgb(59, 130, 246)')
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { display: true }
+            legend: { display: true },
+            zoom: zoomOptions,
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const dataPoint = data[context.dataIndex]
+                  const eventTag = dataPoint.event_type === 'temp' ? ' [event]' : ''
+                  return `Temp: ${dataPoint.temperature_f}\u00B0F${eventTag}`
+                }
+              }
+            }
           },
           scales: {
             x: { display: false },
@@ -146,9 +207,7 @@ function History() {
 
     // Pump Chart
     if (pumpChartRef) {
-      if (pumpChart) {
-        pumpChart.destroy()
-      }
+      if (pumpChart) pumpChart.destroy()
       pumpChart = new Chart(pumpChartRef, {
         type: 'line',
         data: {
@@ -160,8 +219,9 @@ function History() {
             backgroundColor: 'rgba(34, 197, 94, 0.2)',
             stepped: true,
             fill: true,
-            pointRadius: data.map(d => d.event_type === 'pump' ? 5 : 2),
-            pointBackgroundColor: data.map(d => d.event_type === 'pump' ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)')
+            pointStyle: data.map(d => d.event_type === 'pump' ? getPointStyle('pump').style : 'circle') as any,
+            pointRadius: data.map(d => d.event_type === 'pump' ? getPointStyle('pump').radius : 2),
+            pointBackgroundColor: data.map(d => d.event_type === 'pump' ? getPointStyle('pump').color : 'rgb(34, 197, 94)')
           }]
         },
         options: {
@@ -169,12 +229,13 @@ function History() {
           maintainAspectRatio: false,
           plugins: {
             legend: { display: true },
+            zoom: zoomOptions,
             tooltip: {
               callbacks: {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
                   const state = dataPoint.pump_active ? 'ON' : 'OFF'
-                  const eventTag = dataPoint.event_type ? ` [${dataPoint.event_type}]` : ''
+                  const eventTag = dataPoint.event_type === 'pump' ? ' [event]' : ''
                   return `Pump: ${state} (Trigger: ${dataPoint.pump_trigger})${eventTag}`
                 }
               }
@@ -197,9 +258,7 @@ function History() {
 
     // Flow Chart
     if (flowChartRef) {
-      if (flowChart) {
-        flowChart.destroy()
-      }
+      if (flowChart) flowChart.destroy()
       flowChart = new Chart(flowChartRef, {
         type: 'line',
         data: {
@@ -210,8 +269,9 @@ function History() {
             borderColor: 'rgb(168, 85, 247)',
             backgroundColor: 'rgba(168, 85, 247, 0.1)',
             tension: 0.3,
-            pointRadius: data.map(d => d.event_type === 'flow' ? 5 : 2),
-            pointBackgroundColor: data.map(d => d.event_type === 'flow' ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)')
+            pointStyle: data.map(d => d.event_type === 'flow' ? getPointStyle('flow').style : 'circle') as any,
+            pointRadius: data.map(d => d.event_type === 'flow' ? getPointStyle('flow').radius : 2),
+            pointBackgroundColor: data.map(d => d.event_type === 'flow' ? getPointStyle('flow').color : 'rgb(168, 85, 247)')
           }]
         },
         options: {
@@ -219,11 +279,12 @@ function History() {
           maintainAspectRatio: false,
           plugins: {
             legend: { display: true },
+            zoom: zoomOptions,
             tooltip: {
               callbacks: {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
-                  const eventTag = dataPoint.event_type ? ` [${dataPoint.event_type}]` : ''
+                  const eventTag = dataPoint.event_type === 'flow' ? ' [event]' : ''
                   return `Flow: ${dataPoint.flow_rate.toFixed(3)} GPM${eventTag}`
                 }
               }
@@ -239,9 +300,7 @@ function History() {
 
     // Light Chart
     if (lightChartRef) {
-      if (lightChart) {
-        lightChart.destroy()
-      }
+      if (lightChart) lightChart.destroy()
       lightChart = new Chart(lightChartRef, {
         type: 'line',
         data: {
@@ -251,7 +310,10 @@ function History() {
             data: data.map(d => d.light_brightness),
             borderColor: 'rgb(234, 179, 8)',
             backgroundColor: 'rgba(234, 179, 8, 0.1)',
-            tension: 0.3
+            tension: 0.3,
+            pointStyle: data.map(d => d.event_type === 'light' ? getPointStyle('light').style : 'circle') as any,
+            pointRadius: data.map(d => d.event_type === 'light' ? getPointStyle('light').radius : 2),
+            pointBackgroundColor: data.map(d => d.event_type === 'light' ? getPointStyle('light').color : 'rgb(234, 179, 8)')
           }]
         },
         options: {
@@ -259,11 +321,13 @@ function History() {
           maintainAspectRatio: false,
           plugins: {
             legend: { display: true },
+            zoom: zoomOptions,
             tooltip: {
               callbacks: {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
-                  return `Brightness: ${dataPoint.light_brightness}% (Trigger: ${dataPoint.light_trigger})`
+                  const eventTag = dataPoint.event_type === 'light' ? ' [event]' : ''
+                  return `Brightness: ${dataPoint.light_brightness}% (Trigger: ${dataPoint.light_trigger})${eventTag}`
                 }
               }
             }
@@ -278,9 +342,7 @@ function History() {
 
     // Door Chart - shows both state and position
     if (doorChartRef) {
-      if (doorChart) {
-        doorChart.destroy()
-      }
+      if (doorChart) doorChart.destroy()
 
       const doorStateToValue = (state: string) => {
         const upperState = state.toUpperCase()
@@ -312,8 +374,9 @@ function History() {
               backgroundColor: 'rgba(168, 85, 247, 0.2)',
               stepped: true,
               fill: true,
-              pointRadius: data.map(d => d.event_type === 'door' ? 5 : 2),
-              pointBackgroundColor: data.map(d => d.event_type === 'door' ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)')
+              pointStyle: data.map(d => d.event_type === 'door' ? getPointStyle('door').style : 'circle') as any,
+              pointRadius: data.map(d => d.event_type === 'door' ? getPointStyle('door').radius : 2),
+              pointBackgroundColor: data.map(d => d.event_type === 'door' ? getPointStyle('door').color : 'rgb(168, 85, 247)')
             },
             {
               label: 'Door Position',
@@ -322,8 +385,9 @@ function History() {
               borderDash: [5, 5],
               stepped: true,
               fill: false,
+              pointStyle: data.map(d => d.event_type === 'door' ? getPointStyle('door').style : 'circle') as any,
               pointRadius: data.map(d => d.event_type === 'door' ? 4 : 1),
-              pointBackgroundColor: data.map(d => d.event_type === 'door' ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)')
+              pointBackgroundColor: data.map(d => d.event_type === 'door' ? getPointStyle('door').color : 'rgb(34, 197, 94)')
             }
           ]
         },
@@ -332,11 +396,12 @@ function History() {
           maintainAspectRatio: false,
           plugins: {
             legend: { display: true },
+            zoom: zoomOptions,
             tooltip: {
               callbacks: {
                 label: (context) => {
                   const dataPoint = data[context.dataIndex]
-                  const eventTag = dataPoint.event_type ? ` [${dataPoint.event_type}]` : ''
+                  const eventTag = dataPoint.event_type === 'door' ? ' [event]' : ''
                   if (context.datasetIndex === 0) {
                     return `State: ${dataPoint.door_state} (Trigger: ${dataPoint.door_trigger})${eventTag}`
                   }
@@ -369,7 +434,7 @@ function History() {
   }
 
   createEffect(() => {
-    const data = historyData()
+    const data = filteredData()
     if (data.length === 0) return
 
     // Retry mechanism to ensure refs are set before rendering charts
@@ -435,10 +500,10 @@ function History() {
                 <div class="stats shadow bg-base-300">
                   <div class="stat">
                     <div class="stat-title">Data Points</div>
-                    <div class="stat-value text-lg">{historyData().length}</div>
+                    <div class="stat-value text-lg">{filteredData().length}</div>
                     <div class="stat-desc">
                       {(() => {
-                        const d = historyData()
+                        const d = filteredData()
                         const counts = { temp: 0, flow: 0, pump: 0, light: 0, door: 0 }
                         d.forEach(p => { if (p.event_type in counts) counts[p.event_type as keyof typeof counts]++ })
                         return `temp:${counts.temp} flow:${counts.flow} pump:${counts.pump} light:${counts.light} door:${counts.door}`
@@ -447,7 +512,27 @@ function History() {
                   </div>
                 </div>
 
-                <div class="flex gap-2 flex-wrap">
+                <div class="flex gap-2 flex-wrap items-center">
+                  {/* Time period filter */}
+                  <div class="join">
+                    {(['1h', '6h', '24h', 'all'] as TimePeriod[]).map(period => (
+                      <button
+                        class={`join-item btn btn-xs ${timePeriod() === period ? 'btn-active btn-primary' : ''}`}
+                        onClick={() => setTimePeriod(period)}
+                      >
+                        {period === 'all' ? 'All' : period}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    class="btn btn-ghost btn-xs"
+                    onClick={resetZoom}
+                    title="Reset chart zoom"
+                  >
+                    Reset Zoom
+                  </button>
+
                   <button
                     class="btn btn-primary btn-sm"
                     onClick={fetchHistoryData}
@@ -480,7 +565,22 @@ function History() {
             </div>
           </div>
 
-          <Show when={historyData().length > 0} fallback={
+          {/* Point style legend */}
+          <div class="card w-full mt-2 bg-base-200 card-sm shadow-sm">
+            <div class="card-body py-2">
+              <div class="flex flex-wrap gap-4 text-xs items-center">
+                <span class="font-semibold">Event markers:</span>
+                <span title="Temperature event">&#9679; Temp</span>
+                <span title="Pump event">&#9670; Pump</span>
+                <span title="Flow event">&#9650; Flow</span>
+                <span title="Light event">&#9733; Light</span>
+                <span title="Door event">&#9632; Door</span>
+                <span class="text-base-content/50">Scroll to zoom, drag to pan</span>
+              </div>
+            </div>
+          </div>
+
+          <Show when={filteredData().length > 0} fallback={
             <div class="alert alert-info mt-4">
               <span>No historical data available yet. Data will be collected automatically.</span>
             </div>

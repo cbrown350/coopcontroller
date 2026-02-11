@@ -629,6 +629,67 @@ public:
    * @return Task handle pointer
    */
   virtual void *getCurrentTaskHandle() = 0;
+
+  // ========================================================================
+  // HTTP CLIENT FUNCTIONS - For OTA Updates
+  // ========================================================================
+
+  /**
+   * @brief Progress callback type for streaming HTTP downloads
+   * Called periodically during download to report progress.
+   * Parameters: bytes_downloaded, total_bytes
+   * Return: true to continue, false to abort
+   */
+  typedef std::function<bool(uint32_t, uint32_t)> HttpProgressCallback;
+
+  /**
+   * @brief Perform HTTP GET request and return response body
+   *
+   * Sends HTTP GET request to the specified URL and returns the complete
+   * response body as a string. For small responses (manifest JSON, etc).
+   *
+   * @param url Full URL to request (e.g., "https://example.com/data.json")
+   * @param timeout_ms Request timeout in milliseconds
+   * @return Response body as string, empty string on failure
+   */
+  virtual String httpGet(const String& url, unsigned long timeout_ms = 10000) = 0;
+
+  /**
+   * @brief Perform streaming HTTP GET request with progress callback
+   *
+   * Sends HTTP GET request and calls progress callback with downloaded data.
+   * Useful for large downloads (firmware binaries) to avoid buffering in memory.
+   *
+   * @param url Full URL to request
+   * @param on_progress Callback function called as data is received
+   * @param timeout_ms Request timeout in milliseconds
+   * @return true if download completed successfully, false on failure
+   */
+  virtual bool httpGetBinary(const String& url, HttpProgressCallback on_progress,
+                             unsigned long timeout_ms = 30000) = 0;
+
+  /**
+   * @brief Verify SHA256 checksum
+   *
+   * Verifies that the provided data matches the expected SHA256 hash.
+   * Uses ESP32 built-in mbedtls crypto.
+   *
+   * @param data Pointer to data buffer
+   * @param data_length Length of data in bytes
+   * @param expected_hash Expected SHA256 hash as hex string (64 characters)
+   * @return true if hash matches, false otherwise
+   */
+  virtual bool sha256Verify(const uint8_t *data, size_t data_length,
+                            const String& expected_hash) = 0;
+
+  /**
+   * @brief Get current milliseconds counter
+   *
+   * Returns milliseconds elapsed since boot. Used for timing and timeouts.
+   *
+   * @return Milliseconds since boot
+   */
+  virtual unsigned long millis() = 0;
 };
 
 #endif // __IHAL_H__

@@ -9,7 +9,8 @@ Usage:
     python3 generate_version_manifest.py \
         --version v1.0.0 \
         --firmware-path .pio/build/esp32-release/firmware.bin \
-        --filesystem-path .pio/build/esp32-release/littlefs.bin
+        --filesystem-path .pio/build/esp32-release/littlefs.bin \
+        --merged-path .pio/build/esp32-release/firmware_merged.bin
 """
 
 import argparse
@@ -40,46 +41,47 @@ def get_github_repo():
     return os.getenv("GITHUB_REPOSITORY", "cbrown350/coopcontroller")
 
 
-def generate_manifest(version, firmware_path, filesystem_path):
+def generate_manifest(version, firmware_path, filesystem_path, merged_path=None):
     """
     Generate the version manifest JSON structure.
-    
+
     Args:
         version: Semantic version string (e.g., "v1.0.0")
         firmware_path: Path to firmware.bin
         filesystem_path: Path to littlefs.bin
-    
+        merged_path: Path to firmware_merged.bin (optional)
+
     Returns:
         Dictionary with manifest structure
     """
     # Normalize version (remove 'v' prefix if present)
     version_str = version.lstrip('v')
-    
+
     # Verify files exist
     if not os.path.exists(firmware_path):
         print(f"ERROR: Firmware file not found: {firmware_path}")
         sys.exit(1)
-    
+
     if not os.path.exists(filesystem_path):
         print(f"ERROR: Filesystem file not found: {filesystem_path}")
         sys.exit(1)
-    
+
     # Calculate checksums and sizes
     firmware_sha256 = calculate_sha256(firmware_path)
     filesystem_sha256 = calculate_sha256(filesystem_path)
     firmware_size = get_file_size(firmware_path)
     filesystem_size = get_file_size(filesystem_path)
-    
+
     # Get repository info
     repo = get_github_repo()
-    
+
     # Build download URLs
     firmware_url = f"https://github.com/{repo}/releases/download/v{version_str}/firmware.bin"
     filesystem_url = f"https://github.com/{repo}/releases/download/v{version_str}/littlefs.bin"
-    
+
     # Get current timestamp in ISO 8601 format
     release_date = datetime.now(timezone.utc).isoformat()
-    
+
     # Build manifest structure
     manifest = {
         "latest_version": version_str,
@@ -98,7 +100,20 @@ def generate_manifest(version, firmware_path, filesystem_path):
         "release_date": release_date,
         "github_repo": repo
     }
-    
+
+    # Add merged binary info if available
+    if merged_path and os.path.exists(merged_path):
+        merged_sha256 = calculate_sha256(merged_path)
+        merged_size = get_file_size(merged_path)
+        merged_url = f"https://github.com/{repo}/releases/download/v{version_str}/firmware_merged.bin"
+
+        manifest["merged"] = {
+            "version": version_str,
+            "url": merged_url,
+            "size_bytes": merged_size,
+            "sha256": merged_sha256
+        }
+
     return manifest
 
 
@@ -122,33 +137,41 @@ def main():
         help="Path to littlefs.bin"
     )
     parser.add_argument(
+        "--merged-path",
+        default=None,
+        help="Path to firmware_merged.bin (optional)"
+    )
+    parser.add_argument(
         "--output",
         default="version_manifest.json",
         help="Output file path (default: version_manifest.json)"
     )
-    
+
     args = parser.parse_args()
-    
+
     print(f"Generating version manifest...")
     print(f"  Version: {args.version}")
     print(f"  Firmware: {args.firmware_path}")
     print(f"  Filesystem: {args.filesystem_path}")
-    
+    if args.merged_path:
+        print(f"  Merged: {args.merged_path}")
+
     # Generate manifest
     manifest = generate_manifest(
         args.version,
         args.firmware_path,
-        args.filesystem_path
+        args.filesystem_path,
+        args.merged_path
     )
-    
+
     # Write manifest to file
     with open(args.output, 'w') as f:
         json.dump(manifest, f, indent=2)
-    
+
     print(f"\n[OK] Manifest generated successfully: {args.output}")
     print(f"\nManifest contents:")
     print(json.dumps(manifest, indent=2))
-    
+
     return 0
 
 

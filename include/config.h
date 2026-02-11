@@ -30,6 +30,8 @@
 
 static inline const char* const firmwareVersion __attribute__((unused)) = (strcmp(TOSTRING(FIRMWARE_VERSION_RAW), "") == 0) ? "dev" : TOSTRING(FIRMWARE_VERSION_RAW);
 static inline const char* const chipFamily __attribute__((unused)) = (strcmp(TOSTRING(CHIP_FAMILY_RAW), "") == 0) ? "unknown" : TOSTRING(CHIP_FAMILY_RAW);
+static inline const char* const gitCommitSha __attribute__((unused)) = (strcmp(TOSTRING(GIT_COMMIT_SHA_RAW), "") == 0) ? "" : TOSTRING(GIT_COMMIT_SHA_RAW);
+static inline const char* const githubRepo __attribute__((unused)) = TOSTRING(GITHUB_REPO);
 
 // End fix for CHIP_FAMILY_RAW that may contain "ESP32"
 #ifdef ESP32_CHIP_FAMILY_FIX

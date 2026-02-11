@@ -1,12 +1,5 @@
 import math
 import os
-# Verify PIL is installed
-try:
-    import PIL  # noqa: F401
-except ImportError as e:
-    print("Required module not found:", e)
-    print("In order to modify dev images, install Pillow ('~\\.platformio\\penv\\Scripts\\activate && pip install Pillow' or 'source ~/.platformio/penv/bin/activate && pip install Pillow' or '%USERPROFILE%\.platformio\penv\Scripts\activate.bat && pip install Pillow' depending on platform).")
-    raise e
 
 def _try_load_font(font_path, size):
     from PIL import ImageFont
@@ -173,12 +166,13 @@ def _watermark_ico(file_path, out_path, text, font_path, color):
     watermarked.save(out_path, format="ICO", sizes=sizes)
 
 def add_diagonal_text(image_path, output_path, text="DEV", font_path=None, font_size=40, color=(255, 0, 0, 180)):
+    # Verify PIL is installed
     try:
         from PIL import Image  # noqa: F401
     except ImportError as e:
         print("Required module not found:", e)
-        print(f"In order to modify dev images ({image_path}), install Pillow (~\\.platformio\\penv\\Scripts\\activate && pip install Pillow).")
-        return
+        print("In order to modify dev images, install Pillow ('~\\.platformio\\penv\\Scripts\\activate && pip install Pillow' or 'source ~/.platformio/penv/bin/activate && pip install Pillow' or '%USERPROFILE%\.platformio\penv\Scripts\activate.bat && pip install Pillow' depending on platform).")
+        raise e
 
     ext = os.path.splitext(image_path)[1].lower()
     try:

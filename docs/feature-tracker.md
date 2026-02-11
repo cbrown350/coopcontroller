@@ -738,12 +738,6 @@ WiFi management code extracted from main.cpp to dedicated WifiController class. 
 
 ---
 
-## In Progress
-
-*No features currently in progress*
-
----
-
 ## Completed Features (Previously Listed as Planned)
 
 The following features were found to already be implemented during a project-wide audit (February 2026):
@@ -931,11 +925,94 @@ Applied custom DaisyUI theme with warm agricultural color palette inspired by th
 
 ---
 
+## In Progress
+
+### OTA Update System (In Development) 🚀
+
+**Status:** Phase 1 Foundation Complete, Phase 2 In Progress
+**Target Completion:** February 2026
+
+**Phase 1 - CI/CD & Build Infrastructure (Complete):**
+- ✅ GitHub Actions release workflow triggered on semantic version tags (`v*.*.*`)
+- ✅ Builds firmware (esp32-release) and web UI with version injection
+- ✅ Generates version manifest with SHA256 checksums for firmware, filesystem, and merged binary
+- ✅ Creates GitHub Release with all artifacts (firmware.bin, littlefs.bin, firmware_merged.bin, version_manifest.json)
+- ✅ Merged binary (firmware + filesystem + bootloader) for single-file OTA updates
+- ✅ Manifest URL constructed at runtime from GITHUB_REPO build flag (no separate URL config needed)
+- ✅ Git commit SHA passed through build pipeline and displayed on Update page as clickable link
+- ✅ Build scripts: `generate_version_manifest.py` (manifest generation), `merge_bin.py` (binary merging)
+
+**Phase 1 - UpdateManager Foundation (Complete):**
+- ✅ UpdateManager C++ component with chunked HTTP response streaming
+- ✅ Trigger source tracking for update origin
+- ✅ HAL integration for HTTP client operations (httpGet, httpGetBinary, sha256Verify)
+- ✅ Manifest URL auto-constructed from GITHUB_REPO: `https://github.com/{repo}/releases/latest/download/version_manifest.json`
+
+**Phase 2 (In Progress):**
+- ⏳ REST API endpoints for update checking/triggering from web UI
+- ⏳ SettingsManager integration for auto-update settings
+- ⏳ Unit tests (50+ tests expected)
+
+**Phase 3 (Planned):**
+- 📋 Web UI update controls (check/install buttons, progress display)
+- 📋 Edge case handling and optimization
+- 📋 Production hardening
+
+**Build Infrastructure Files:**
+- `.github/workflows/release.yml` - Release pipeline (tag-triggered)
+- `build_scripts/generate_version_manifest.py` - Manifest generation with checksums
+- `build_scripts/merge_bin.py` - Merged binary creation
+
+---
+
+### Chart Enhancements (History Page) ✅
+
+**Implemented:** 2026-02-11
+**Status:** Complete
+
+**Summary:**
+Added interactive zoom/pan, time period filtering, and event-type-specific point style icons to all history charts.
+
+**Key Changes:**
+1. **Zoom & Pan** - Added `chartjs-plugin-zoom` for mouse wheel zoom and drag pan on all charts (x-axis only)
+2. **Time Period Filter** - Button group (1h, 6h, 24h, All) to filter chart data by time window
+3. **Event Type Icons** - Distinct point shapes for each event type: circle (temp), diamond (pump), triangle (flow), star (light), rounded rect (door)
+4. **Reset Zoom** - Button to reset all charts to default zoom level
+5. **Point Style Legend** - Visual reference card showing event marker symbols
+
+**Files Modified:**
+- `web/src/History.tsx` - Zoom plugin, time filter, event icons, point style legend
+- `web/package.json` - Added `chartjs-plugin-zoom` dependency
+
+---
+
+### Git Commit SHA on Update Page ✅
+
+**Implemented:** 2026-02-11
+**Status:** Complete
+
+**Summary:**
+The Update page now displays the git commit SHA as a clickable link to the GitHub commit, alongside firmware version and build timestamps.
+
+**Key Changes:**
+- `GIT_COMMIT_SHA_RAW` build flag injected via platformio.ini from `GIT_COMMIT_SHA` env var (set by GitHub Actions)
+- `config.h` exposes `gitCommitSha` and `githubRepo` as string constants
+- `/version` endpoint returns `git_commit_sha` and `github_repo` in JSON response
+- Update.tsx displays short SHA (7 chars) as a link to `https://github.com/{repo}/commit/{sha}`
+
+**Files Modified:**
+- `platformio.ini` - Added `GIT_COMMIT_SHA_RAW` build flag
+- `include/config.h` - Added `gitCommitSha` and `githubRepo` config variables
+- `lib/CoopControllerWebServer/CoopControllerWebServer.cpp` - Updated `/version` endpoint
+- `web/src/Update.tsx` - Git SHA display with clickable link
+
+---
+
 ## Planned Features
 
 Features organized by priority and implementation status.
 
-> **Flash Constraint Note:** Firmware is at 99.5% flash usage (7,183 bytes remaining). Features requiring any new libraries are **blocked until flash optimization is performed** (e.g., custom partition scheme, code size reduction, or moving to ESP32-S3 with larger flash).
+> **Flash Constraint Note:** Firmware is at 99.5% flash usage (7,183 bytes remaining). OTA Update System is designed to fit within this constraint using streaming downloads and PROGMEM optimization. Features requiring large external libraries remain blocked until flash optimization is performed.
 
 ### High Priority - Monitoring & Notifications (Blocked by Flash)
 

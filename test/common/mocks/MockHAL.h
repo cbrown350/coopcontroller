@@ -476,8 +476,29 @@ public:
         return mockGetLocalTimeResult;
     }
 
-    unsigned long millis() {
+    unsigned long millis() override {
         return millisValue;
+    }
+
+    // ========================================================================
+    // HTTP CLIENT FUNCTIONS - For OTA Updates
+    // ========================================================================
+
+    String httpGet(const String& url, unsigned long timeout_ms = 10000) override {
+        (void)url; (void)timeout_ms;
+        return mockHttpGetResponse;
+    }
+
+    bool httpGetBinary(const String& url, HttpProgressCallback on_progress,
+                       unsigned long timeout_ms = 30000) override {
+        (void)url; (void)on_progress; (void)timeout_ms;
+        return mockHttpGetBinaryResult;
+    }
+
+    bool sha256Verify(const uint8_t *data, size_t data_length,
+                      const String& expected_hash) override {
+        (void)data; (void)data_length; (void)expected_hash;
+        return mockSha256VerifyResult;
     }
 
     // ========================================================================
@@ -524,6 +545,11 @@ public:
 
         // Reset serial
         serialOutput = "";
+
+        // Reset HTTP client state
+        mockHttpGetResponse = "";
+        mockHttpGetBinaryResult = false;
+        mockSha256VerifyResult = false;
     }
 
     // Time helpers
@@ -576,7 +602,15 @@ public:
     // Serial helpers
     String getSerialOutput() const { return serialOutput; }
     void clearSerialOutput() { serialOutput = ""; }
-    
+
+    // HTTP client helpers
+    void setHttpGetResponse(const String& response) { mockHttpGetResponse = response; }
+    String getHttpGetResponse() const { return mockHttpGetResponse; }
+    void setHttpGetBinaryResult(bool result) { mockHttpGetBinaryResult = result; }
+    bool getHttpGetBinaryResult() const { return mockHttpGetBinaryResult; }
+    void setSha256VerifyResult(bool result) { mockSha256VerifyResult = result; }
+    bool getSha256VerifyResult() const { return mockSha256VerifyResult; }
+
     // PWM helpers
     uint8_t getPwmChannel() const { return mockPwmChannel; }
     uint32_t getPwmFreq() const { return mockPwmFreq; }
@@ -639,7 +673,12 @@ private:
     
     // Serial state
     String serialOutput = "";
-    
+
+    // HTTP client state
+    String mockHttpGetResponse = "";
+    bool mockHttpGetBinaryResult = false;
+    bool mockSha256VerifyResult = false;
+
     // PWM state
     uint8_t mockPwmChannel = 0;
     uint32_t mockPwmFreq = 1000;

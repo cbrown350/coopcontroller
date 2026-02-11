@@ -171,6 +171,17 @@ public:
   int getCoreID() override;
   void *getCurrentTaskHandle() override;
 
+  // ========================================================================
+  // HTTP CLIENT FUNCTIONS - For OTA Updates
+  // ========================================================================
+
+  String httpGet(const String& url, unsigned long timeout_ms = 10000) override;
+  bool httpGetBinary(const String& url, HttpProgressCallback on_progress,
+                     unsigned long timeout_ms = 30000) override;
+  bool sha256Verify(const uint8_t *data, size_t data_length,
+                    const String& expected_hash) override;
+  unsigned long millis() override;
+
 private:
   AsyncWebServer *server_;
 };

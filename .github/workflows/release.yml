@@ -2,6 +2,8 @@ name: Release Build & Publish
 
 on:
   push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
     branches:
       - master
     paths-ignore:
@@ -9,6 +11,10 @@ on:
       - 'docs/**'
       - '.gitignore'
       - 'LICENSE'
+      - '.clangd'
+      - 'emulate_hardware/**'
+      - '.vscode/**'
+      - '.claude/**'
 
 jobs:
   build:
@@ -19,6 +25,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Extract Version from Tag
+        id: version
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "Version from tag: $TAG_NAME"
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -36,6 +49,11 @@ jobs:
       - name: Install PlatformIO Core
         run: pip install platformio
 
+      - name: Install Build Script Python Dependencies
+        run: |
+          source ~/.platformio/penv/bin/activate
+          pip install -r build_scripts/requirements.txt
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -43,60 +61,18 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'web/package-lock.json'
 
-      - name: Determine Version
-        id: version
+      - name: Build Web UI and Filesystem Image
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-
-          if [ -z "$LATEST_TAG" ]; then
-            echo "No previous tags found. Starting at v0.1.0"
-            NEW_VERSION="v0.1.0"
-          else
-            echo "Latest tag: $LATEST_TAG"
-
-            # Extract version components
-            MAJOR=$(echo $LATEST_TAG | cut -d. -f1 | sed 's/v//')
-            MINOR=$(echo $LATEST_TAG | cut -d. -f2)
-            PATCH=$(echo $LATEST_TAG | cut -d. -f3)
-
-            # Get commits since last tag
-            COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s %b" 2>/dev/null || echo "")
-
-            # Determine version bump using conventional commits
-            BUMP_TYPE="PATCH"
-            if echo "$COMMITS" | grep -qi "BREAKING CHANGE"; then
-              BUMP_TYPE="MAJOR"
-            elif echo "$COMMITS" | grep -qi "^feat"; then
-              BUMP_TYPE="MINOR"
-            fi
-
-            # Apply version bump
-            case "$BUMP_TYPE" in
-              MAJOR)
-                NEW_MAJOR=$((MAJOR + 1))
-                NEW_VERSION="v${NEW_MAJOR}.0.0"
-                ;;
-              MINOR)
-                NEW_MINOR=$((MINOR + 1))
-                NEW_VERSION="v${MAJOR}.${NEW_MINOR}.0"
-                ;;
-              PATCH)
-                NEW_PATCH=$((PATCH + 1))
-                NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
-                ;;
-            esac
-
-            echo "Version bump type: $BUMP_TYPE"
-          fi
-
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "NEW_VERSION=$NEW_VERSION"
+          pio run -e esp32-release -t buildfs
 
       - name: Build Firmware (Release)
         env:
           FIRMWARE_VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_REPO: ${{ github.repository }}
+          GIT_COMMIT_SHA: ${{ github.sha }}
         run: |
           echo "Building firmware with version: ${{ steps.version.outputs.version }}"
+          echo "Git commit SHA: ${{ github.sha }}"
           pio run -e esp32-release
 
       - name: Extract Firmware Artifacts
@@ -104,41 +80,41 @@ jobs:
           mkdir -p artifacts
           cp .pio/build/esp32-release/firmware.bin artifacts/firmware.bin
           cp .pio/build/esp32-release/littlefs.bin artifacts/littlefs.bin
+          cp .pio/build/esp32-release/firmware_merged.bin artifacts/firmware_merged.bin
           ls -lh artifacts/
           echo "FIRMWARE_SIZE=$(stat -c%s artifacts/firmware.bin)" >> $GITHUB_ENV
           echo "FILESYSTEM_SIZE=$(stat -c%s artifacts/littlefs.bin)" >> $GITHUB_ENV
+          echo "MERGED_SIZE=$(stat -c%s artifacts/firmware_merged.bin)" >> $GITHUB_ENV
 
       - name: Calculate Checksums
         run: |
           cd artifacts
           sha256sum firmware.bin > firmware.bin.sha256
           sha256sum littlefs.bin > littlefs.bin.sha256
+          sha256sum firmware_merged.bin > firmware_merged.bin.sha256
           cat firmware.bin.sha256
+          cat littlefs.bin.sha256
+          cat firmware_merged.bin.sha256
 
           echo "FIRMWARE_SHA256=$(cut -d' ' -f1 firmware.bin.sha256)" >> $GITHUB_ENV
           echo "FILESYSTEM_SHA256=$(cut -d' ' -f1 littlefs.bin.sha256)" >> $GITHUB_ENV
-
-      - name: Build Web UI
-        run: |
-          cd web
-          npm ci
-          npm run build
+          echo "MERGED_SHA256=$(cut -d' ' -f1 firmware_merged.bin.sha256)" >> $GITHUB_ENV
 
       - name: Run Tests
-        run: pio test
+        run: |
+          pio test
+          pio test -e esp32-release
+          pio test -e unit-test-desktop
 
       - name: Generate Version Manifest
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          FIRMWARE_SHA256: ${{ env.FIRMWARE_SHA256 }}
-          FILESYSTEM_SHA256: ${{ env.FILESYSTEM_SHA256 }}
-          FIRMWARE_SIZE: ${{ env.FIRMWARE_SIZE }}
-          FILESYSTEM_SIZE: ${{ env.FILESYSTEM_SIZE }}
         run: |
           python3 build_scripts/generate_version_manifest.py \
             --version "${{ steps.version.outputs.version }}" \
             --firmware-path "artifacts/firmware.bin" \
-            --filesystem-path "artifacts/littlefs.bin"
+            --filesystem-path "artifacts/littlefs.bin" \
+            --merged-path "artifacts/firmware_merged.bin"
 
           cp version_manifest.json artifacts/version_manifest.json
           cat artifacts/version_manifest.json
@@ -151,13 +127,16 @@ jobs:
           files: |
             artifacts/firmware.bin
             artifacts/littlefs.bin
+            artifacts/firmware_merged.bin
             artifacts/version_manifest.json
             artifacts/firmware.bin.sha256
             artifacts/littlefs.bin.sha256
+            artifacts/firmware_merged.bin.sha256
           body: |
             # Firmware Release ${{ steps.version.outputs.version }}
 
             ## Download Firmware
+            - **Merged Binary (recommended for OTA):** firmware_merged.bin
             - **Firmware Binary:** firmware.bin
             - **Filesystem Binary:** littlefs.bin
             - **Version Manifest:** version_manifest.json (for OTA updates)
@@ -165,9 +144,12 @@ jobs:
             ## Checksums
             **Firmware SHA256:** ${{ env.FIRMWARE_SHA256 }}
             **Filesystem SHA256:** ${{ env.FILESYSTEM_SHA256 }}
+            **Merged SHA256:** ${{ env.MERGED_SHA256 }}
 
             ## Build Artifacts
             - Firmware Size: ${{ env.FIRMWARE_SIZE }} bytes
             - Filesystem Size: ${{ env.FILESYSTEM_SIZE }} bytes
+            - Merged Size: ${{ env.MERGED_SIZE }} bytes
+            - Git Commit: ${{ github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

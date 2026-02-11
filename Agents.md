@@ -82,6 +82,9 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
+- OTA Update System Foundation (GitHub Actions release workflow on semver tags, UpdateManager with chunked streaming, version manifest generation, merged binary support, manifest URL from GITHUB_REPO)
+- Git Commit SHA on Update Page (clickable link to GitHub commit, build flag pipeline)
+- Chart Enhancements (zoom/pan via chartjs-plugin-zoom, time period filter 1h/6h/24h/all, event-type point icons, reset zoom, point style legend)
 - Historical Data Visualization - Event-Based (pure event-driven capture: pump/light/door on any change, temp at >=0.5°F delta with 60s min, flow at >0.001GPM with 10s min; granular trigger sources with 15 enum values; configurable intervals via web UI; Chart.js charts with event-type markers; CSV export)
 - API Authentication (31 protected + 9 public endpoints)
 - Factory Reset on Boot (hardware button)
@@ -111,12 +114,16 @@ coop_controller/
 │   ├── WifiController/
 │   ├── Logger/
 │   ├── SunriseSunset/
+│   ├── UpdateManager/
+│   ├── HistoricalDataManager/
 │   └── BuzzerController/
 ├── src/main.cpp             # Entry point
 ├── web/                     # SolidJS web application
 ├── test/                    # Unit tests (desktop + embedded)
 │   └── common/mocks/MockHAL.h
 ├── emulate_hardware/        # Hardware emulator (separate ESP32)
+├── build_scripts/           # CI/CD build helpers (manifest gen, binary merge)
+├── .github/workflows/       # GitHub Actions (release pipeline)
 ├── docs/                    # Documentation subdocuments
 ├── platformio.ini           # Build configuration
 ├── Agents.md                # This file

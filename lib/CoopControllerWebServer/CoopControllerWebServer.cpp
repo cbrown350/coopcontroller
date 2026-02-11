@@ -948,19 +948,12 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   jsonDoc["chip_family"]      = chipFamily;
                   jsonDoc["build_date"]       = BUILD_TIMESTAMP_DATE;
                   jsonDoc["build_time"]       = BUILD_TIMESTAMP_TIME;
+                  jsonDoc["github_repo"]      = githubRepo;
 
-                  // Add GitHub repo if defined
-                  #ifdef GITHUB_REPO
-                  jsonDoc["github_repo"] = TOSTRING(GITHUB_REPO);
-                  #endif
-
-                  // Add version manifest URL if defined (non-empty)
-                  #ifdef VERSION_MANIFEST_URL
-                  const char* manifestUrl = TOSTRING(VERSION_MANIFEST_URL);
-                  if (manifestUrl && strlen(manifestUrl) > 0) {
-                      jsonDoc["manifest_url"] = manifestUrl;
+                  // Add git commit SHA if available
+                  if (strlen(gitCommitSha) > 0) {
+                      jsonDoc["git_commit_sha"] = gitCommitSha;
                   }
-                  #endif
 
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);

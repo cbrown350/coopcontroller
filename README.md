@@ -26,8 +26,8 @@ ESP32-based automation for chicken coop management: temperature monitoring, free
 
 ## Firmware Installation (ESP32)
 
-1. Flash firmware and filesystem (web tool or PlatformIO Upload Filesystem Image).
-2. Connect to the temporary WiFi AP `CoopController` (password `coopycontroller`).
+1. Flash firmware and filesystem (web tool or PlatformIO Upload Filesystem Image: `pio run -t upload; pio run -t uploadfs`) or flash merged release firmware image: `python $HOME/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32 --port COM22 --baud 115200 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x0000 .pio/build/esp32-release/firmware_merged.bin` (adjust COM port and paths as needed).
+2. Connect to the temporary WiFi AP `CoopController` (password if defined in platformio.ini).
 3. Open [http://192.168.4.1](http://192.168.4.1) or [http://coopcontroller.local](http://coopcontroller.local) to load the UI, enter your WiFi SSID/password, and save settings.
 4. After restart, access the device at [http://coopcontroller.local](http://coopcontroller.local) on your network.
 
