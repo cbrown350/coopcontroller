@@ -171,7 +171,7 @@ def add_diagonal_text(image_path, output_path, text="DEV", font_path=None, font_
         from PIL import Image  # noqa: F401
     except ImportError as e:
         print("Required module not found:", e)
-        print("In order to modify dev images, install Pillow ('~\\.platformio\\penv\\Scripts\\activate && pip install Pillow' or 'source ~/.platformio/penv/bin/activate && pip install Pillow' or '%USERPROFILE%\.platformio\penv\Scripts\activate.bat && pip install Pillow' depending on platform).")
+        print("In order to modify dev images, install Pillow (pip install Pillow); you may need to activate your Platformio environment first ('source ~/.platformio/penv/bin/activate' or '%USERPROFILE%\\.platformio\\penv\\Scripts\\activate.bat' depending on platform).")
         raise e
 
     ext = os.path.splitext(image_path)[1].lower()

@@ -4,20 +4,33 @@ on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
-    branches:
-      - master
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
-      - 'LICENSE'
-      - '.clangd'
-      - 'emulate_hardware/**'
-      - '.vscode/**'
-      - '.claude/**'
 
 jobs:
+  check-branch:
+    runs-on: ubuntu-latest
+    outputs:
+      on-master: ${{ steps.check.outputs.on-master }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if Tag is on Master
+        id: check
+        run: |
+          git fetch origin master
+          if git merge-base --is-ancestor HEAD origin/master; then
+            echo "on-master=true" >> $GITHUB_OUTPUT
+            echo "Tag is on master branch - proceeding with build"
+          else
+            echo "on-master=false" >> $GITHUB_OUTPUT
+            echo "Tag is not on master branch - skipping build"
+          fi
+
   build:
+    needs: check-branch
+    if: needs.check-branch.outputs.on-master == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -51,7 +64,6 @@ jobs:
 
       - name: Install Build Script Python Dependencies
         run: |
-          source ~/.platformio/penv/bin/activate
           pip install -r build_scripts/requirements.txt
 
       - name: Set up Node.js
