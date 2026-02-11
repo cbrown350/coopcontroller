@@ -3,7 +3,14 @@ name: Release Build & Publish
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag"
+        required: true
+        default: "dev"
 
 jobs:
   check-branch:
@@ -19,6 +26,13 @@ jobs:
       - name: Check if Tag is on Master
         id: check
         run: |
+          # Skip check for manual workflow dispatch
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "on-master=true" >> $GITHUB_OUTPUT
+            echo "Manual workflow dispatch - proceeding with build"
+            exit 0
+          fi
+
           git fetch origin master
           if git merge-base --is-ancestor HEAD origin/master; then
             echo "on-master=true" >> $GITHUB_OUTPUT
@@ -42,14 +56,20 @@ jobs:
       - name: Extract Version from Tag
         id: version
         run: |
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
-          echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "Version from tag: $TAG_NAME"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ github.event.inputs.tag }}"
+            echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "Version from manual input: $TAG_NAME"
+          else
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "Version from tag: $TAG_NAME"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Cache PlatformIO
         uses: actions/cache@v3
@@ -69,9 +89,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: 'web/package-lock.json'
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: "web/package-lock.json"
 
       - name: Build Web UI and Filesystem Image
         run: |
