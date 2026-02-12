@@ -273,9 +273,52 @@ Reset pulse count for water meter on sensor 2.
 
 ## OTA Updates
 
+### GET `/update/check`
+
+Check for available firmware updates from GitHub Releases. **Public**.
+
+Fetches version manifest, compares versions, returns update availability.
+
+**Response:**
+
+```json
+{
+  "manifest_url": "https://github.com/user/repo/releases/latest/download/version_manifest.json",
+  "last_check_time": 12345678,
+  "current_version": "1.0.0",
+  "available_version": "2.0.0",
+  "update_available": true,
+  "firmware": { "version": "2.0.0", "url": "...", "size_bytes": 1048576 },
+  "filesystem": { "version": "2.0.0", "url": "...", "size_bytes": 524288 }
+}
+```
+
+### GET `/update/status`
+
+Get current update operation status. **Public**.
+
+**Response:**
+
+```json
+{
+  "status": "idle|checking|available|current|downloading|installing|complete|error",
+  "progress": 0,
+  "last_check": 12345678,
+  "error": ""
+}
+```
+
+### POST `/update/install`
+
+Start firmware/filesystem installation. **Protected** (requires auth).
+
+Downloads and flashes firmware and filesystem from manifest URLs. Device restarts after successful install. Settings are backed up to NVS before filesystem flash.
+
+**Response:** `{"status": "installing", "message": "Update installation started"}`
+
 ### Web Interface: `/update`
 
-Web-based OTA update interface via ElegantOTA.
+Web-based OTA update interface via ElegantOTA (fallback).
 
 - Supports firmware (.bin) uploads
 - Supports filesystem (.bin) uploads

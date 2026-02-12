@@ -116,6 +116,10 @@ function Settings() {
   const [historyFlowMinIntervalSeconds, setHistoryFlowMinIntervalSeconds] = createSignal<number | null>(null)
   const [historyBufferSize, setHistoryBufferSize] = createSignal<number | null>(null)
 
+  // OTA Update settings
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = createSignal<boolean | null>(null)
+  const [updateCheckIntervalHours, setUpdateCheckIntervalHours] = createSignal<number | null>(null)
+
   // Unsaved changes tracking
   const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false)
 
@@ -205,6 +209,10 @@ function Settings() {
       setHistoryTempMinIntervalSeconds(settings.history_temp_min_interval_seconds ?? 60)
       setHistoryFlowMinIntervalSeconds(settings.history_flow_min_interval_seconds ?? 10)
       setHistoryBufferSize(settings.history_buffer_size ?? 500)
+
+      // Load OTA update settings
+      setAutoUpdateEnabled(settings.auto_update_enabled ?? false)
+      setUpdateCheckIntervalHours(settings.update_check_interval_hours ?? 24)
 
       setLoaded(true)
       setError('')
@@ -309,7 +317,11 @@ function Settings() {
         history_enabled: historyEnabled() ?? true,
         history_temp_min_interval_seconds: historyTempMinIntervalSeconds() ?? 60,
         history_flow_min_interval_seconds: historyFlowMinIntervalSeconds() ?? 10,
-        history_buffer_size: historyBufferSize() ?? 500
+        history_buffer_size: historyBufferSize() ?? 500,
+        auto_update_enabled: autoUpdateEnabled() ?? false,
+        update_check_interval_hours: updateCheckIntervalHours() ?? 24,
+        water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
+        water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300
       }
 
       // Handle WiFi password: either set new password, clear it, or don't change it
@@ -1305,6 +1317,41 @@ function Settings() {
         </Show>
         <div class="fieldset-label">Minutes after sunset to auto-close door (default: 0 = immediate)</div>
       </fieldset>
+
+          <h2 class="text-lg font-bold mb-4 mt-10">OTA Updates</h2>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Auto-Update Check</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Auto-Update Check</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={autoUpdateEnabled() ?? false}
+                  onChange={(e) => setAutoUpdateEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Automatically check for firmware updates at the configured interval
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <Show when={autoUpdateEnabled()}>
+            <fieldset class="fieldset mt-4">
+              <legend class="fieldset-legend">Check Interval (hours)</legend>
+              <Show when={loaded()}>
+                <input type="number" value={updateCheckIntervalHours()!} onInput={(e) => setUpdateCheckIntervalHours(parseInt(e.target.value))} placeholder="24" step="1" min="1" max="168" class="input" />
+              </Show>
+              <Show when={!loaded()}>
+                <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+              </Show>
+              <div class="fieldset-label">How often to check for updates in hours (1-168, default: 24)</div>
+            </fieldset>
+          </Show>
 
           <h2 class="text-lg font-bold mb-4 mt-10">Historical Data Settings</h2>
 

@@ -635,12 +635,15 @@ public:
   // ========================================================================
 
   /**
-   * @brief Progress callback type for streaming HTTP downloads
-   * Called periodically during download to report progress.
-   * Parameters: bytes_downloaded, total_bytes
+   * @brief Data callback type for streaming HTTP downloads
+   * Called as data chunks are received during download.
+   * Parameters: data pointer, chunk length, bytes_downloaded, total_bytes
    * Return: true to continue, false to abort
    */
-  typedef std::function<bool(uint32_t, uint32_t)> HttpProgressCallback;
+  typedef std::function<bool(const uint8_t* data, size_t len, uint32_t bytes_downloaded, uint32_t total_bytes)> HttpDataCallback;
+
+  // Keep old name as alias for backwards compatibility
+  typedef HttpDataCallback HttpProgressCallback;
 
   /**
    * @brief Perform HTTP GET request and return response body
@@ -655,18 +658,19 @@ public:
   virtual String httpGet(const String& url, unsigned long timeout_ms = 10000) = 0;
 
   /**
-   * @brief Perform streaming HTTP GET request with progress callback
+   * @brief Perform streaming HTTP GET request with data callback
    *
-   * Sends HTTP GET request and calls progress callback with downloaded data.
+   * Sends HTTP GET request and calls data callback with each chunk received.
+   * Handles HTTP redirects (301/302) for GitHub release URLs.
    * Useful for large downloads (firmware binaries) to avoid buffering in memory.
    *
    * @param url Full URL to request
-   * @param on_progress Callback function called as data is received
+   * @param on_data Callback function called with each data chunk
    * @param timeout_ms Request timeout in milliseconds
    * @return true if download completed successfully, false on failure
    */
-  virtual bool httpGetBinary(const String& url, HttpProgressCallback on_progress,
-                             unsigned long timeout_ms = 30000) = 0;
+  virtual bool httpGetStream(const String& url, HttpDataCallback on_data,
+                             unsigned long timeout_ms = 60000) = 0;
 
   /**
    * @brief Verify SHA256 checksum
@@ -681,6 +685,44 @@ public:
    */
   virtual bool sha256Verify(const uint8_t *data, size_t data_length,
                             const String& expected_hash) = 0;
+
+  // ========================================================================
+  // OTA UPDATE FUNCTIONS
+  // ========================================================================
+
+  /**
+   * @brief Begin OTA update partition write
+   * @param size Total size of update in bytes
+   * @param command 0 for firmware (U_FLASH), 1 for filesystem (U_SPIFFS)
+   * @return true if OTA partition opened successfully
+   */
+  virtual bool otaBegin(size_t size, int command = 0) = 0;
+
+  /**
+   * @brief Write data to OTA update partition
+   * @param data Pointer to data buffer
+   * @param len Length of data to write
+   * @return Number of bytes written
+   */
+  virtual size_t otaWrite(const uint8_t* data, size_t len) = 0;
+
+  /**
+   * @brief Finalize OTA update
+   * @param evenIfRemaining If true, finalize even if not all bytes written
+   * @return true if finalization successful
+   */
+  virtual bool otaEnd(bool evenIfRemaining = false) = 0;
+
+  /**
+   * @brief Abort OTA update in progress
+   */
+  virtual void otaAbort() = 0;
+
+  /**
+   * @brief Get last OTA error message
+   * @return Error description string
+   */
+  virtual String otaGetError() = 0;
 
   /**
    * @brief Get current milliseconds counter

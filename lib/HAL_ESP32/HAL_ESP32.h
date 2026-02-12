@@ -176,10 +176,18 @@ public:
   // ========================================================================
 
   String httpGet(const String& url, unsigned long timeout_ms = 10000) override;
-  bool httpGetBinary(const String& url, HttpProgressCallback on_progress,
-                     unsigned long timeout_ms = 30000) override;
+  bool httpGetStream(const String& url, HttpDataCallback on_data,
+                     unsigned long timeout_ms = 60000) override;
   bool sha256Verify(const uint8_t *data, size_t data_length,
                     const String& expected_hash) override;
+
+  // OTA Update functions
+  bool otaBegin(size_t size, int command = 0) override;
+  size_t otaWrite(const uint8_t* data, size_t len) override;
+  bool otaEnd(bool evenIfRemaining = false) override;
+  void otaAbort() override;
+  String otaGetError() override;
+
   unsigned long millis() override;
 
   // ========================================================================

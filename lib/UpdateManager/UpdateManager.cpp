@@ -38,11 +38,11 @@ bool UpdateManager::parseVersion(const String& version, int& major, int& minor, 
     // Parse semantic version: "1.0.5" or "1.0.0-beta"
     // Extract major.minor.patch (ignore pre-release and build metadata)
 
-    int dotCount = 0;
+    unsigned int dotCount = 0;
     int firstDot = -1;
     int secondDot = -1;
 
-    for (int i = 0; i < version.length(); i++) {
+    for (unsigned int i = 0; i < version.length(); i++) {
         if (version[i] == '.') {
             dotCount++;
             if (dotCount == 1) firstDot = i;
@@ -60,7 +60,7 @@ bool UpdateManager::parseVersion(const String& version, int& major, int& minor, 
     minor = version.substring(firstDot + 1, secondDot).toInt();
 
     // Find end of patch (stop at '-', '+', or end of string)
-    int patchEnd = secondDot + 1;
+    unsigned int patchEnd = secondDot + 1;
     while (patchEnd < version.length() && version[patchEnd] >= '0' && version[patchEnd] <= '9') {
         patchEnd++;
     }
@@ -109,18 +109,66 @@ void UpdateManager::checkForUpdates() {
         return;
     }
 
+    if (manifest_url_.length() == 0) {
+        setError(UpdateError::NET_ERROR, "No manifest URL configured");
+        return;
+    }
+
     setStatus(UpdateStatus::CHECKING, true);
     current_operation_start_ = hal_->millis();
 
     logger.logInfo("Checking for updates from: " + manifest_url_);
 
-    // TODO: Implement HTTP GET request to fetch manifest
-    // This will require HAL HTTP client methods or AsyncWebServer client
-    // For now, set error to indicate not implemented
-    setError(UpdateError::NET_ERROR, "Update checking not yet implemented");
+    // Fetch manifest JSON
+    String manifestJson = hal_->httpGet(manifest_url_, 15000);
+    if (manifestJson.length() == 0) {
+        setError(UpdateError::NET_ERROR, "Failed to fetch manifest from: " + manifest_url_);
+        last_check_time_ = hal_->millis();
+        return;
+    }
 
-    // Update last check time in settings
+    // Parse manifest JSON
+    JsonDocument doc;
+    DeserializationError jsonError = deserializeJson(doc, manifestJson);
+    if (jsonError) {
+        setError(UpdateError::MANIFEST_PARSE, "Failed to parse manifest JSON: " + String(jsonError.c_str()));
+        last_check_time_ = hal_->millis();
+        return;
+    }
+
+    // Extract manifest data
+    manifest_.latest_version = doc["latest_version"].as<String>();
+    manifest_.release_date = doc["release_date"].as<uint64_t>();
+
+    if (doc["firmware"].is<JsonObject>()) {
+        manifest_.firmware.version = doc["firmware"]["version"].as<String>();
+        manifest_.firmware.url = doc["firmware"]["url"].as<String>();
+        manifest_.firmware.size_bytes = doc["firmware"]["size_bytes"].as<uint32_t>();
+        manifest_.firmware.sha256 = doc["firmware"]["sha256"].as<String>();
+    }
+
+    if (doc["filesystem"].is<JsonObject>()) {
+        manifest_.filesystem.version = doc["filesystem"]["version"].as<String>();
+        manifest_.filesystem.url = doc["filesystem"]["url"].as<String>();
+        manifest_.filesystem.size_bytes = doc["filesystem"]["size_bytes"].as<uint32_t>();
+        manifest_.filesystem.sha256 = doc["filesystem"]["sha256"].as<String>();
+    }
+
     last_check_time_ = hal_->millis();
+
+    // Compare versions
+    if (manifest_.latest_version.length() == 0) {
+        setError(UpdateError::MANIFEST_PARSE, "Manifest missing latest_version field");
+        return;
+    }
+
+    if (isVersionNewer(device_version_, manifest_.latest_version)) {
+        setStatus(UpdateStatus::AVAILABLE, true);
+        logger.logInfo("Update available: " + device_version_ + " -> " + manifest_.latest_version);
+    } else {
+        setStatus(UpdateStatus::CURRENT, true);
+        logger.logInfo("Firmware is up to date: " + device_version_);
+    }
 }
 
 void UpdateManager::installUpdate(bool skip_filesystem) {
@@ -142,14 +190,124 @@ void UpdateManager::installUpdate(bool skip_filesystem) {
         }
     }
 
-    setStatus(UpdateStatus::DOWNLOADING, true);
     current_operation_start_ = hal_->millis();
-
     logger.logInfo("Starting firmware update to version: " + manifest_.latest_version);
 
-    // TODO: Implement download and installation
-    // Use ESP.Update or similar for firmware installation
-    setError(UpdateError::NET_ERROR, "Update installation not yet implemented");
+    // --- Install firmware ---
+    if (manifest_.firmware.url.length() > 0 && manifest_.firmware.size_bytes > 0) {
+        setStatus(UpdateStatus::DOWNLOADING, true);
+        bytes_downloaded_ = 0;
+        total_bytes_ = manifest_.firmware.size_bytes;
+        progress_percent_ = 0;
+
+        logger.logInfo("Downloading firmware: " + String(manifest_.firmware.size_bytes) + " bytes");
+
+        // Begin OTA firmware partition
+        if (!hal_->otaBegin(manifest_.firmware.size_bytes, 0)) {
+            setError(UpdateError::INSTALL_FAILED, "Failed to begin firmware OTA: " + hal_->otaGetError());
+            return;
+        }
+
+        // Stream download, writing each chunk to OTA partition
+        bool downloadSuccess = hal_->httpGetStream(manifest_.firmware.url,
+            [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
+                size_t written = hal_->otaWrite(data, len);
+                if (written != len) {
+                    return false; // Write failed, abort download
+                }
+                bytes_downloaded_ = downloaded;
+                total_bytes_ = total;
+                progress_percent_ = total > 0 ? (uint8_t)((downloaded * 100) / total) : 0;
+                return true;
+            }, 120000); // 2 minute timeout for firmware download
+
+        if (!downloadSuccess) {
+            hal_->otaAbort();
+            setError(UpdateError::DOWNLOAD_FAILED, "Firmware download failed");
+            return;
+        }
+
+        // Finalize firmware OTA
+        setStatus(UpdateStatus::INSTALLING);
+        if (!hal_->otaEnd(true)) {
+            hal_->otaAbort();
+            setError(UpdateError::INSTALL_FAILED, "Firmware install failed: " + hal_->otaGetError());
+            return;
+        }
+
+        logger.logInfo("Firmware update installed successfully");
+    }
+
+    // --- Install filesystem (if not skipping) ---
+    if (!skip_filesystem && manifest_.filesystem.url.length() > 0 && manifest_.filesystem.size_bytes > 0) {
+        bytes_downloaded_ = 0;
+        total_bytes_ = manifest_.filesystem.size_bytes;
+        progress_percent_ = 0;
+        setStatus(UpdateStatus::DOWNLOADING, true);
+
+        logger.logInfo("Downloading filesystem: " + String(manifest_.filesystem.size_bytes) + " bytes");
+
+        // End current filesystem before flashing
+        hal_->fsEnd();
+
+        if (!hal_->otaBegin(manifest_.filesystem.size_bytes, 1)) {
+            hal_->fsBegin();
+            setError(UpdateError::INSTALL_FAILED, "Failed to begin filesystem OTA: " + hal_->otaGetError());
+            return;
+        }
+
+        bool fsDownloadSuccess = hal_->httpGetStream(manifest_.filesystem.url,
+            [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
+                size_t written = hal_->otaWrite(data, len);
+                if (written != len) {
+                    return false;
+                }
+                bytes_downloaded_ = downloaded;
+                total_bytes_ = total;
+                progress_percent_ = total > 0 ? (uint8_t)((downloaded * 100) / total) : 0;
+                return true;
+            }, 120000);
+
+        if (!fsDownloadSuccess) {
+            hal_->otaAbort();
+            hal_->fsBegin();
+            setError(UpdateError::DOWNLOAD_FAILED, "Filesystem download failed");
+            return;
+        }
+
+        setStatus(UpdateStatus::INSTALLING);
+        if (!hal_->otaEnd(true)) {
+            hal_->otaAbort();
+            hal_->fsBegin();
+            setError(UpdateError::INSTALL_FAILED, "Filesystem install failed: " + hal_->otaGetError());
+            return;
+        }
+
+        logger.logInfo("Filesystem update installed successfully");
+    }
+
+    setStatus(UpdateStatus::COMPLETE, true);
+    progress_percent_ = 100;
+    logger.logWarning("Update complete! Restarting device...");
+    delay(1000);
+    hal_->restart();
+}
+
+void UpdateManager::update() {
+    if (!hal_) return;
+    if (status_ == UpdateStatus::DOWNLOADING || status_ == UpdateStatus::INSTALLING ||
+        status_ == UpdateStatus::VERIFYING || status_ == UpdateStatus::CHECKING) {
+        return; // Already busy
+    }
+
+    if (!settingsManager.getAutoUpdateEnabled()) return;
+
+    unsigned long checkIntervalMs = (unsigned long)settingsManager.getUpdateCheckIntervalHours() * 3600000UL;
+    unsigned long now = hal_->millis();
+
+    if (last_check_time_ == 0 || (now - last_check_time_) >= checkIntervalMs) {
+        checkForUpdates();
+    }
 }
 
 UpdateStatusSnapshot UpdateManager::getStatus() const {

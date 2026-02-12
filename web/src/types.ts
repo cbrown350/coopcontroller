@@ -144,4 +144,6 @@ export interface Settings {
   history_temp_min_interval_seconds?: number;
   history_flow_min_interval_seconds?: number;
   history_buffer_size?: number;
+  auto_update_enabled?: boolean;
+  update_check_interval_hours?: number;
 }

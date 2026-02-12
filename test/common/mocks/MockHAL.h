@@ -509,20 +509,68 @@ public:
     // ========================================================================
 
     String httpGet(const String& url, unsigned long timeout_ms = 10000) override {
-        (void)url; (void)timeout_ms;
+        (void)timeout_ms;
+        lastHttpGetUrl = url;
         return mockHttpGetResponse;
     }
 
-    bool httpGetBinary(const String& url, HttpProgressCallback on_progress,
-                       unsigned long timeout_ms = 30000) override {
-        (void)url; (void)on_progress; (void)timeout_ms;
-        return mockHttpGetBinaryResult;
+    bool httpGetStream(const String& url, HttpDataCallback on_data,
+                       unsigned long timeout_ms = 60000) override {
+        (void)timeout_ms;
+        lastHttpGetStreamUrl = url;
+        if (!mockHttpGetStreamResult) return false;
+        // Simulate streaming data in chunks if mock data is set
+        if (mockStreamData && mockStreamDataSize > 0 && on_data) {
+            uint32_t offset = 0;
+            size_t chunkSize = 1024;
+            while (offset < mockStreamDataSize) {
+                size_t len = (offset + chunkSize > mockStreamDataSize) ? (mockStreamDataSize - offset) : chunkSize;
+                if (!on_data(mockStreamData + offset, len, offset + len, mockStreamDataSize)) {
+                    return false; // Aborted
+                }
+                offset += len;
+            }
+        }
+        return true;
     }
 
     bool sha256Verify(const uint8_t *data, size_t data_length,
                       const String& expected_hash) override {
         (void)data; (void)data_length; (void)expected_hash;
         return mockSha256VerifyResult;
+    }
+
+    // ========================================================================
+    // OTA UPDATE FUNCTIONS
+    // ========================================================================
+
+    bool otaBegin(size_t size, int command = 0) override {
+        otaBeginCalled = true;
+        otaBeginSize = size;
+        otaBeginCommand = command;
+        otaBytesWritten = 0;
+        return mockOtaBeginResult;
+    }
+
+    size_t otaWrite(const uint8_t* data, size_t len) override {
+        (void)data;
+        otaWriteCalled = true;
+        otaBytesWritten += len;
+        return mockOtaWriteResult ? len : 0;
+    }
+
+    bool otaEnd(bool evenIfRemaining = false) override {
+        (void)evenIfRemaining;
+        otaEndCalled = true;
+        return mockOtaEndResult;
+    }
+
+    void otaAbort() override {
+        otaAbortCalled = true;
+    }
+
+    String otaGetError() override {
+        return mockOtaError;
     }
 
     // ========================================================================
@@ -572,8 +620,25 @@ public:
 
         // Reset HTTP client state
         mockHttpGetResponse = "";
-        mockHttpGetBinaryResult = false;
+        mockHttpGetStreamResult = false;
         mockSha256VerifyResult = false;
+        lastHttpGetUrl = "";
+        lastHttpGetStreamUrl = "";
+        mockStreamData = nullptr;
+        mockStreamDataSize = 0;
+
+        // Reset OTA state
+        otaBeginCalled = false;
+        otaBeginSize = 0;
+        otaBeginCommand = 0;
+        otaWriteCalled = false;
+        otaBytesWritten = 0;
+        otaEndCalled = false;
+        otaAbortCalled = false;
+        mockOtaBeginResult = true;
+        mockOtaWriteResult = true;
+        mockOtaEndResult = true;
+        mockOtaError = "";
 
         // Reset NVS state
         mockNvsStorage.clear();
@@ -633,10 +698,24 @@ public:
     // HTTP client helpers
     void setHttpGetResponse(const String& response) { mockHttpGetResponse = response; }
     String getHttpGetResponse() const { return mockHttpGetResponse; }
-    void setHttpGetBinaryResult(bool result) { mockHttpGetBinaryResult = result; }
-    bool getHttpGetBinaryResult() const { return mockHttpGetBinaryResult; }
+    void setHttpGetStreamResult(bool result) { mockHttpGetStreamResult = result; }
+    void setStreamData(const uint8_t* data, size_t size) { mockStreamData = data; mockStreamDataSize = size; }
     void setSha256VerifyResult(bool result) { mockSha256VerifyResult = result; }
-    bool getSha256VerifyResult() const { return mockSha256VerifyResult; }
+    String getLastHttpGetUrl() const { return lastHttpGetUrl; }
+    String getLastHttpGetStreamUrl() const { return lastHttpGetStreamUrl; }
+
+    // OTA helpers
+    void setOtaBeginResult(bool result) { mockOtaBeginResult = result; }
+    void setOtaWriteResult(bool result) { mockOtaWriteResult = result; }
+    void setOtaEndResult(bool result) { mockOtaEndResult = result; }
+    void setOtaError(const String& error) { mockOtaError = error; }
+    bool getOtaBeginCalled() const { return otaBeginCalled; }
+    size_t getOtaBeginSize() const { return otaBeginSize; }
+    int getOtaBeginCommand() const { return otaBeginCommand; }
+    bool getOtaWriteCalled() const { return otaWriteCalled; }
+    size_t getOtaBytesWritten() const { return otaBytesWritten; }
+    bool getOtaEndCalled() const { return otaEndCalled; }
+    bool getOtaAbortCalled() const { return otaAbortCalled; }
 
     // PWM helpers
     uint8_t getPwmChannel() const { return mockPwmChannel; }
@@ -707,8 +786,25 @@ private:
 
     // HTTP client state
     String mockHttpGetResponse = "";
-    bool mockHttpGetBinaryResult = false;
+    bool mockHttpGetStreamResult = false;
     bool mockSha256VerifyResult = false;
+    String lastHttpGetUrl = "";
+    String lastHttpGetStreamUrl = "";
+    const uint8_t* mockStreamData = nullptr;
+    size_t mockStreamDataSize = 0;
+
+    // OTA state
+    bool otaBeginCalled = false;
+    size_t otaBeginSize = 0;
+    int otaBeginCommand = 0;
+    bool otaWriteCalled = false;
+    size_t otaBytesWritten = 0;
+    bool otaEndCalled = false;
+    bool otaAbortCalled = false;
+    bool mockOtaBeginResult = true;
+    bool mockOtaWriteResult = true;
+    bool mockOtaEndResult = true;
+    String mockOtaError = "";
 
     // PWM state
     uint8_t mockPwmChannel = 0;

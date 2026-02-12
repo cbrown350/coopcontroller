@@ -187,6 +187,14 @@ public:
     void installUpdate(bool skip_filesystem = false);
 
     /**
+     * @brief Periodic update check for main loop
+     *
+     * Call from main loop. Checks for updates automatically based on
+     * auto_update_enabled setting and check interval.
+     */
+    void update();
+
+    /**
      * @brief Get current update status
      *
      * @return Current UpdateStatusSnapshot
@@ -263,6 +271,12 @@ public:
      * Clears error state and returns to idle.
      */
     void reset();
+
+    /**
+     * @brief Set device version for testing
+     * @param version Version string to use instead of firmwareVersion
+     */
+    void setDeviceVersionForTesting(const String& version) { device_version_ = version; }
 };
 
 #endif // __UPDATE_MANAGER_H__

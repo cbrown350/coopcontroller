@@ -12,7 +12,7 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5 (Critical Refactoring) | 100% complete - HAL refactoring complete, all ESP32-specific functions abstracted |
 | Phase 3.5a (Sunrise/Sunset Integration) | 100% complete with accurate UTC to local time conversion |
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
-| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
+| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 570 desktop unit tests passing, all 11 core components covered |
 
 **Current Build:** RAM 17.6% (57,648 bytes), Flash 81.2% (1,436,321 bytes)
 
@@ -20,7 +20,7 @@ This document tracks all features: completed, in-progress, and planned.
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. Actual functionality hasn't been checked for correctness.
 
-**Test Coverage (February 2026):** 503/503 desktop tests passing (100% pass rate)
+**Test Coverage (February 2026):** 570/570 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
@@ -33,6 +33,7 @@ This document tracks all features: completed, in-progress, and planned.
 | SensorManager | 33 |
 | SettingsManager | 149 |
 | SunriseSunset | 36 |
+| UpdateManager | 67 |
 | WifiController | 1 |
 
 - **Embedded Unit Tests:** 1/1 passing - Logger singleton pattern test
@@ -981,45 +982,85 @@ Settings are automatically backed up to NVS before OTA filesystem updates and re
 
 ---
 
+### OTA Update System ✅
+
+**Implemented:** 2026-02-11
+**Status:** Complete and tested
+
+**Summary:**
+Full over-the-air firmware and filesystem update system with GitHub Releases integration. Devices check for updates via a version manifest, stream firmware/filesystem binaries with chunked downloads, and flash via ESP32 Update API. Settings are backed up to NVS before filesystem updates and auto-restored on boot.
+
+**Key Changes:**
+
+1. **CI/CD & Build Infrastructure**
+   - GitHub Actions release workflow triggered on semantic version tags (`v*.*.*`)
+   - Builds firmware and web UI with version injection
+   - Generates `version_manifest.json` with SHA256 checksums
+   - Creates GitHub Release with firmware.bin, littlefs.bin, firmware_merged.bin, version_manifest.json
+   - Build scripts: `generate_version_manifest.py`, `merge_bin.py`
+
+2. **HAL Layer (IHAL, HAL_ESP32, MockHAL)**
+   - `HttpDataCallback` - chunked data callback with data pointer, length, bytes downloaded, total bytes
+   - `httpGetStream()` - streaming HTTP download with data callback and redirect handling (301-308)
+   - `httpGet()` - updated with HTTP redirect handling for GitHub URLs
+   - OTA methods: `otaBegin()`, `otaWrite()`, `otaEnd()`, `otaAbort()`, `otaGetError()`
+   - HAL_ESP32 uses ESP32 `Update.h` API (U_FLASH/U_SPIFFS)
+   - MockHAL with full OTA simulation and tracking variables
+
+3. **UpdateManager (lib/UpdateManager/)**
+   - `checkForUpdates()` - fetches manifest JSON, parses with ArduinoJson, compares semantic versions
+   - `installUpdate()` - streams firmware via httpGetStream, writes chunks via otaWrite, handles filesystem too
+   - `update()` - periodic auto-check based on settings interval
+   - `parseVersion()` / `isVersionNewer()` - semantic version comparison (major.minor.patch)
+   - NVS settings backup before filesystem flash
+   - Status tracking: IDLE, CHECKING, AVAILABLE, CURRENT, DOWNLOADING, INSTALLING, COMPLETE, ERROR
+
+4. **REST API Endpoints**
+   - `GET /update/check` (public) - triggers update check, returns manifest info
+   - `GET /update/status` (public) - returns current update status/progress
+   - `POST /update/install` (auth required) - starts firmware installation
+   - OTA settings in `/update_settings`: auto_update_enabled, update_check_interval_hours, manifest_url
+
+5. **main.cpp Integration**
+   - UpdateManager instance created and initialized after web server
+   - Periodic update eligibility check in main loop (every 60s)
+
+6. **Web UI (Update.tsx, Settings.tsx)**
+   - Full OTA UI: check button, version comparison, install with confirmation dialog
+   - Progress bar with real-time status polling during download/install
+   - Error display and ElegantOTA iframe fallback
+   - Settings page: auto-update toggle, check interval input
+
+**Testing (67 tests):**
+- Version parsing: valid semver, pre-release suffix, build metadata, invalid formats, edge cases
+- Version comparison: newer major/minor/patch, same version, older version, dev version handling
+- checkForUpdates: network failure, invalid JSON, missing fields, URL tracking, timing
+- installUpdate: success (firmware only, firmware+filesystem), OTA begin/write/end failures, abort behavior, progress tracking, restart verification
+- Status/JSON: snapshot correctness, JSON format validation, state transitions
+- Auto-update: interval checking, disabled mode, busy guard
+
+**Files Modified/Created:**
+- `lib/HAL/IHAL.h` - HttpDataCallback, httpGetStream, OTA methods
+- `lib/HAL_ESP32/HAL_ESP32.h/.cpp` - ESP32 implementations with redirect handling
+- `test/common/mocks/MockHAL.h` - OTA mock with tracking
+- `lib/UpdateManager/UpdateManager.h/.cpp` - Full implementation from stubs
+- `lib/CoopControllerWebServer/CoopControllerWebServer.h/.cpp` - OTA endpoints
+- `src/main.cpp` - UpdateManager integration
+- `web/src/Update.tsx` - Complete OTA UI
+- `web/src/Settings.tsx` - OTA settings section
+- `web/src/types.ts` - OTA settings types
+- `test/unit_desktop/test_UpdateManager/test_UpdateManager.cpp` - 67 tests
+
+**Build Verification:**
+- ESP32: ✅ Firmware builds successfully
+- Web UI: ✅ TypeScript/Vite compilation successful
+- Tests: ✅ 570/570 passing (67 new UpdateManager tests)
+
+---
+
 ## In Progress
 
-### OTA Update System (In Development) 🚀
-
-**Status:** Phase 1 Foundation Complete, Phase 2 Partial
-**Target Completion:** February 2026
-
-**Phase 1 - CI/CD & Build Infrastructure (Complete):**
-- ✅ GitHub Actions release workflow triggered on semantic version tags (`v*.*.*`)
-- ✅ Builds firmware (esp32-release) and web UI with version injection
-- ✅ Generates version manifest with SHA256 checksums for firmware, filesystem, and merged binary
-- ✅ Creates GitHub Release with all artifacts (firmware.bin, littlefs.bin, firmware_merged.bin, version_manifest.json)
-- ✅ Merged binary (firmware + filesystem + bootloader) for single-file OTA updates
-- ✅ Manifest URL constructed at runtime from GITHUB_REPO build flag (no separate URL config needed)
-- ✅ Git commit SHA passed through build pipeline and displayed on Update page as clickable link
-- ✅ Build scripts: `generate_version_manifest.py` (manifest generation), `merge_bin.py` (binary merging)
-
-**Phase 1 - UpdateManager Foundation (Complete):**
-- ✅ UpdateManager C++ component with chunked HTTP response streaming
-- ✅ Trigger source tracking for update origin
-- ✅ HAL integration for HTTP client operations (httpGet, httpGetBinary, sha256Verify)
-- ✅ Manifest URL auto-constructed from GITHUB_REPO: `https://github.com/{repo}/releases/latest/download/version_manifest.json`
-
-**Phase 2 (Partial - Settings Preservation Done):**
-- ✅ NVS-based settings preservation across filesystem updates (backup before flash, auto-restore on boot)
-- ✅ SettingsManager OTA settings serialization fix (getters/setters/JSON)
-- ⏳ REST API endpoints for update checking/triggering from web UI
-- ⏳ Implement HTTP download in UpdateManager (currently stubbed)
-- ⏳ Unit tests for UpdateManager (50+ tests expected)
-
-**Phase 3 (Planned):**
-- 📋 Web UI update controls (check/install buttons, progress display)
-- 📋 Edge case handling and optimization
-- 📋 Production hardening
-
-**Build Infrastructure Files:**
-- `.github/workflows/release.yml` - Release pipeline (tag-triggered)
-- `build_scripts/generate_version_manifest.py` - Manifest generation with checksums
-- `build_scripts/merge_bin.py` - Merged binary creation
+*No features currently in progress.*
 
 ---
 

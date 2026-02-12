@@ -61,6 +61,7 @@
 #include "SunriseSunset.h"
 #include "WifiController.h"
 #include "HistoricalDataManager.h"
+#include "UpdateManager.h"
 
 
 /**
@@ -203,6 +204,7 @@ void setup() // NOSONAR - complexity ok
     SunriseSunsetCalculator sunriseSunset;
     WifiController wifiController;
     HistoricalDataManager historyManager;
+    UpdateManager updateManager;
 
     settingsManager.begin(&hal);
     settingsManager.load();
@@ -303,6 +305,11 @@ void setup() // NOSONAR - complexity ok
                     sunriseSunset,
                     historyManager);
     logger.logInfo("Web server started");
+
+    // Initialize OTA update manager
+    updateManager.begin(&hal, settingsManager.getManifestUrl());
+    webServer.setUpdateManager(&updateManager);
+    logger.logInfo("Update manager initialized");
 
     logger.logInfo("System initialization complete");
 
@@ -596,6 +603,13 @@ void setup() // NOSONAR - complexity ok
         }
         
         webServer.loop();
+
+        // Periodic OTA update check (based on auto_update_enabled setting and interval)
+        static unsigned long lastUpdateCheck = 0;
+        if (currentTime - lastUpdateCheck >= 60000) { // Check eligibility every 60s
+            lastUpdateCheck = currentTime;
+            updateManager.update();
+        }
 
         delay(10);
         

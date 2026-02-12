@@ -198,7 +198,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: Release ${{ steps.version.outputs.version }}
-          make_latest: "false"
+          make_latest: false
           files: |
             artifacts/firmware.bin
             artifacts/littlefs.bin
@@ -237,7 +237,7 @@ jobs:
           tag_name: latest
           name: Latest Release
           prerelease: false
-          make_latest: "true"
+          make_latest: true
           files: |
             artifacts/firmware.bin
             artifacts/littlefs.bin

@@ -13,6 +13,7 @@
 #include "WifiController.h"
 #include "SettingsManager.h"
 #include "HistoricalDataManager.h"
+#include "UpdateManager.h"
 
 /**
  * @brief Web server for chicken coop controller
@@ -36,6 +37,7 @@ class CoopControllerWebServer
     private:
         IHAL* hal;          ///< Hardware abstraction layer interface
         uint16_t port;      ///< HTTP server port number
+        UpdateManager* updateManager_ = nullptr; ///< OTA update manager (optional)
 
         /**
          * @brief Check if HTTP request has valid authentication credentials
@@ -105,6 +107,12 @@ class CoopControllerWebServer
             const WifiController& wifiController,
             SunriseSunsetCalculator& sunriseSunset,
             HistoricalDataManager& historyManager);
+
+    /**
+     * @brief Set UpdateManager for OTA update endpoints
+     * @param updateManager Pointer to UpdateManager instance
+     */
+    void setUpdateManager(UpdateManager* updateManager);
 
     /**
      * @brief Process web server events (call in main loop)

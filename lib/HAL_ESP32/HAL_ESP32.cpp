@@ -622,184 +622,275 @@ void *HAL_ESP32::getCurrentTaskHandle() { return xTaskGetCurrentTaskHandle(); }
 // ========================================================================
 
 String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
-  // Use WiFiClientSecure for HTTPS connections
-  WiFiClientSecure client;
-  client.setInsecure();  // Disable certificate verification (for now)
+  String currentUrl = url;
+  int maxRedirects = 5;
 
-  // Parse URL to extract host and path
-  String host = url;
-  String path = "/";
+  for (int redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
+    WiFiClientSecure client;
+    client.setInsecure();
 
-  int slashIndex = url.indexOf("://");
-  if (slashIndex != -1) {
-    host = url.substring(slashIndex + 3);
-  }
+    String host = currentUrl;
+    String path = "/";
 
-  int pathIndex = host.indexOf("/");
-  if (pathIndex != -1) {
-    path = host.substring(pathIndex);
-    host = host.substring(0, pathIndex);
-  }
-
-  // Determine port
-  int port = 443;  // Default HTTPS
-  if (url.startsWith("http://")) {
-    port = 80;
-  }
-
-  // Remove port from host if present
-  int portIndex = host.indexOf(":");
-  if (portIndex != -1) {
-    port = host.substring(portIndex + 1).toInt();
-    host = host.substring(0, portIndex);
-  }
-
-  // Connect with timeout
-  unsigned long startTime = ::millis();
-  if (!client.connect(host.c_str(), port)) {
-    return "";
-  }
-
-  // Send HTTP GET request
-  String request = "GET " + path + " HTTP/1.1\r\n";
-  request += "Host: " + host + "\r\n";
-  request += "Connection: close\r\n";
-  request += "\r\n";
-
-  client.print(request);
-
-  // Read response
-  String response = "";
-  bool headerDone = false;
-  unsigned long lastActivity = ::millis();
-
-  while (client.connected() || client.available()) {
-    if (::millis() - startTime > timeout_ms) {
-      break;  // Timeout
+    int slashIndex = currentUrl.indexOf("://");
+    if (slashIndex != -1) {
+      host = currentUrl.substring(slashIndex + 3);
     }
 
-    if (client.available()) {
-      String line = client.readStringUntil('\n');
+    int pathIndex = host.indexOf("/");
+    if (pathIndex != -1) {
+      path = host.substring(pathIndex);
+      host = host.substring(0, pathIndex);
+    }
 
-      if (!headerDone) {
-        if (line == "\r") {
+    int port = 443;
+    if (currentUrl.startsWith("http://")) {
+      port = 80;
+    }
+
+    int portIndex = host.indexOf(":");
+    if (portIndex != -1) {
+      port = host.substring(portIndex + 1).toInt();
+      host = host.substring(0, portIndex);
+    }
+
+    unsigned long startTime = ::millis();
+    if (!client.connect(host.c_str(), port)) {
+      return "";
+    }
+
+    String request = "GET " + path + " HTTP/1.1\r\n";
+    request += "Host: " + host + "\r\n";
+    request += "Connection: close\r\n";
+    request += "\r\n";
+
+    client.print(request);
+
+    // Read status line
+    String statusLine = "";
+    while (client.connected()) {
+      if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
+      if (client.available()) {
+        statusLine = client.readStringUntil('\n');
+        break;
+      }
+      delay(10);
+    }
+
+    int statusCode = 0;
+    int spaceIdx = statusLine.indexOf(' ');
+    if (spaceIdx > 0) {
+      statusCode = statusLine.substring(spaceIdx + 1).toInt();
+    }
+
+    // Read headers
+    String response = "";
+    bool headerDone = false;
+    String redirectLocation = "";
+    unsigned long lastActivity = ::millis();
+
+    while (client.connected() && !headerDone) {
+      if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
+      if (client.available()) {
+        String line = client.readStringUntil('\n');
+        line.trim();
+        if (line.startsWith("Location:") || line.startsWith("location:")) {
+          redirectLocation = line.substring(9);
+          redirectLocation.trim();
+        }
+        if (line.length() == 0) {
+          headerDone = true;
+        }
+        lastActivity = ::millis();
+      } else {
+        delay(10);
+      }
+    }
+
+    // Handle redirects
+    if (statusCode >= 301 && statusCode <= 308 && redirectLocation.length() > 0) {
+      client.stop();
+      currentUrl = redirectLocation;
+      continue;
+    }
+
+    if (statusCode != 200) {
+      client.stop();
+      return "";
+    }
+
+    // Read body
+    while (client.connected() || client.available()) {
+      if (::millis() - startTime > timeout_ms) break;
+      if (client.available()) {
+        String line = client.readStringUntil('\n');
+        response += line;
+        lastActivity = ::millis();
+      } else {
+        if (::millis() - lastActivity > 1000) break;
+        delay(10);
+      }
+    }
+
+    client.stop();
+    return response;
+  }
+
+  return ""; // Too many redirects
+}
+
+bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
+                               unsigned long timeout_ms) {
+  String currentUrl = url;
+  int maxRedirects = 5;
+
+  for (int redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
+    WiFiClientSecure client;
+    client.setInsecure();
+
+    // Parse URL
+    String host = currentUrl;
+    String path = "/";
+
+    int slashIndex = currentUrl.indexOf("://");
+    if (slashIndex != -1) {
+      host = currentUrl.substring(slashIndex + 3);
+    }
+
+    int pathIndex = host.indexOf("/");
+    if (pathIndex != -1) {
+      path = host.substring(pathIndex);
+      host = host.substring(0, pathIndex);
+    }
+
+    int port = 443;
+    if (currentUrl.startsWith("http://")) {
+      port = 80;
+    }
+
+    int portIndex = host.indexOf(":");
+    if (portIndex != -1) {
+      port = host.substring(portIndex + 1).toInt();
+      host = host.substring(0, portIndex);
+    }
+
+    unsigned long startTime = ::millis();
+    if (!client.connect(host.c_str(), port)) {
+      return false;
+    }
+
+    String request = "GET " + path + " HTTP/1.1\r\n";
+    request += "Host: " + host + "\r\n";
+    request += "Connection: close\r\n";
+    request += "\r\n";
+
+    client.print(request);
+
+    // Read status line
+    String statusLine = "";
+    while (client.connected()) {
+      if (::millis() - startTime > timeout_ms) { client.stop(); return false; }
+      if (client.available()) {
+        statusLine = client.readStringUntil('\n');
+        break;
+      }
+      delay(10);
+    }
+
+    // Parse HTTP status code
+    int statusCode = 0;
+    int spaceIdx = statusLine.indexOf(' ');
+    if (spaceIdx > 0) {
+      statusCode = statusLine.substring(spaceIdx + 1).toInt();
+    }
+
+    // Read headers
+    bool headerDone = false;
+    uint32_t contentLength = 0;
+    String redirectLocation = "";
+
+    while (client.connected() && !headerDone) {
+      if (::millis() - startTime > timeout_ms) { client.stop(); return false; }
+      if (client.available()) {
+        String line = client.readStringUntil('\n');
+        line.trim();
+        if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
+          contentLength = line.substring(15).toInt();
+        }
+        if (line.startsWith("Location:") || line.startsWith("location:")) {
+          redirectLocation = line.substring(9);
+          redirectLocation.trim();
+        }
+        if (line.length() == 0) {
           headerDone = true;
         }
       } else {
-        response += line;
+        delay(10);
       }
-      lastActivity = ::millis();
-    } else {
-      if (::millis() - lastActivity > 1000) {
-        break;  // No data for 1 second
-      }
-      delay(10);
     }
-  }
 
-  client.stop();
-  return response;
-}
+    // Handle redirects (301, 302, 303, 307, 308)
+    if (statusCode >= 301 && statusCode <= 308 && redirectLocation.length() > 0) {
+      client.stop();
+      currentUrl = redirectLocation;
+      continue;
+    }
 
-bool HAL_ESP32::httpGetBinary(const String& url, HttpProgressCallback on_progress,
-                               unsigned long timeout_ms) {
-  // Use WiFiClientSecure for HTTPS connections
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  // Parse URL
-  String host = url;
-  String path = "/";
-
-  int slashIndex = url.indexOf("://");
-  if (slashIndex != -1) {
-    host = url.substring(slashIndex + 3);
-  }
-
-  int pathIndex = host.indexOf("/");
-  if (pathIndex != -1) {
-    path = host.substring(pathIndex);
-    host = host.substring(0, pathIndex);
-  }
-
-  int port = 443;
-  if (url.startsWith("http://")) {
-    port = 80;
-  }
-
-  int portIndex = host.indexOf(":");
-  if (portIndex != -1) {
-    port = host.substring(portIndex + 1).toInt();
-    host = host.substring(0, portIndex);
-  }
-
-  // Connect
-  unsigned long startTime = ::millis();
-  if (!client.connect(host.c_str(), port)) {
-    return false;
-  }
-
-  // Send request
-  String request = "GET " + path + " HTTP/1.1\r\n";
-  request += "Host: " + host + "\r\n";
-  request += "Connection: close\r\n";
-  request += "\r\n";
-
-  client.print(request);
-
-  // Skip HTTP headers
-  bool headerDone = false;
-  uint32_t contentLength = 0;
-  uint32_t bytesDownloaded = 0;
-
-  while (client.connected() && !headerDone) {
-    if (::millis() - startTime > timeout_ms) {
+    if (statusCode != 200) {
+      client.stop();
       return false;
     }
 
-    if (client.available()) {
-      String line = client.readStringUntil('\n');
-
-      // Look for Content-Length header
-      if (line.startsWith("Content-Length:")) {
-        contentLength = line.substring(15).toInt();
-      }
-
-      if (line == "\r") {
-        headerDone = true;
-      }
-    } else {
-      delay(10);
-    }
-  }
-
-  // Download binary data
-  uint8_t buffer[1024];
-  while (client.connected() || client.available()) {
-    if (::millis() - startTime > timeout_ms) {
-      return false;
-    }
-
-    if (client.available()) {
-      int bytesRead = client.read(buffer, sizeof(buffer));
-      if (bytesRead > 0) {
-        bytesDownloaded += bytesRead;
-
-        // Call progress callback
-        if (on_progress) {
-          if (!on_progress(bytesDownloaded, contentLength > 0 ? contentLength : bytesDownloaded)) {
-            client.stop();
-            return false;  // User aborted
+    // Download binary data, passing chunks to callback
+    uint8_t buffer[1024];
+    uint32_t bytesDownloaded = 0;
+    while (client.connected() || client.available()) {
+      if (::millis() - startTime > timeout_ms) { client.stop(); return false; }
+      if (client.available()) {
+        int bytesRead = client.read(buffer, sizeof(buffer));
+        if (bytesRead > 0) {
+          bytesDownloaded += bytesRead;
+          if (on_data) {
+            if (!on_data(buffer, bytesRead, bytesDownloaded, contentLength > 0 ? contentLength : bytesDownloaded)) {
+              client.stop();
+              return false;
+            }
           }
         }
+      } else {
+        delay(10);
       }
-    } else {
-      delay(10);
     }
+
+    client.stop();
+    return true;
   }
 
-  client.stop();
-  return true;
+  return false; // Too many redirects
+}
+
+// ========================================================================
+// OTA UPDATE FUNCTIONS
+// ========================================================================
+
+bool HAL_ESP32::otaBegin(size_t size, int command) {
+  return Update.begin(size, command == 0 ? U_FLASH : U_SPIFFS);
+}
+
+size_t HAL_ESP32::otaWrite(const uint8_t* data, size_t len) {
+  return Update.write(const_cast<uint8_t*>(data), len);
+}
+
+bool HAL_ESP32::otaEnd(bool evenIfRemaining) {
+  return Update.end(evenIfRemaining);
+}
+
+void HAL_ESP32::otaAbort() {
+  Update.abort();
+}
+
+String HAL_ESP32::otaGetError() {
+  return Update.errorString();
 }
 
 bool HAL_ESP32::sha256Verify(const uint8_t *data, size_t data_length,

@@ -340,6 +340,17 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       settingsManager.setHistoryBufferSize(jsonObj["history_buffer_size"].as<unsigned int>());
                   }
 
+                  // OTA update settings
+                  if (jsonObj["auto_update_enabled"].is<bool>()) {
+                      settingsManager.setAutoUpdateEnabled(jsonObj["auto_update_enabled"].as<bool>());
+                  }
+                  if (jsonObj["update_check_interval_hours"].is<int>()) {
+                      settingsManager.setUpdateCheckIntervalHours(jsonObj["update_check_interval_hours"].as<unsigned int>());
+                  }
+                  if (jsonObj["manifest_url"].is<String>()) {
+                      settingsManager.setManifestUrl(jsonObj["manifest_url"].as<String>());
+                  }
+
                   // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
 
                   settingsManager.save();
@@ -959,7 +970,70 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   serializeJson(jsonDoc, jsonResponse);
                   response->send(200, "application/json", jsonResponse.c_str());
               });
-    
+
+    // ========================================================================
+    // OTA UPDATE ENDPOINTS
+    // ========================================================================
+
+    // Check for updates
+    hal->webServerOn("/update/check", HAL_WebRequestMethod::HTTP_GET,
+              [this](IWebRequest *request, IWebResponse *response)
+              {
+                  if (!updateManager_) {
+                      response->send(503, "application/json", "{\"error\":\"Update manager not available\"}");
+                      return;
+                  }
+                  updateManager_->checkForUpdates();
+                  JsonDocument doc = updateManager_->getCheckResponseJson();
+                  String jsonResponse;
+                  serializeJson(doc, jsonResponse);
+                  response->send(200, "application/json", jsonResponse.c_str());
+              });
+
+    // Get update status
+    hal->webServerOn("/update/status", HAL_WebRequestMethod::HTTP_GET,
+              [this](IWebRequest *request, IWebResponse *response)
+              {
+                  if (!updateManager_) {
+                      response->send(503, "application/json", "{\"error\":\"Update manager not available\"}");
+                      return;
+                  }
+                  JsonDocument doc = updateManager_->getStatusResponseJson();
+                  String jsonResponse;
+                  serializeJson(doc, jsonResponse);
+                  response->send(200, "application/json", jsonResponse.c_str());
+              });
+
+    // Install update (requires authentication)
+    hal->webServerOn("/update/install", HAL_WebRequestMethod::HTTP_POST,
+              [this](IWebRequest *request, IWebResponse *response)
+              {
+                  if (!isAuthenticated(request)) {
+                      sendAuthRequired(response);
+                      return;
+                  }
+                  if (!updateManager_) {
+                      response->send(503, "application/json", "{\"error\":\"Update manager not available\"}");
+                      return;
+                  }
+                  if (!updateManager_->isUpdateAvailable()) {
+                      response->send(400, "application/json", "{\"error\":\"No update available\"}");
+                      return;
+                  }
+
+                  const JsonVariant &json = request->jsonBody();
+                  bool skipFs = false;
+                  if (!json.isNull()) {
+                      skipFs = json["skip_filesystem"] | false;
+                  }
+
+                  // Respond before starting (install may reboot)
+                  response->send(200, "application/json", "{\"status\":\"installing\",\"message\":\"Update starting...\"}");
+
+                  // Start installation (will reboot on success)
+                  updateManager_->installUpdate(skipFs);
+              });
+
     // Factory reset endpoint
     hal->webServerOn("/factory_reset", HAL_WebRequestMethod::HTTP_POST,
               [this](IWebRequest *request, IWebResponse *response)
@@ -1426,7 +1500,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
         // Check if this is an API endpoint - return 404 for unknown API routes
         if (uri.startsWith("/get_") || uri.startsWith("/get_") || uri.startsWith("/pump/") || uri.startsWith("/water/") ||
             uri.startsWith("/update_settings") || uri.equals("/logs") || uri.equals("/version") ||
-            uri.equals("/update") || uri.startsWith("/buzzer/") || uri.startsWith("/door/") ||
+            uri.equals("/update") || uri.startsWith("/update/") || uri.startsWith("/buzzer/") || uri.startsWith("/door/") ||
             uri.startsWith("/light/") || uri.equals("/sun/times") ||
             uri.equals("/system_status") || uri.equals("/factory_reset") ||
             uri.equals("/reboot") || uri.startsWith("/settings/") || uri.startsWith("/data/")) {
@@ -1440,6 +1514,10 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
         response->sendFile("/www/index.htm", "text/html");
     });
 }
+void CoopControllerWebServer::setUpdateManager(UpdateManager* updateManager) {
+    updateManager_ = updateManager;
+}
+
 void CoopControllerWebServer::loop() const
 {
   // Process ArduinoOTA events (network OTA)

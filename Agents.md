@@ -14,7 +14,7 @@
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
 | **Current build** | RAM 17.6%, Flash 81.2% (1,436,321 bytes) |
-| **Tests** | 503/503 passing (10 components) |
+| **Tests** | 570/570 passing (11 components) |
 | **Web access** | `http://coopcontroller.local` |
 
 ---
@@ -83,8 +83,8 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
+- OTA Update System Complete (full OTA: manifest check, streaming firmware/filesystem download, ESP32 Update.h flash, NVS settings backup, redirect handling, REST API endpoints, web UI with progress, 67 new tests)
 - NVS Settings Preservation for OTA Updates (backup to NVS before filesystem flash, auto-restore on boot, 3 new HAL NVS methods, OTA settings serialization fix, 14 new tests)
-- OTA Update System Foundation (GitHub Actions release workflow on semver tags, UpdateManager with chunked streaming, version manifest generation, merged binary support, manifest URL from GITHUB_REPO)
 - Git Commit SHA on Update Page (clickable link to GitHub commit, build flag pipeline)
 - Chart Enhancements (zoom/pan via chartjs-plugin-zoom, time period filter 1h/6h/24h/all, event-type point icons, reset zoom, point style legend)
 - Historical Data Visualization - Event-Based (pure event-driven capture: pump/light/door on any change, temp at >=0.5°F delta with 60s min, flow at >0.001GPM with 10s min; granular trigger sources with 15 enum values; configurable intervals via web UI; Chart.js charts with event-type markers; CSV export)
