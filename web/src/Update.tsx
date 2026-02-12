@@ -44,6 +44,7 @@ function Update() {
   const [updateStatus, setUpdateStatus] = createSignal<UpdateStatus | null>(null);
   const [skipFilesystem, setSkipFilesystem] = createSignal(false);
   const [showInstallConfirm, setShowInstallConfirm] = createSignal(false);
+  const [forceUpdate, setForceUpdate] = createSignal(false);
   let statusInterval: number | undefined;
 
   onMount(() => {
@@ -123,7 +124,7 @@ function Update() {
       const response = await authenticatedFetch('/update/install', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skip_filesystem: skipFilesystem() }),
+        body: JSON.stringify({ skip_filesystem: skipFilesystem(), force: forceUpdate() }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({ message: response.statusText }));
@@ -230,7 +231,7 @@ function Update() {
                   </div>
                   <button
                     class="btn btn-accent mt-2"
-                    onClick={() => setShowInstallConfirm(true)}
+                    onClick={() => { setForceUpdate(false); setShowInstallConfirm(true); }}
                     disabled={installing()}
                   >
                     Install Update
@@ -238,6 +239,33 @@ function Update() {
                 </Show>
                 <Show when={!checkResult()!.update_available}>
                   <div role="alert" class="alert alert-success mt-2">Firmware is up to date.</div>
+                  <details class="collapse collapse-arrow bg-base-300 mt-2">
+                    <summary class="collapse-title text-sm font-medium">Force Reinstall</summary>
+                    <div class="collapse-content">
+                      <p class="text-sm opacity-70 mb-2">
+                        Reinstall the latest manifest version even though it's not recognized as newer.
+                        Useful for recovering from a bad flash or reinstalling the same version.
+                      </p>
+                      <div class="form-control mb-2">
+                        <label class="label cursor-pointer">
+                          <span class="label-text">Skip filesystem update (firmware only)</span>
+                          <input
+                            type="checkbox"
+                            class="toggle"
+                            checked={skipFilesystem()}
+                            onChange={(e) => setSkipFilesystem(e.currentTarget.checked)}
+                          />
+                        </label>
+                      </div>
+                      <button
+                        class="btn btn-warning btn-sm"
+                        onClick={() => { setForceUpdate(true); setShowInstallConfirm(true); }}
+                        disabled={installing()}
+                      >
+                        Force Reinstall
+                      </button>
+                    </div>
+                  </details>
                 </Show>
               </div>
             </div>
@@ -274,9 +302,15 @@ function Update() {
           <Show when={showInstallConfirm()}>
             <div class="modal modal-open">
               <div class="modal-box">
-                <h3 class="font-bold text-lg">Confirm Update Installation</h3>
+                <h3 class="font-bold text-lg">
+                  {forceUpdate() ? 'Confirm Force Reinstall' : 'Confirm Update Installation'}
+                </h3>
                 <p class="py-4">
-                  This will download and install the update. The device will reboot after installation.
+                  {forceUpdate()
+                    ? 'This will force reinstall the latest manifest version even though it matches your current version.'
+                    : 'This will download and install the update.'
+                  }
+                  {' The device will reboot after installation.'}
                   {skipFilesystem() ? ' Only firmware will be updated.' : ' Both firmware and filesystem will be updated.'}
                 </p>
                 <div class="modal-action">

@@ -20,7 +20,7 @@ This document tracks all features: completed, in-progress, and planned.
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. Actual functionality hasn't been checked for correctness.
 
-**Test Coverage (February 2026):** 570/570 desktop tests passing (100% pass rate)
+**Test Coverage (February 2026):** 574/574 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
@@ -33,7 +33,7 @@ This document tracks all features: completed, in-progress, and planned.
 | SensorManager | 33 |
 | SettingsManager | 149 |
 | SunriseSunset | 36 |
-| UpdateManager | 67 |
+| UpdateManager | 71 |
 | WifiController | 1 |
 
 - **Embedded Unit Tests:** 1/1 passing - Logger singleton pattern test

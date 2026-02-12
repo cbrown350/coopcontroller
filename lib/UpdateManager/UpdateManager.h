@@ -184,7 +184,7 @@ public:
      *
      * @param skip_filesystem If true, only update firmware
      */
-    void installUpdate(bool skip_filesystem = false);
+    void installUpdate(bool skip_filesystem = false, bool force = false);
 
     /**
      * @brief Periodic update check for main loop

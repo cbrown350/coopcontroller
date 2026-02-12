@@ -14,7 +14,7 @@
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
 | **Current build** | RAM 17.6%, Flash 81.2% (1,436,321 bytes) |
-| **Tests** | 570/570 passing (11 components) |
+| **Tests** | 574/574 passing (11 components) |
 | **Web access** | `http://coopcontroller.local` |
 
 ---
@@ -83,7 +83,7 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
-- OTA Update System Complete (full OTA: manifest check, streaming firmware/filesystem download, ESP32 Update.h flash, NVS settings backup, redirect handling, REST API endpoints, web UI with progress, 67 new tests)
+- OTA Update System Complete (full OTA: manifest check, streaming firmware/filesystem download, ESP32 Update.h flash, NVS settings backup, redirect handling, REST API endpoints, web UI with progress, force reinstall option, 71 tests)
 - NVS Settings Preservation for OTA Updates (backup to NVS before filesystem flash, auto-restore on boot, 3 new HAL NVS methods, OTA settings serialization fix, 14 new tests)
 - Git Commit SHA on Update Page (clickable link to GitHub commit, build flag pipeline)
 - Chart Enhancements (zoom/pan via chartjs-plugin-zoom, time period filter 1h/6h/24h/all, event-type point icons, reset zoom, point style legend)

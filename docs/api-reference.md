@@ -314,7 +314,21 @@ Start firmware/filesystem installation. **Protected** (requires auth).
 
 Downloads and flashes firmware and filesystem from manifest URLs. Device restarts after successful install. Settings are backed up to NVS before filesystem flash.
 
-**Response:** `{"status": "installing", "message": "Update installation started"}`
+**Request Body (JSON, optional):**
+
+```json
+{
+  "skip_filesystem": false,
+  "force": false
+}
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `skip_filesystem` | boolean | false | Skip filesystem update (firmware only) |
+| `force` | boolean | false | Install even if version is not newer (reinstall/recovery) |
+
+**Response:** `{"status": "installing", "message": "Update starting..."}`
 
 ### Web Interface: `/update`
 

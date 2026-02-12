@@ -888,3 +888,56 @@ TEST_F(UpdateManagerTest, InstallUpdate_VerifiesFirmwareUrl) {
 
     EXPECT_EQ(mockHal.getLastHttpGetStreamUrl(), "https://github.com/test/repo/releases/download/v2.0.0/firmware.bin");
 }
+
+// ============================================================================
+// FORCE UPDATE TESTS
+// ============================================================================
+
+TEST_F(UpdateManagerTest, ForceInstall_AllowsInstallWhenCurrent) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(MANIFEST_SAME_VERSION);
+    um.checkForUpdates();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::CURRENT);
+
+    auto data = makeDummyData(1048576);
+    mockHal.setStreamData(data.data(), data.size());
+    mockHal.setHttpGetStreamResult(true);
+    mockHal.setOtaBeginResult(true);
+    mockHal.setOtaWriteResult(true);
+    mockHal.setOtaEndResult(true);
+
+    um.installUpdate(true, true); // skip_filesystem=true, force=true
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::COMPLETE);
+}
+
+TEST_F(UpdateManagerTest, ForceInstall_FailsWhenNoManifestChecked) {
+    beginWithUrl();
+    // Status is IDLE - no manifest fetched
+    um.installUpdate(true, true); // force=true
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::ERROR);
+}
+
+TEST_F(UpdateManagerTest, ForceInstall_AllowsInstallWhenAvailable) {
+    setupAvailableUpdate();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::AVAILABLE);
+
+    auto data = makeDummyData(1048576);
+    mockHal.setStreamData(data.data(), data.size());
+    mockHal.setHttpGetStreamResult(true);
+    mockHal.setOtaBeginResult(true);
+    mockHal.setOtaWriteResult(true);
+    mockHal.setOtaEndResult(true);
+
+    um.installUpdate(true, true); // force=true with AVAILABLE status also works
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::COMPLETE);
+}
+
+TEST_F(UpdateManagerTest, NonForceInstall_StillRejectsWhenCurrent) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(MANIFEST_SAME_VERSION);
+    um.checkForUpdates();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::CURRENT);
+
+    um.installUpdate(false, false); // force=false
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::ERROR);
+}

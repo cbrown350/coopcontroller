@@ -1016,22 +1016,24 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       response->send(503, "application/json", R"({"error":"Update manager not available"})");
                       return;
                   }
-                  if (!updateManager_->isUpdateAvailable()) {
-                      response->send(400, "application/json", R"({"error":"No update available"})");
-                      return;
-                  }
-
                   const JsonVariant &json = request->jsonBody();
                   bool skipFs = false;
+                  bool force = false;
                   if (!json.isNull()) {
                       skipFs = json["skip_filesystem"] | false;
+                      force = json["force"] | false;
+                  }
+
+                  if (!force && !updateManager_->isUpdateAvailable()) {
+                      response->send(400, "application/json", R"({"error":"No update available"})");
+                      return;
                   }
 
                   // Respond before starting (install may reboot)
                   response->send(200, "application/json", R"({"status":"installing","message":"Update starting..."})");
 
                   // Start installation (will reboot on success)
-                  updateManager_->installUpdate(skipFs);
+                  updateManager_->installUpdate(skipFs, force);
               });
 
     // Factory reset endpoint

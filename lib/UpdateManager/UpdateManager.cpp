@@ -171,15 +171,23 @@ void UpdateManager::checkForUpdates() {
     }
 }
 
-void UpdateManager::installUpdate(bool skip_filesystem) {
+void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
     if (!hal_) {
         setError(UpdateError::NET_ERROR, "HAL not initialized");
         return;
     }
 
-    if (status_ != UpdateStatus::AVAILABLE) {
-        setError(UpdateError::MANIFEST_PARSE, "No update available to install");
-        return;
+    if (force) {
+        // Force mode: allow install if manifest has been fetched (AVAILABLE or CURRENT)
+        if (status_ != UpdateStatus::AVAILABLE && status_ != UpdateStatus::CURRENT) {
+            setError(UpdateError::MANIFEST_PARSE, "No manifest available - check for updates first");
+            return;
+        }
+    } else {
+        if (status_ != UpdateStatus::AVAILABLE) {
+            setError(UpdateError::MANIFEST_PARSE, "No update available to install");
+            return;
+        }
     }
 
     // Backup settings to NVS before filesystem flash to preserve user configuration
