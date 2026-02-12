@@ -690,13 +690,12 @@ bool SettingsManager::restoreFromNVS() {
         _hal->fsClose(file);
     }
 
-    // Clear NVS backup after successful restore
-    _hal->nvsRemove(NVS_SETTINGS_NAMESPACE, NVS_SETTINGS_KEY);
-
     if (saved) {
+        // Only clear NVS backup after successful filesystem write
+        _hal->nvsRemove(NVS_SETTINGS_NAMESPACE, NVS_SETTINGS_KEY);
         logger.logInfo("Settings restored from NVS backup and saved to filesystem");
     } else {
-        logger.logWarning("Settings restored from NVS but failed to save to filesystem");
+        logger.logWarning("Settings restored from NVS but failed to save to filesystem - NVS backup retained for next boot");
     }
 
     return true;

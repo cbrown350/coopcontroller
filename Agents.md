@@ -14,7 +14,7 @@
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
 | **Current build** | RAM 17.6%, Flash 81.2% (1,436,321 bytes) |
-| **Tests** | 574/574 passing (11 components) |
+| **Tests** | 575/575 passing (11 components) |
 | **Web access** | `http://coopcontroller.local` |
 
 ---

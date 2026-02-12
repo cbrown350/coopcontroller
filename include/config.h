@@ -21,7 +21,7 @@
 #endif
 
 #ifndef NVS_SETTINGS_KEY
-#define NVS_SETTINGS_KEY "user_settings_json" // NOSONAR - NVS key for settings backup JSON
+#define NVS_SETTINGS_KEY "json" // NOSONAR - NVS key for settings backup JSON (max 15 chars)
 #endif
 
 #define SPIFFS LittleFS

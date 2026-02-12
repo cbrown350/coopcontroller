@@ -327,8 +327,11 @@ public:
     }
 
     HalFile fsOpen(const char* path, const char* mode) override {
-        (void)mode;
         (void)path;
+        // Write mode succeeds if forceWriteSuccess is enabled (simulates creating new file)
+        if (mode && mode[0] == 'w' && forceWriteSuccess) {
+            return reinterpret_cast<HalFile>(1);  // Mock file handle
+        }
         // Return nullptr if no file content is set (simulates file not found)
         if (mockFileSize == 0 || mockFileContent == nullptr) {
             return nullptr;
@@ -689,6 +692,11 @@ public:
         delete[] mockFileContent;
         mockFileContent = nullptr;
         mockFileSize = 0;
+        forceWriteSuccess = false;
+    }
+
+    void setForceWriteSuccess(bool value) {
+        forceWriteSuccess = value;
     }
     
     // Serial helpers
@@ -780,6 +788,7 @@ private:
     std::function<bool(const char*)> mockFileRemoveCallback;
     uint8_t* mockFileContent = nullptr;
     size_t mockFileSize = 0;
+    bool forceWriteSuccess = false;  // When true, fsOpen("w") succeeds even without existing content
     
     // Serial state
     String serialOutput = "";

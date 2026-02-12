@@ -1344,6 +1344,7 @@ TEST_F(SettingsManagerTest, RestoreFromNVSRestoresSettings) {
 
     // Reset settings to defaults
     sm.resetForTesting();
+    mockHal.setForceWriteSuccess(true);  // Simulate writable filesystem after OTA flash
     sm.begin(&mockHal);
     // begin() calls restoreFromNVS() automatically, but settings were already restored
     // Let's verify the backup was consumed
@@ -1360,12 +1361,33 @@ TEST_F(SettingsManagerTest, RestoreFromNVSClearsBackupAfterRestore) {
     // Verify backup exists
     EXPECT_FALSE(mockHal.getNvsStorage().empty());
 
-    // Restore
+    // Restore (with writable filesystem so NVS backup gets cleared)
     sm.resetForTesting();
+    mockHal.setForceWriteSuccess(true);
     sm.begin(&mockHal);
 
     // NVS backup should be cleared after restore
     EXPECT_TRUE(mockHal.getNvsStorage().empty());
+}
+
+TEST_F(SettingsManagerTest, RestoreFromNVSRetainsBackupWhenFileWriteFails) {
+    sm.setSSID("RetainTestSSID");
+    sm.backupToNVS();
+
+    // Verify backup exists
+    EXPECT_FALSE(mockHal.getNvsStorage().empty());
+
+    // Restore WITHOUT writable filesystem (forceWriteSuccess = false, no file content)
+    sm.resetForTesting();
+    mockHal.clearFileContent();
+    // forceWriteSuccess defaults to false, so fsOpen("w") will fail
+    sm.begin(&mockHal);
+
+    // Settings should still be restored in memory
+    EXPECT_STREQ(sm.getSSID().c_str(), "RetainTestSSID");
+
+    // NVS backup should be RETAINED since file write failed
+    EXPECT_FALSE(mockHal.getNvsStorage().empty());
 }
 
 TEST_F(SettingsManagerTest, RestoreFromNVSReturnsFalseWhenNoBackup) {
@@ -1388,6 +1410,7 @@ TEST_F(SettingsManagerTest, BeginAutoRestoresFromNVS) {
     mockHal.clearFileContent();
 
     // begin() should auto-detect and restore NVS backup
+    mockHal.setForceWriteSuccess(true);  // Simulate writable filesystem after OTA flash
     sm.markAsNotLoadedForTesting();
     sm.begin(&mockHal);
 
