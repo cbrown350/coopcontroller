@@ -6,6 +6,7 @@
 #include <memory>
 #include <stdint.h>
 #include <algorithm>
+#include <climits>
 
 
 #ifdef ESP32

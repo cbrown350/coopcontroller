@@ -132,11 +132,20 @@ jobs:
           echo "FILESYSTEM_SHA256=$(cut -d' ' -f1 littlefs.bin.sha256)" >> $GITHUB_ENV
           echo "MERGED_SHA256=$(cut -d' ' -f1 firmware_merged.bin.sha256)" >> $GITHUB_ENV
 
-      - name: Run Tests
+      - name: Set Up Native Desktop C++ Test Environment
         run: |
-          pio test
-          pio test -e esp32-release
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Run Desktop Unit Tests
+        run: |
           pio test -e unit-test-desktop
+
+      - name: Run PlatformIO Embedded Unit Tests
+        if: runner.environment == 'self-hosted' && contains(runner.name, 'usb-hardware')
+        run: |
+          pio test # Can only be run with physical embedded hardware connected
+          pio test -e esp32-release # Can only be run with physical embedded hardware connected
 
       - name: Generate Version Manifest
         env:
