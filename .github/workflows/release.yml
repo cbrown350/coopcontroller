@@ -194,10 +194,11 @@ jobs:
           } >> $GITHUB_ENV
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: Release ${{ steps.version.outputs.version }}
+          make_latest: "false"
           files: |
             artifacts/firmware.bin
             artifacts/littlefs.bin
@@ -231,11 +232,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create/Update Latest Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Release
           prerelease: false
+          make_latest: "true"
           files: |
             artifacts/firmware.bin
             artifacts/littlefs.bin
