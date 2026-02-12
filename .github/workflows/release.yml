@@ -162,6 +162,37 @@ jobs:
           cp version_manifest.json artifacts/version_manifest.json
           cat artifacts/version_manifest.json
 
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "CHANGELOG=No changelog available for manual releases." >> $GITHUB_ENV
+            echo "Manual workflow dispatch - skipping changelog generation"
+            exit 0
+          fi
+
+          # Get the previous tag (if it exists)
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "Previous tag: $PREVIOUS_TAG"
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "CHANGELOG=Initial release." >> $GITHUB_ENV
+            echo "No previous tag found - skipping changelog generation"
+            exit 0
+          fi
+
+          # Generate changelog using git log between the previous tag and the current commit
+          CHANGELOG=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)")
+          echo "Generated changelog:"
+          echo "$CHANGELOG"
+
+          # Set the changelog as a multiline environment variable for use in the release body
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
