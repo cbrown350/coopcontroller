@@ -231,14 +231,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Move Latest Tag to Current Commit
+      - name: Delete Existing Latest Release & Tag
+        continue-on-error: true
+        run: |
+          # Delete the release via GitHub API (using gh CLI)
+          echo "Attempting to delete existing 'latest' release..."
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || echo "No existing latest release to delete"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Latest Tag to Current Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -fa latest -m "Update latest release to ${{ steps.version.outputs.version }}"
           git push origin latest --force
 
-      - name: Create/Update Latest Release
+      - name: Create Latest Release with Current Timestamp
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
