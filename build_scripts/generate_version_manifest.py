@@ -76,8 +76,8 @@ def generate_manifest(version, firmware_path, filesystem_path, merged_path=None)
     repo = get_github_repo()
 
     # Build download URLs
-    firmware_url = f"https://github.com/{repo}/releases/download/{version_str}/firmware.bin"
-    filesystem_url = f"https://github.com/{repo}/releases/download/{version_str}/littlefs.bin"
+    firmware_url = f"https://github.com/{repo}/releases/download/v{version_str}/firmware.bin"
+    filesystem_url = f"https://github.com/{repo}/releases/download/v{version_str}/littlefs.bin"
 
     # Get current timestamp in ISO 8601 format
     release_date = datetime.now(timezone.utc).isoformat()
@@ -105,7 +105,7 @@ def generate_manifest(version, firmware_path, filesystem_path, merged_path=None)
     if merged_path and os.path.exists(merged_path):
         merged_sha256 = calculate_sha256(merged_path)
         merged_size = get_file_size(merged_path)
-        merged_url = f"https://github.com/{repo}/releases/download/{version_str}/firmware_merged.bin"
+        merged_url = f"https://github.com/{repo}/releases/download/v{version_str}/firmware_merged.bin"
 
         manifest["merged"] = {
             "version": version_str,

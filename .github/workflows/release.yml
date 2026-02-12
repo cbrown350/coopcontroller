@@ -231,6 +231,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Move Latest Tag to Current Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa latest -m "Update latest release to ${{ steps.version.outputs.version }}"
+          git push origin latest --force
+
       - name: Create/Update Latest Release
         uses: softprops/action-gh-release@v2
         with:
