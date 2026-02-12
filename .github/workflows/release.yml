@@ -230,11 +230,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update Latest Release Tag
-        run: |
-          git tag -f latest
-          git push origin latest --force
-
       - name: Create/Update Latest Release
         uses: softprops/action-gh-release@v1
         with:
