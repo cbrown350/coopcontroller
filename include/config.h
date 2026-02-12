@@ -2,6 +2,7 @@
 #define __CONFIG_H__
 
 #include <cstring>
+#include "build_timestamp.h"
 
 #ifndef DEFAULT_LOGLEVEL
 #define DEFAULT_LOGLEVEL "DEBUG" // NOSONAR - defined here for use in SettingsManager
@@ -36,10 +37,11 @@
 #define ESP32_CHIP_FAMILY_FIX
 #endif
 
-static inline const char* const firmwareVersion __attribute__((unused)) = (strcmp(TOSTRING(FIRMWARE_VERSION_RAW), "") == 0) ? "dev" : TOSTRING(FIRMWARE_VERSION_RAW);
+static inline const char* const firmwareVersion __attribute__((unused)) = (strcmp(TOSTRING(FIRMWARE_VERSION_RAW), "") == 0) ? 
+                                                    "dev-" BUILD_TIMESTAMP : TOSTRING(FIRMWARE_VERSION_RAW);
 static inline const char* const chipFamily __attribute__((unused)) = (strcmp(TOSTRING(CHIP_FAMILY_RAW), "") == 0) ? "unknown" : TOSTRING(CHIP_FAMILY_RAW);
 static inline const char* const gitCommitSha __attribute__((unused)) = (strcmp(TOSTRING(GIT_COMMIT_SHA_RAW), "") == 0) ? "" : TOSTRING(GIT_COMMIT_SHA_RAW);
-static inline const char* const githubRepo __attribute__((unused)) = TOSTRING(GITHUB_REPO);
+static inline const char* const githubRepo __attribute__((unused)) = (strcmp(TOSTRING(GITHUB_REPO), "") == 0) ? "cbrown350/coopcontroller" : TOSTRING(GITHUB_REPO);
 
 // End fix for CHIP_FAMILY_RAW that may contain "ESP32"
 #ifdef ESP32_CHIP_FAMILY_FIX

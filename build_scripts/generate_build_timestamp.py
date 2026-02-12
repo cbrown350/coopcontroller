@@ -25,6 +25,7 @@ def generate_timestamp_header(source, target, env):
 
 #define BUILD_TIMESTAMP_DATE "{build_date}"
 #define BUILD_TIMESTAMP_TIME "{build_time} UTC"
+#define BUILD_TIMESTAMP "{now.strftime("%Y-%m-%dT%H:%M:%SZ")}"
 
 #endif // BUILD_TIMESTAMP_H
 """

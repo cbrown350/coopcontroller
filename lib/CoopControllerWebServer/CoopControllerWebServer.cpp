@@ -1013,11 +1013,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
                   if (!updateManager_) {
-                      response->send(503, "application/json", "{\"error\":\"Update manager not available\"}");
+                      response->send(503, "application/json", R"({"error":"Update manager not available"})");
                       return;
                   }
                   if (!updateManager_->isUpdateAvailable()) {
-                      response->send(400, "application/json", "{\"error\":\"No update available\"}");
+                      response->send(400, "application/json", R"({"error":"No update available"})");
                       return;
                   }
 
@@ -1028,7 +1028,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   }
 
                   // Respond before starting (install may reboot)
-                  response->send(200, "application/json", "{\"status\":\"installing\",\"message\":\"Update starting...\"}");
+                  response->send(200, "application/json", R"({"status":"installing","message":"Update starting..."})");
 
                   // Start installation (will reboot on success)
                   updateManager_->installUpdate(skipFs);
