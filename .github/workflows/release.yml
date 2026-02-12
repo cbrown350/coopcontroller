@@ -196,3 +196,50 @@ jobs:
             - Git Commit: ${{ github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Latest Release Tag
+        run: |
+          git tag -f latest
+          git push origin latest --force
+
+      - name: Create/Update Latest Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest
+          name: Latest Release
+          prerelease: false
+          files: |
+            artifacts/firmware.bin
+            artifacts/littlefs.bin
+            artifacts/firmware_merged.bin
+            artifacts/version_manifest.json
+            artifacts/firmware.bin.sha256
+            artifacts/littlefs.bin.sha256
+            artifacts/firmware_merged.bin.sha256
+          body: |
+            # Latest Firmware Release
+
+            **Version:** ${{ steps.version.outputs.version }}
+
+            This is the latest stable release. Use these artifacts for the most current firmware installation.
+
+            ## Download Firmware
+            - **Merged Binary (recommended for OTA):** firmware_merged.bin
+            - **Firmware Binary:** firmware.bin
+            - **Filesystem Binary:** littlefs.bin
+            - **Version Manifest:** version_manifest.json (for OTA updates)
+
+            ## Checksums
+            **Firmware SHA256:** ${{ env.FIRMWARE_SHA256 }}
+            **Filesystem SHA256:** ${{ env.FILESYSTEM_SHA256 }}
+            **Merged SHA256:** ${{ env.MERGED_SHA256 }}
+
+            ## Build Artifacts
+            - Firmware Size: ${{ env.FIRMWARE_SIZE }} bytes
+            - Filesystem Size: ${{ env.FILESYSTEM_SIZE }} bytes
+            - Merged Size: ${{ env.MERGED_SIZE }} bytes
+            - Git Commit: ${{ github.sha }}
+
+            For version history, see [Releases](https://github.com/${{ github.repository }}/releases)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
