@@ -481,6 +481,30 @@ public:
     }
 
     // ========================================================================
+    // NVS (Non-Volatile Storage) FUNCTIONS
+    // ========================================================================
+
+    bool nvsWriteString(const char* ns, const char* key, const String& value) override {
+        String fullKey = String(ns) + "/" + String(key);
+        mockNvsStorage[fullKey] = value;
+        return true;
+    }
+
+    String nvsReadString(const char* ns, const char* key) override {
+        String fullKey = String(ns) + "/" + String(key);
+        auto it = mockNvsStorage.find(fullKey);
+        if (it != mockNvsStorage.end()) {
+            return it->second;
+        }
+        return "";
+    }
+
+    bool nvsRemove(const char* ns, const char* key) override {
+        String fullKey = String(ns) + "/" + String(key);
+        return mockNvsStorage.erase(fullKey) > 0;
+    }
+
+    // ========================================================================
     // HTTP CLIENT FUNCTIONS - For OTA Updates
     // ========================================================================
 
@@ -550,6 +574,9 @@ public:
         mockHttpGetResponse = "";
         mockHttpGetBinaryResult = false;
         mockSha256VerifyResult = false;
+
+        // Reset NVS state
+        mockNvsStorage.clear();
     }
 
     // Time helpers
@@ -618,6 +645,10 @@ public:
     uint8_t getPwmPin() const { return mockPwmPin; }
     uint32_t getPwmDuty() const { return mockPwmDuty; }
     
+    // NVS helpers
+    const std::map<String, String>& getNvsStorage() const { return mockNvsStorage; }
+    void clearNvsStorage() { mockNvsStorage.clear(); }
+
     // Web server helpers
     WebServerHandler getWebServerHandler() const { return mockWebServerHandler; }
     WebServerHandler getWebServerNotFoundHandler() const { return mockWebServerNotFoundHandler; }
@@ -686,6 +717,9 @@ private:
     uint8_t mockPwmPin = 0;
     uint32_t mockPwmDuty = 0;
     
+    // NVS state
+    std::map<String, String> mockNvsStorage;
+
     // Web server state
     WebServerHandler mockWebServerHandler = nullptr;
     WebServerHandler mockWebServerNotFoundHandler = nullptr;

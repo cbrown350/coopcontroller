@@ -13,6 +13,7 @@
 #include <esp32-hal-ledc.h> // For LEDC functions
 #include <esp_system.h>     // For esp_reset_reason()
 #include <esp_task_wdt.h>   // For esp_task_wdt_reset()
+#include <Preferences.h>      // For NVS access
 #include <mbedtls/sha256.h>  // For SHA256 verification
 
 /**
@@ -826,4 +827,39 @@ bool HAL_ESP32::sha256Verify(const uint8_t *data, size_t data_length,
 
 unsigned long HAL_ESP32::millis() {
   return ::millis();
+}
+
+// ========================================================================
+// NVS (Non-Volatile Storage) FUNCTIONS
+// ========================================================================
+
+bool HAL_ESP32::nvsWriteString(const char* ns, const char* key, const String& value) {
+  Preferences prefs;
+  if (!prefs.begin(ns, false)) {  // false = read/write mode
+    Serial.println("[HAL_ESP32] NVS: Failed to open namespace for writing");
+    return false;
+  }
+  size_t written = prefs.putString(key, value);
+  prefs.end();
+  return written > 0;
+}
+
+String HAL_ESP32::nvsReadString(const char* ns, const char* key) {
+  Preferences prefs;
+  if (!prefs.begin(ns, true)) {  // true = read-only mode
+    return "";
+  }
+  String value = prefs.getString(key, "");
+  prefs.end();
+  return value;
+}
+
+bool HAL_ESP32::nvsRemove(const char* ns, const char* key) {
+  Preferences prefs;
+  if (!prefs.begin(ns, false)) {
+    return false;
+  }
+  bool result = prefs.remove(key);
+  prefs.end();
+  return result;
 }

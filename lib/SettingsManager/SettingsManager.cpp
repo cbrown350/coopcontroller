@@ -19,7 +19,10 @@ void SettingsManager::begin(IHAL* hal)
   _hal = hal;
   if(!_hal->fsBegin()) {
       logger.logError("Failed to initialize filesystem in SettingsManager::begin");
-  } 
+  }
+
+  // Check for NVS settings backup (from OTA filesystem update)
+  restoreFromNVS();
 }
 
 SettingsManager &SettingsManager::getInstance() {
@@ -627,6 +630,78 @@ void SettingsManager::setDoorTimeoutAutoCalcEnabled(bool enabled) {
     settings.door_timeout_auto_calc_enabled = enabled;
 }
 
+bool SettingsManager::backupToNVS() {
+    if (_hal == nullptr) {
+        logger.logError("Cannot backup to NVS: HAL not initialized");
+        return false;
+    }
+
+    String json = toJson(true);  // Include passwords in backup
+    if (json.length() == 0) {
+        logger.logError("Cannot backup to NVS: empty settings JSON");
+        return false;
+    }
+
+    bool result = _hal->nvsWriteString(NVS_SETTINGS_NAMESPACE, NVS_SETTINGS_KEY, json);
+    if (result) {
+        logger.logInfo("Settings backed up to NVS (" + String(json.length()) + " bytes)");
+    } else {
+        logger.logError("Failed to backup settings to NVS");
+    }
+    return result;
+}
+
+bool SettingsManager::restoreFromNVS() {
+    if (_hal == nullptr) {
+        logger.logError("Cannot restore from NVS: HAL not initialized");
+        return false;
+    }
+
+    String json = _hal->nvsReadString(NVS_SETTINGS_NAMESPACE, NVS_SETTINGS_KEY);
+    if (json.length() == 0) {
+        return false;  // No backup found, not an error
+    }
+
+    logger.logInfo("Found NVS settings backup (" + String(json.length()) + " bytes), restoring...");
+
+    JsonDocument doc;
+    if (DeserializationError error = deserializeJson(doc, json); error) {
+        logger.logError("Failed to parse NVS backup JSON: " + String(error.c_str()));
+        // Clear corrupt backup
+        _hal->nvsRemove(NVS_SETTINGS_NAMESPACE, NVS_SETTINGS_KEY);
+        return false;
+    }
+
+    setFromJsonDoc(doc);
+    isLoaded = true;
+
+    // Write restored settings directly to file, bypassing save() which calls
+    // loadFile() and resets settings to defaults when no file exists (the exact
+    // scenario after OTA filesystem flash)
+    JsonDocument outDoc = toJsonDoc(true);
+    String output;
+    serializeJson(outDoc, output);
+
+    bool saved = false;
+    auto file = _hal->fsOpen(SETTINGS_FILE, "w");
+    if (file) {
+        size_t bytesWritten = _hal->fsWrite(file, (const uint8_t*)output.c_str(), output.length());
+        saved = (bytesWritten == output.length());
+        _hal->fsClose(file);
+    }
+
+    // Clear NVS backup after successful restore
+    _hal->nvsRemove(NVS_SETTINGS_NAMESPACE, NVS_SETTINGS_KEY);
+
+    if (saved) {
+        logger.logInfo("Settings restored from NVS backup and saved to filesystem");
+    } else {
+        logger.logWarning("Settings restored from NVS but failed to save to filesystem");
+    }
+
+    return true;
+}
+
 void SettingsManager::factoryReset() {
     logger.logWarning("Factory reset initiated - clearing all settings");
     
@@ -737,6 +812,11 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
         settings.history_temp_min_interval_seconds = doc["history_sample_interval_seconds"].as<unsigned int>();
     }
     settings.history_buffer_size = doc["history_buffer_size"] | defaultSettings.history_buffer_size;
+
+    // Load OTA update settings
+    settings.auto_update_enabled = doc["auto_update_enabled"] | defaultSettings.auto_update_enabled;
+    settings.update_check_interval_hours = doc["update_check_interval_hours"] | defaultSettings.update_check_interval_hours;
+    if (doc["manifest_url"].is<const char*>()) settings.manifest_url = doc["manifest_url"].as<String>();
 }
 
 JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
@@ -829,6 +909,11 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["history_flow_min_interval_seconds"] = settings.history_flow_min_interval_seconds;
     doc["history_buffer_size"] = settings.history_buffer_size;
 
+    // OTA update settings
+    doc["auto_update_enabled"] = settings.auto_update_enabled;
+    doc["update_check_interval_hours"] = settings.update_check_interval_hours;
+    doc["manifest_url"] = settings.manifest_url;
+
     return doc;
 }
 
@@ -863,4 +948,30 @@ int SettingsManager::getLightOnSunsetOffsetMinutes() const {
 
 void SettingsManager::setLightOnSunsetOffsetMinutes(int minutes) {
     settings.light_on_sunset_offset_minutes = minutes;
+}
+
+// OTA update settings getters
+bool SettingsManager::getAutoUpdateEnabled() const {
+    return settings.auto_update_enabled;
+}
+
+unsigned int SettingsManager::getUpdateCheckIntervalHours() const {
+    return settings.update_check_interval_hours;
+}
+
+String SettingsManager::getManifestUrl() const {
+    return settings.manifest_url;
+}
+
+// OTA update settings setters
+void SettingsManager::setAutoUpdateEnabled(bool enabled) {
+    settings.auto_update_enabled = enabled;
+}
+
+void SettingsManager::setUpdateCheckIntervalHours(unsigned int hours) {
+    settings.update_check_interval_hours = constrain(hours, 1, 168);
+}
+
+void SettingsManager::setManifestUrl(const String& url) {
+    settings.manifest_url = url;
 }

@@ -1251,3 +1251,163 @@ TEST_F(SettingsManagerTest, DoorTimeoutAutoCalc_GetterSetter) {
     sm.setDoorTimeoutAutoCalcEnabled(false);
     EXPECT_FALSE(sm.getDoorTimeoutAutoCalcEnabled());
 }
+
+// ============================================================================
+// OTA Update Settings Tests
+// ============================================================================
+
+TEST_F(SettingsManagerTest, OTAAutoUpdateEnabledDefaultFalse) {
+    EXPECT_FALSE(sm.getAutoUpdateEnabled());
+}
+
+TEST_F(SettingsManagerTest, OTAAutoUpdateEnabledGetterSetter) {
+    sm.setAutoUpdateEnabled(true);
+    EXPECT_TRUE(sm.getAutoUpdateEnabled());
+
+    sm.setAutoUpdateEnabled(false);
+    EXPECT_FALSE(sm.getAutoUpdateEnabled());
+}
+
+TEST_F(SettingsManagerTest, OTAUpdateCheckIntervalHoursDefault24) {
+    EXPECT_EQ(sm.getUpdateCheckIntervalHours(), 24u);
+}
+
+TEST_F(SettingsManagerTest, OTAUpdateCheckIntervalHoursGetterSetter) {
+    sm.setUpdateCheckIntervalHours(12);
+    EXPECT_EQ(sm.getUpdateCheckIntervalHours(), 12u);
+}
+
+TEST_F(SettingsManagerTest, OTAUpdateCheckIntervalHoursClamps) {
+    sm.setUpdateCheckIntervalHours(0);
+    EXPECT_EQ(sm.getUpdateCheckIntervalHours(), 1u);
+
+    sm.setUpdateCheckIntervalHours(200);
+    EXPECT_EQ(sm.getUpdateCheckIntervalHours(), 168u);
+}
+
+TEST_F(SettingsManagerTest, OTAManifestUrlGetterSetter) {
+    sm.setManifestUrl("https://example.com/manifest.json");
+    EXPECT_STREQ(sm.getManifestUrl().c_str(), "https://example.com/manifest.json");
+}
+
+TEST_F(SettingsManagerTest, OTASettingsSerializedInJson) {
+    sm.setAutoUpdateEnabled(true);
+    sm.setUpdateCheckIntervalHours(12);
+    sm.setManifestUrl("https://example.com/manifest.json");
+
+    String json = sm.toJson();
+    EXPECT_TRUE(json.indexOf("auto_update_enabled") >= 0);
+    EXPECT_TRUE(json.indexOf("update_check_interval_hours") >= 0);
+    EXPECT_TRUE(json.indexOf("manifest_url") >= 0);
+}
+
+TEST_F(SettingsManagerTest, OTASettingsLoadedFromJson) {
+    sm.markAsNotLoadedForTesting();
+
+    String json = R"({
+        "auto_update_enabled": true,
+        "update_check_interval_hours": 12,
+        "manifest_url": "https://example.com/manifest.json"
+    })";
+    mockHal.setFileContent(json.c_str(), json.length());
+
+    EXPECT_TRUE(sm.load());
+    EXPECT_TRUE(sm.getAutoUpdateEnabled());
+    EXPECT_EQ(sm.getUpdateCheckIntervalHours(), 12u);
+    EXPECT_STREQ(sm.getManifestUrl().c_str(), "https://example.com/manifest.json");
+}
+
+// ============================================================================
+// NVS Backup/Restore Tests
+// ============================================================================
+
+TEST_F(SettingsManagerTest, BackupToNVSSavesSettingsJson) {
+    sm.setSSID("BackupTestSSID");
+    sm.setPassword("BackupTestPass");
+    sm.setTempThresholdOnF(33.5);
+    sm.setAutoUpdateEnabled(true);
+
+    EXPECT_TRUE(sm.backupToNVS());
+
+    // Verify NVS contains the backup
+    const auto& nvs = mockHal.getNvsStorage();
+    EXPECT_FALSE(nvs.empty());
+}
+
+TEST_F(SettingsManagerTest, RestoreFromNVSRestoresSettings) {
+    // First backup some settings
+    sm.setSSID("BackupSSID");
+    sm.setPassword("BackupPass");
+    sm.setTempThresholdOnF(31.0);
+    sm.setAutoUpdateEnabled(true);
+    sm.backupToNVS();
+
+    // Reset settings to defaults
+    sm.resetForTesting();
+    sm.begin(&mockHal);
+    // begin() calls restoreFromNVS() automatically, but settings were already restored
+    // Let's verify the backup was consumed
+    EXPECT_STREQ(sm.getSSID().c_str(), "BackupSSID");
+    EXPECT_STREQ(sm.getPassword().c_str(), "BackupPass");
+    EXPECT_FLOAT_EQ(sm.getTempThresholdOnF(), 31.0);
+    EXPECT_TRUE(sm.getAutoUpdateEnabled());
+}
+
+TEST_F(SettingsManagerTest, RestoreFromNVSClearsBackupAfterRestore) {
+    sm.setSSID("ClearTestSSID");
+    sm.backupToNVS();
+
+    // Verify backup exists
+    EXPECT_FALSE(mockHal.getNvsStorage().empty());
+
+    // Restore
+    sm.resetForTesting();
+    sm.begin(&mockHal);
+
+    // NVS backup should be cleared after restore
+    EXPECT_TRUE(mockHal.getNvsStorage().empty());
+}
+
+TEST_F(SettingsManagerTest, RestoreFromNVSReturnsFalseWhenNoBackup) {
+    // Clear any NVS data
+    mockHal.clearNvsStorage();
+
+    // restoreFromNVS should return false (no backup)
+    EXPECT_FALSE(sm.restoreFromNVS());
+}
+
+TEST_F(SettingsManagerTest, BeginAutoRestoresFromNVS) {
+    // Backup custom settings
+    sm.setSSID("AutoRestoreSSID");
+    sm.setTempThresholdOnF(29.0);
+    sm.backupToNVS();
+
+    // Simulate fresh boot by resetting SettingsManager
+    sm.resetForTesting();
+    // Clear file content to simulate fresh filesystem
+    mockHal.clearFileContent();
+
+    // begin() should auto-detect and restore NVS backup
+    sm.markAsNotLoadedForTesting();
+    sm.begin(&mockHal);
+
+    EXPECT_STREQ(sm.getSSID().c_str(), "AutoRestoreSSID");
+    EXPECT_FLOAT_EQ(sm.getTempThresholdOnF(), 29.0);
+}
+
+TEST_F(SettingsManagerTest, NormalBootWithoutNVSBackupUsesFileSettings) {
+    // Ensure no NVS backup exists
+    mockHal.clearNvsStorage();
+
+    // Set up file-based settings
+    String json = createValidSettingsJson();
+    mockHal.setFileContent(json.c_str(), json.length());
+
+    sm.resetForTesting();
+    sm.markAsNotLoadedForTesting();
+    sm.begin(&mockHal);
+    sm.load();
+
+    // Should load from file normally
+    EXPECT_STREQ(sm.getSSID().c_str(), "TestNetwork");
+}

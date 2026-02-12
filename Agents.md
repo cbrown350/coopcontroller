@@ -13,8 +13,8 @@
 | **Build (firmware)** | `pio run` |
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
-| **Current build** | RAM 17.3%, Flash 99.5% (1,303,537 bytes) |
-| **Tests** | 488/488 passing (10 components) |
+| **Current build** | RAM 17.6%, Flash 81.2% (1,436,321 bytes) |
+| **Tests** | 503/503 passing (10 components) |
 | **Web access** | `http://coopcontroller.local` |
 
 ---
@@ -56,6 +56,7 @@
 ### Settings & Configuration
 - All user-configurable values through SettingsManager (not hardcoded)
 - Settings stored in `data/user_settings.json` on LittleFS
+- Settings backed up to NVS before OTA filesystem updates (auto-restored on boot)
 - New settings must be added to: SettingsManager, web UI Settings.tsx, `/get_settings` and `/update_settings` endpoints
 
 ### HAL Pattern
@@ -77,11 +78,12 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **DoorController** - Motor control, hall sensors, fault detection (hardware pending)
 - **WifiController** - Auto-connect, AP fallback, mDNS
 - **CoopControllerWebServer** - REST API, SPA serving, optional HTTP Basic Auth
-- **SettingsManager** - JSON persistence in LittleFS
+- **SettingsManager** - JSON persistence in LittleFS, NVS backup/restore for OTA updates
 - **Logger** - Level-based logging, syslog, circular buffer
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
+- NVS Settings Preservation for OTA Updates (backup to NVS before filesystem flash, auto-restore on boot, 3 new HAL NVS methods, OTA settings serialization fix, 14 new tests)
 - OTA Update System Foundation (GitHub Actions release workflow on semver tags, UpdateManager with chunked streaming, version manifest generation, merged binary support, manifest URL from GITHUB_REPO)
 - Git Commit SHA on Update Page (clickable link to GitHub commit, build flag pipeline)
 - Chart Enhancements (zoom/pan via chartjs-plugin-zoom, time period filter 1h/6h/24h/all, event-type point icons, reset zoom, point style legend)

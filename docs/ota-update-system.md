@@ -209,12 +209,14 @@ pio run -e esp32-release
 - ✅ PlatformIO configuration updates
 - ✅ `/version` endpoint enhancements
 
-### Phase 2: UpdateManager Component
-- UpdateManager class implementation
-- HAL integration for HTTP/filesystem
-- Version comparison logic
-- Checksum verification (SHA256)
-- Unit tests with MockHAL
+### Phase 2: UpdateManager Component (Partial)
+- ✅ NVS-based settings preservation (backup before filesystem flash, auto-restore on boot)
+- ✅ SettingsManager OTA settings serialization (getters/setters/JSON for auto_update_enabled, update_check_interval_hours, manifest_url)
+- ✅ HAL NVS methods (nvsWriteString, nvsReadString, nvsRemove) in IHAL, HAL_ESP32, MockHAL
+- ✅ Version comparison logic (semver parsing and comparison)
+- ⏳ HTTP download implementation (checkForUpdates/installUpdate currently stubbed)
+- ⏳ Checksum verification (SHA256)
+- ⏳ Full unit tests with MockHAL
 
 ### Phase 3: Web UI Integration
 - Settings page controls
@@ -257,6 +259,34 @@ pio run -e esp32-release
 - Various network conditions (slow, unreliable)
 - Storage space edge cases
 - Version rollback scenarios
+
+## Settings Preservation During OTA Updates
+
+When the LittleFS filesystem partition is flashed during an OTA update, all files including `user_settings.json` are overwritten. To preserve user settings:
+
+**Approach:** NVS (Non-Volatile Storage) backup/restore
+
+The ESP32's NVS partition is separate from the LittleFS/SPIFFS partition and survives OTA filesystem flashing.
+
+**Flow:**
+1. Before filesystem flash: `SettingsManager::backupToNVS()` serializes all settings to JSON and writes to NVS
+2. Device reboots with new filesystem (empty `user_settings.json`)
+3. On boot: `SettingsManager::begin()` auto-calls `restoreFromNVS()`
+4. `restoreFromNVS()` reads NVS backup, applies settings, writes to LittleFS, clears NVS backup
+5. Subsequent boots: No NVS backup found, normal file-based settings loading
+
+**Constants (config.h):**
+- `NVS_SETTINGS_NAMESPACE` = "settings_bak" (max 15 chars for ESP32 NVS)
+- `NVS_SETTINGS_KEY` = "json"
+
+**HAL Methods (IHAL.h):**
+- `nvsWriteString(namespace, key, value)` - Write string to NVS
+- `nvsReadString(namespace, key)` - Read string from NVS (returns "" if not found)
+- `nvsRemove(namespace, key)` - Remove key from NVS
+
+**Size Constraint:** Settings JSON is ~2KB, well within the 20KB NVS partition.
+
+---
 
 ## Security Considerations
 

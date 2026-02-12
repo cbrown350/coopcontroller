@@ -14,13 +14,13 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
 | Phase 3.5c (Desktop Unit Testing) | 100% complete - All 488 desktop unit tests passing, all 10 core components covered |
 
-**Current Build:** RAM 17.3% (56,596 bytes), Flash 99.5% (1,303,537 bytes)
+**Current Build:** RAM 17.6% (57,648 bytes), Flash 81.2% (1,436,321 bytes)
 
-**Latest Build (2026-02-10):** Firmware and web UI builds successful
+**Latest Build (2026-02-11):** Firmware and web UI builds successful
 
-**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. Actual functionality hasn't been checked for correctness.
+**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. Actual functionality hasn't been checked for correctness.
 
-**Test Coverage (February 2026):** 488/488 desktop tests passing (100% pass rate)
+**Test Coverage (February 2026):** 503/503 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
@@ -31,7 +31,7 @@ This document tracks all features: completed, in-progress, and planned.
 | Logger | 11 |
 | PumpController | 83 |
 | SensorManager | 33 |
-| SettingsManager | 135 |
+| SettingsManager | 149 |
 | SunriseSunset | 36 |
 | WifiController | 1 |
 
@@ -925,11 +925,67 @@ Applied custom DaisyUI theme with warm agricultural color palette inspired by th
 
 ---
 
+### NVS Settings Preservation for OTA Updates ✅
+
+**Implemented:** 2026-02-11
+**Status:** Complete and tested
+**Implementation:** ESP32 NVS (Non-Volatile Storage) based backup/restore
+
+**Summary:**
+Settings are automatically backed up to NVS before OTA filesystem updates and restored on next boot. NVS is a separate flash partition from LittleFS, so it survives filesystem flashing. This ensures user configuration (WiFi credentials, pump settings, light schedules, etc.) is preserved across OTA updates.
+
+**Key Changes:**
+
+1. **HAL Layer (IHAL, HAL_ESP32, MockHAL)**
+   - Added 3 NVS methods to IHAL interface: `nvsWriteString()`, `nvsReadString()`, `nvsRemove()`
+   - HAL_ESP32 implementation uses ESP32 `Preferences` library for NVS access
+   - MockHAL uses in-memory `std::map<String, String>` for desktop testing
+
+2. **SettingsManager**
+   - `backupToNVS()` - Serializes all settings to JSON and writes to NVS partition
+   - `restoreFromNVS()` - Reads NVS backup, applies settings, saves to LittleFS, clears NVS backup
+   - `begin()` auto-calls `restoreFromNVS()` on startup to detect and restore any pending backup
+   - Direct file writing in restore (bypasses `save()` which calls `loadFile()` that resets settings when no file exists)
+
+3. **UpdateManager**
+   - `installUpdate()` calls `settingsManager.backupToNVS()` before filesystem flash (when not skipping filesystem)
+   - Warning logged if backup fails but update proceeds
+
+4. **OTA Settings Bug Fix**
+   - Fixed missing OTA settings (`auto_update_enabled`, `update_check_interval_hours`, `manifest_url`) in `setFromJsonDoc()` and `toJsonDoc()`
+   - Added missing getter/setter implementations with `constrain(hours, 1, 168)` clamping
+
+5. **Config Constants**
+   - `NVS_SETTINGS_NAMESPACE` ("settings_bak") - NVS namespace for backup
+   - `NVS_SETTINGS_KEY` ("json") - NVS key for settings JSON
+
+**Testing (14 new tests):**
+- OTA settings: default values, getter/setter, clamping (1-168), manifest URL, JSON serialization, JSON deserialization
+- NVS backup/restore: backup saves JSON, restore restores settings, clears backup after restore, returns false with no backup, auto-restore on begin, normal boot without backup
+
+**Files Modified:**
+- `lib/HAL/IHAL.h` - Added NVS pure virtual methods
+- `lib/HAL_ESP32/HAL_ESP32.h` - NVS override declarations
+- `lib/HAL_ESP32/HAL_ESP32.cpp` - NVS implementations using Preferences library
+- `test/common/mocks/MockHAL.h` - In-memory NVS mock with test helpers
+- `include/config.h` - NVS namespace/key constants
+- `lib/SettingsManager/SettingsManager.h` - backupToNVS/restoreFromNVS declarations
+- `lib/SettingsManager/SettingsManager.cpp` - NVS backup/restore + OTA settings fix
+- `lib/UpdateManager/UpdateManager.cpp` - Settings backup before filesystem flash
+- `test/unit_desktop/test_SettingsManager/test_SettingsManager.cpp` - 14 new tests
+
+**Build Verification:**
+- ESP32: ✅ RAM: 57,648 bytes (17.6%), Flash: 1,436,321 bytes (81.2%)
+- Web UI: ✅ TypeScript compilation successful
+- Tests: ✅ 503/503 passing
+
+---
+
 ## In Progress
 
 ### OTA Update System (In Development) 🚀
 
-**Status:** Phase 1 Foundation Complete, Phase 2 In Progress
+**Status:** Phase 1 Foundation Complete, Phase 2 Partial
 **Target Completion:** February 2026
 
 **Phase 1 - CI/CD & Build Infrastructure (Complete):**
@@ -948,10 +1004,12 @@ Applied custom DaisyUI theme with warm agricultural color palette inspired by th
 - ✅ HAL integration for HTTP client operations (httpGet, httpGetBinary, sha256Verify)
 - ✅ Manifest URL auto-constructed from GITHUB_REPO: `https://github.com/{repo}/releases/latest/download/version_manifest.json`
 
-**Phase 2 (In Progress):**
+**Phase 2 (Partial - Settings Preservation Done):**
+- ✅ NVS-based settings preservation across filesystem updates (backup before flash, auto-restore on boot)
+- ✅ SettingsManager OTA settings serialization fix (getters/setters/JSON)
 - ⏳ REST API endpoints for update checking/triggering from web UI
-- ⏳ SettingsManager integration for auto-update settings
-- ⏳ Unit tests (50+ tests expected)
+- ⏳ Implement HTTP download in UpdateManager (currently stubbed)
+- ⏳ Unit tests for UpdateManager (50+ tests expected)
 
 **Phase 3 (Planned):**
 - 📋 Web UI update controls (check/install buttons, progress display)

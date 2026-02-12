@@ -95,6 +95,7 @@ graph TB
 **State Management:**
 
 - All user settings persisted to `data/user_settings.json` in LittleFS
+- Settings backed up to NVS before OTA filesystem updates, auto-restored on boot
 - Pump statistics tracked in-memory (reset on reboot or manual reset)
 - WiFi credentials stored separately from system settings
 - Log entries kept in circular buffer (max 150 entries)
@@ -136,10 +137,12 @@ graph TB
 ### SettingsManager (`SettingsManager.h` / `SettingsManager.cpp`)
 
 - **Persistent storage** - JSON-based configuration in LittleFS
+- **NVS backup/restore** - Settings backed up to NVS before OTA filesystem updates, auto-restored on boot
 - **Singleton pattern** - Single global instance accessible via macro
 - **WiFi credentials** - SSID, password, AP mode settings
 - **System parameters** - Temperature thresholds, pump timings, flow error timeout
 - **Auto mode flags** - Enable/disable automatic pump and light control
+- **OTA update settings** - Auto-update enable, check interval (1-168 hours), manifest URL
 - **Debug settings** - Toggle debug logging
 - **WiFi recovery** - Retry parameters, AP fallback duration
 - **Immediate save** - Settings persisted on change
@@ -252,12 +255,13 @@ graph TB
 
 ## HAL (Hardware Abstraction Layer)
 
-All ESP32-specific functions are abstracted through `IHAL.h` (32 methods):
+All ESP32-specific functions are abstracted through `IHAL.h` (35 methods):
 
 - **Filesystem:** `fileExists()`, `readFile()`, `writeFile()`, `deleteFile()`, `listFiles()`
 - **Web Server:** `createWebServer()`, `on()`, `send()`, `send_P()`, `sendChunked()`, `clientIP()`, `uri()`, `method()`, `arg()`, `hasArg()`, `args()`, `header()`, `hasHeader()`, `headers()`, `authenticate()`, `requestAuthentication()`, `setBasicAuth()`, `serveStatic()`, `serveStaticFromLittleFS()`
 - **WiFi:** `WiFiStatus()`, `WiFiSSID()`, `WiFiLocalIP()`, `WiFiMode()`, `beginWiFi()`, `disconnectWiFi()`, `scanNetworks()`
 - **LEDC:** `ledcSetup()`, `ledcAttachPin()`, `ledcWrite()`, `ledcDetachPin()`
+- **NVS:** `nvsWriteString()`, `nvsReadString()`, `nvsRemove()`
 - **System:** `getResetReason()`, `getFreeHeap()`, `getChipModel()`, `millis()`, `delay()`, `random()`, `taskWdtReset()`
 
 **Implementations:**

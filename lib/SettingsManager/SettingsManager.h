@@ -408,6 +408,28 @@ class SettingsManager // NOSONAR
     String toJson(bool includePassword = true) const;
     JsonDocument toJsonDoc(bool includePassword = true) const;
 
+    /**
+     * @brief Backup current settings to NVS
+     *
+     * Serializes all settings to JSON and stores in NVS partition.
+     * NVS survives LittleFS/SPIFFS partition flashing during OTA updates.
+     * Call this before flashing a new filesystem image.
+     *
+     * @return true if backup successful
+     */
+    bool backupToNVS();
+
+    /**
+     * @brief Restore settings from NVS backup
+     *
+     * Reads settings JSON from NVS, applies to current settings,
+     * saves to LittleFS file, and clears the NVS backup.
+     * Called automatically during begin() if a backup exists.
+     *
+     * @return true if restore successful
+     */
+    bool restoreFromNVS();
+
 #ifdef UNIT_TEST_DESKTOP
     // Test-only method to reset internal state
     void resetForTesting() {

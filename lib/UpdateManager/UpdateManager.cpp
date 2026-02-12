@@ -134,6 +134,14 @@ void UpdateManager::installUpdate(bool skip_filesystem) {
         return;
     }
 
+    // Backup settings to NVS before filesystem flash to preserve user configuration
+    if (!skip_filesystem) {
+        logger.logInfo("Backing up settings to NVS before filesystem update...");
+        if (!settingsManager.backupToNVS()) {
+            logger.logWarning("Failed to backup settings to NVS - settings may be lost after filesystem update");
+        }
+    }
+
     setStatus(UpdateStatus::DOWNLOADING, true);
     current_operation_start_ = hal_->millis();
 

@@ -15,6 +15,14 @@
 #define MIN_AP_TIME 2 // NOSONAR - defined here for use in SettingsManager, minimum AP mode time in minutes
 #endif
 
+#ifndef NVS_SETTINGS_NAMESPACE
+#define NVS_SETTINGS_NAMESPACE "settings_bak" // NOSONAR - NVS namespace for settings backup (max 15 chars)
+#endif
+
+#ifndef NVS_SETTINGS_KEY
+#define NVS_SETTINGS_KEY "user_settings_json" // NOSONAR - NVS key for settings backup JSON
+#endif
+
 #define SPIFFS LittleFS
 
 

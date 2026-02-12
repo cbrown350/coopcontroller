@@ -690,6 +690,41 @@ public:
    * @return Milliseconds since boot
    */
   virtual unsigned long millis() = 0;
+
+  // ========================================================================
+  // NVS (Non-Volatile Storage) FUNCTIONS
+  // ========================================================================
+
+  /**
+   * @brief Write a string value to NVS
+   *
+   * Stores a string in the ESP32 NVS partition under the given namespace and key.
+   * NVS survives OTA firmware and filesystem updates.
+   *
+   * @param ns NVS namespace (max 15 chars)
+   * @param key Key name (max 15 chars)
+   * @param value String value to store
+   * @return true if write successful
+   */
+  virtual bool nvsWriteString(const char* ns, const char* key, const String& value) = 0;
+
+  /**
+   * @brief Read a string value from NVS
+   *
+   * @param ns NVS namespace (max 15 chars)
+   * @param key Key name (max 15 chars)
+   * @return Stored string value, or empty string if not found
+   */
+  virtual String nvsReadString(const char* ns, const char* key) = 0;
+
+  /**
+   * @brief Remove a key from NVS
+   *
+   * @param ns NVS namespace (max 15 chars)
+   * @param key Key name to remove
+   * @return true if removal successful
+   */
+  virtual bool nvsRemove(const char* ns, const char* key) = 0;
 };
 
 #endif // __IHAL_H__

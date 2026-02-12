@@ -182,6 +182,14 @@ public:
                     const String& expected_hash) override;
   unsigned long millis() override;
 
+  // ========================================================================
+  // NVS (Non-Volatile Storage) FUNCTIONS
+  // ========================================================================
+
+  bool nvsWriteString(const char* ns, const char* key, const String& value) override;
+  String nvsReadString(const char* ns, const char* key) override;
+  bool nvsRemove(const char* ns, const char* key) override;
+
 private:
   AsyncWebServer *server_;
 };
