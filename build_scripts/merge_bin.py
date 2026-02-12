@@ -120,10 +120,10 @@ def merge_bin(source, target, env):
     )
     
 # Add a pre-action to build LittleFS before main build
-env.AddPreAction("buildprog", build_littlefs) # type: ignore
+env.AddPreAction("$PROGPATH", build_littlefs) # type: ignore
 
 # Add a post action that runs esptoolpy to merge available flash images
-env.AddPostAction("buildprog", merge_bin) # type: ignore
+env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", merge_bin) # type: ignore
 
 # Patch the upload command to flash the merged binary at address 0x0
 env.Replace(  # type: ignore
