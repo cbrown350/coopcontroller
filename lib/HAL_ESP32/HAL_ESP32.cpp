@@ -856,6 +856,7 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
               return false;
             }
           }
+          yield();  // Allow async web server to handle status requests
         }
       } else {
         delay(10);
@@ -863,6 +864,14 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
     }
 
     client.stop();
+
+    // Verify complete download if Content-Length was provided
+    if (contentLength > 0 && bytesDownloaded != contentLength) {
+      Serial.printf("[HAL_ESP32] httpGetStream: incomplete download %u/%u bytes\n",
+                    bytesDownloaded, contentLength);
+      return false;
+    }
+
     return true;
   }
 

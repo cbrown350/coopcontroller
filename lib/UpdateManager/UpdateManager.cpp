@@ -203,12 +203,13 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
 
     // --- Install firmware ---
     if (manifest_.firmware.url.length() > 0 && manifest_.firmware.size_bytes > 0) {
+        phase_ = "firmware";
         setStatus(UpdateStatus::DOWNLOADING, true);
         bytes_downloaded_ = 0;
         total_bytes_ = manifest_.firmware.size_bytes;
         progress_percent_ = 0;
 
-        logger.logInfo("Downloading firmware: " + String(manifest_.firmware.size_bytes) + " bytes");
+        logger.logInfo("Downloading firmware: " + String((unsigned long)manifest_.firmware.size_bytes) + " bytes");
 
         // Begin OTA firmware partition
         if (!hal_->otaBegin(manifest_.firmware.size_bytes, 0)) {
@@ -231,9 +232,11 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
 
         if (!downloadSuccess) {
             hal_->otaAbort();
-            setError(UpdateError::DOWNLOAD_FAILED, "Firmware download failed");
+            setError(UpdateError::DOWNLOAD_FAILED, "Firmware download failed or incomplete");
             return;
         }
+
+        logger.logInfo("Firmware download complete: " + String((unsigned long)bytes_downloaded_) + " bytes, finalizing...");
 
         // Finalize firmware OTA
         setStatus(UpdateStatus::INSTALLING);
@@ -248,12 +251,13 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
 
     // --- Install filesystem (if not skipping) ---
     if (!skip_filesystem && manifest_.filesystem.url.length() > 0 && manifest_.filesystem.size_bytes > 0) {
+        phase_ = "filesystem";
         bytes_downloaded_ = 0;
         total_bytes_ = manifest_.filesystem.size_bytes;
         progress_percent_ = 0;
         setStatus(UpdateStatus::DOWNLOADING, true);
 
-        logger.logInfo("Downloading filesystem: " + String(manifest_.filesystem.size_bytes) + " bytes");
+        logger.logInfo("Downloading filesystem: " + String((unsigned long)manifest_.filesystem.size_bytes) + " bytes");
 
         // End current filesystem before flashing
         hal_->fsEnd();
@@ -268,6 +272,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
                 size_t written = hal_->otaWrite(data, len);
                 if (written != len) {
+                    logger.logError("Filesystem OTA write failed: wrote " + String((unsigned long)written) + "/" + String((unsigned long)len) + " bytes");
                     return false;
                 }
                 bytes_downloaded_ = downloaded;
@@ -279,9 +284,11 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         if (!fsDownloadSuccess) {
             hal_->otaAbort();
             hal_->fsBegin();
-            setError(UpdateError::DOWNLOAD_FAILED, "Filesystem download failed");
+            setError(UpdateError::DOWNLOAD_FAILED, "Filesystem download failed or incomplete");
             return;
         }
+
+        logger.logInfo("Filesystem download complete: " + String((unsigned long)bytes_downloaded_) + " bytes, finalizing...");
 
         setStatus(UpdateStatus::INSTALLING);
         if (!hal_->otaEnd(true)) {
@@ -294,10 +301,11 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         logger.logInfo("Filesystem update installed successfully");
     }
 
+    phase_ = "complete";
     setStatus(UpdateStatus::COMPLETE, true);
     progress_percent_ = 100;
-    logger.logWarning("Update complete! Restarting device...");
-    delay(1000);
+    logger.logWarning("Update complete! Restarting device in 5 seconds...");
+    delay(5000);  // Allow time for status poll to see COMPLETE
     hal_->restart();
 }
 
@@ -326,6 +334,7 @@ UpdateStatusSnapshot UpdateManager::getStatus() const {
     snapshot.bytes_downloaded = bytes_downloaded_;
     snapshot.total_bytes = total_bytes_;
     snapshot.error_message = last_error_message_;
+    snapshot.phase = phase_;
     snapshot.last_check_time = last_check_time_;
     snapshot.next_check_time = 0; // TODO: Calculate based on settings
 
@@ -397,6 +406,7 @@ JsonDocument UpdateManager::getStatusResponseJson() const {
 
     doc["status"] = statusStr;
     doc["progress"] = progress_percent_;
+    doc["phase"] = phase_;
     doc["last_check"] = last_check_time_;
     doc["error"] = last_error_message_;
 
@@ -414,6 +424,7 @@ void UpdateManager::reset() {
     status_ = UpdateStatus::IDLE;
     error_ = UpdateError::NONE;
     last_error_message_ = "";
+    phase_ = "";
     progress_percent_ = 0;
     bytes_downloaded_ = 0;
     total_bytes_ = 0;

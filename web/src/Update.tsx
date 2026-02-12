@@ -25,6 +25,7 @@ interface UpdateCheckResult {
 interface UpdateStatus {
   status: 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'verifying' | 'installing' | 'complete' | 'error';
   progress: number;
+  phase: string;
   last_check: number;
   error: string;
 }
@@ -279,7 +280,12 @@ function Update() {
             <div class="card bg-base-200 card-sm shadow-sm mb-4">
               <div class="card-body">
                 <h3 class="font-bold">Update Progress</h3>
-                <p>Status: {updateStatus()?.status ?? 'starting...'}</p>
+                <p>
+                  Status: {updateStatus()?.status ?? 'starting...'}
+                  <Show when={updateStatus()?.phase}>
+                    {' '}({updateStatus()!.phase})
+                  </Show>
+                </p>
                 <progress class="progress progress-primary w-full" value={updateStatus()?.progress ?? 0} max="100"></progress>
                 <p>{updateStatus()?.progress ?? 0}%</p>
               </div>

@@ -75,6 +75,7 @@ struct UpdateStatusSnapshot {
     uint32_t bytes_downloaded;
     uint32_t total_bytes;
     String error_message;
+    String phase;              ///< Current phase: "firmware", "filesystem", or ""
     unsigned long last_check_time;
     unsigned long next_check_time;
 };
@@ -114,6 +115,9 @@ private:
 
     // Error tracking
     String last_error_message_;
+
+    // Phase tracking
+    String phase_;
 
     /**
      * @brief Compare two semantic versions
