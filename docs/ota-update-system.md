@@ -292,10 +292,15 @@ The ESP32's NVS partition is separate from the LittleFS/SPIFFS partition and sur
 ## Security Considerations
 
 1. **HTTPS Only** - All downloads use HTTPS (GitHub enforces this)
-2. **Checksum Verification** - SHA256 verification before installation
+2. **✅ Checksum Verification** - SHA256 incremental verification during download (IMPLEMENTED Feb 2026)
+   - Calculates hash during streaming download to minimize memory usage
+   - Aborts installation on checksum mismatch with `CHECKSUM_MISMATCH` error
+   - Prevents corrupted downloads, MITM attacks, and malicious firmware
 3. **GitHub Source Trust** - Release artifacts must come from official GitHub releases
 4. **No Auto-Install** - Default disabled; requires explicit user enable in settings
 5. **Confirmation Required** - Manual update checks show manifest before downloading
+
+**⚠️ Known Security Gap:** TLS certificate validation is currently disabled (`client.setInsecure()`). This should be fixed by embedding GitHub's root CA certificate. See [SHA256_SECURITY_AUDIT_2026-02-13.md](SHA256_SECURITY_AUDIT_2026-02-13.md) for details.
 
 ## Future Enhancements
 

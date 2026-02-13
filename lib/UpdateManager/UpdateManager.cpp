@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Update.h>
+#include <mbedtls/sha256.h>
 
 void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
     hal_ = hal;
@@ -31,6 +32,9 @@ void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
     install_requested_ = false;
     install_skip_filesystem_ = false;
     install_force_ = false;
+
+    sha_ctx_ = nullptr;
+    sha_ctx_initialized_ = false;
 
     device_version_ = firmwareVersion;
 
@@ -215,15 +219,31 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
 
         logger.logInfo("Downloading firmware: " + String((unsigned long)manifest_.firmware.size_bytes) + " bytes");
 
+        // Initialize SHA256 context for incremental hashing
+        sha_ctx_ = new mbedtls_sha256_context();
+        mbedtls_sha256_init((mbedtls_sha256_context*)sha_ctx_);
+        mbedtls_sha256_starts_ret((mbedtls_sha256_context*)sha_ctx_, false);  // false = SHA256 (not SHA224)
+        sha_ctx_initialized_ = true;
+
         // Begin OTA firmware partition
         if (!hal_->otaBegin(manifest_.firmware.size_bytes, 0)) {
+            mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
+            delete (mbedtls_sha256_context*)sha_ctx_;
+            sha_ctx_ = nullptr;
+            sha_ctx_initialized_ = false;
             setError(UpdateError::INSTALL_FAILED, "Failed to begin firmware OTA: " + hal_->otaGetError());
             return;
         }
 
-        // Stream download, writing each chunk to OTA partition
+        // Stream download, writing each chunk to OTA partition and updating SHA256
         bool downloadSuccess = hal_->httpGetStream(manifest_.firmware.url,
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
+                // Update SHA256 hash with incoming data
+                if (sha_ctx_initialized_) {
+                    mbedtls_sha256_update_ret((mbedtls_sha256_context*)sha_ctx_, data, len);
+                }
+
+                // Write to OTA partition
                 size_t written = hal_->otaWrite(data, len);
                 if (written != len) {
                     return false; // Write failed, abort download
@@ -235,12 +255,52 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             }, 120000); // 2 minute timeout for firmware download
 
         if (!downloadSuccess) {
+            mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
+            delete (mbedtls_sha256_context*)sha_ctx_;
+            sha_ctx_ = nullptr;
+            sha_ctx_initialized_ = false;
             hal_->otaAbort();
             setError(UpdateError::DOWNLOAD_FAILED, "Firmware download failed or incomplete");
             return;
         }
 
-        logger.logInfo("Firmware download complete: " + String((unsigned long)bytes_downloaded_) + " bytes, finalizing...");
+        logger.logInfo("Firmware download complete: " + String((unsigned long)bytes_downloaded_) + " bytes, verifying checksum...");
+
+        // Verify SHA256 checksum if provided
+        setStatus(UpdateStatus::VERIFYING);
+        if (manifest_.firmware.sha256.length() > 0) {
+            unsigned char hash[32];
+            mbedtls_sha256_finish_ret((mbedtls_sha256_context*)sha_ctx_, hash);
+            mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
+            delete (mbedtls_sha256_context*)sha_ctx_;
+            sha_ctx_ = nullptr;
+            sha_ctx_initialized_ = false;
+
+            // Convert to hex string
+            char hashHex[65];
+            for (int i = 0; i < 32; i++) {
+                sprintf(hashHex + (i * 2), "%02x", hash[i]);
+            }
+            hashHex[64] = '\0';
+
+            // Compare with manifest
+            if (!manifest_.firmware.sha256.equalsIgnoreCase(hashHex)) {
+                hal_->otaAbort();
+                setError(UpdateError::CHECKSUM_MISMATCH,
+                    "Firmware SHA256 mismatch: expected " + manifest_.firmware.sha256 +
+                    ", got " + String(hashHex));
+                return;
+            }
+
+            logger.logInfo("Firmware SHA256 verified: " + String(hashHex));
+        } else {
+            // No checksum provided, cleanup context
+            mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
+            delete (mbedtls_sha256_context*)sha_ctx_;
+            sha_ctx_ = nullptr;
+            sha_ctx_initialized_ = false;
+            logger.logWarning("No firmware SHA256 checksum provided - skipping verification");
+        }
 
         // Finalize firmware OTA
         setStatus(UpdateStatus::INSTALLING);
@@ -263,10 +323,20 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
 
         logger.logInfo("Downloading filesystem: " + String((unsigned long)manifest_.filesystem.size_bytes) + " bytes");
 
+        // Initialize SHA256 context for incremental hashing
+        sha_ctx_ = new mbedtls_sha256_context();
+        mbedtls_sha256_init((mbedtls_sha256_context*)sha_ctx_);
+        mbedtls_sha256_starts_ret((mbedtls_sha256_context*)sha_ctx_, false);
+        sha_ctx_initialized_ = true;
+
         // End current filesystem before flashing
         hal_->fsEnd();
 
         if (!hal_->otaBegin(manifest_.filesystem.size_bytes, 1)) {
+            mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
+            delete (mbedtls_sha256_context*)sha_ctx_;
+            sha_ctx_ = nullptr;
+            sha_ctx_initialized_ = false;
             hal_->fsBegin();
             setError(UpdateError::INSTALL_FAILED, "Failed to begin filesystem OTA: " + hal_->otaGetError());
             return;
@@ -274,6 +344,12 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
 
         bool fsDownloadSuccess = hal_->httpGetStream(manifest_.filesystem.url,
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
+                // Update SHA256 hash with incoming data
+                if (sha_ctx_initialized_) {
+                    mbedtls_sha256_update_ret((mbedtls_sha256_context*)sha_ctx_, data, len);
+                }
+
+                // Write to OTA partition
                 size_t written = hal_->otaWrite(data, len);
                 if (written != len) {
                     logger.logError("Filesystem OTA write failed: wrote " + String((unsigned long)written) + "/" + String((unsigned long)len) + " bytes");
@@ -286,13 +362,54 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             }, 120000);
 
         if (!fsDownloadSuccess) {
+            mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
+            delete (mbedtls_sha256_context*)sha_ctx_;
+            sha_ctx_ = nullptr;
+            sha_ctx_initialized_ = false;
             hal_->otaAbort();
             hal_->fsBegin();
             setError(UpdateError::DOWNLOAD_FAILED, "Filesystem download failed or incomplete");
             return;
         }
 
-        logger.logInfo("Filesystem download complete: " + String((unsigned long)bytes_downloaded_) + " bytes, finalizing...");
+        logger.logInfo("Filesystem download complete: " + String((unsigned long)bytes_downloaded_) + " bytes, verifying checksum...");
+
+        // Verify SHA256 checksum if provided
+        setStatus(UpdateStatus::VERIFYING);
+        if (manifest_.filesystem.sha256.length() > 0) {
+            unsigned char hash[32];
+            mbedtls_sha256_finish_ret((mbedtls_sha256_context*)sha_ctx_, hash);
+            mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
+            delete (mbedtls_sha256_context*)sha_ctx_;
+            sha_ctx_ = nullptr;
+            sha_ctx_initialized_ = false;
+
+            // Convert to hex string
+            char hashHex[65];
+            for (int i = 0; i < 32; i++) {
+                sprintf(hashHex + (i * 2), "%02x", hash[i]);
+            }
+            hashHex[64] = '\0';
+
+            // Compare with manifest
+            if (!manifest_.filesystem.sha256.equalsIgnoreCase(hashHex)) {
+                hal_->otaAbort();
+                hal_->fsBegin();
+                setError(UpdateError::CHECKSUM_MISMATCH,
+                    "Filesystem SHA256 mismatch: expected " + manifest_.filesystem.sha256 +
+                    ", got " + String(hashHex));
+                return;
+            }
+
+            logger.logInfo("Filesystem SHA256 verified: " + String(hashHex));
+        } else {
+            // No checksum provided, cleanup context
+            mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
+            delete (mbedtls_sha256_context*)sha_ctx_;
+            sha_ctx_ = nullptr;
+            sha_ctx_initialized_ = false;
+            logger.logWarning("No filesystem SHA256 checksum provided - skipping verification");
+        }
 
         setStatus(UpdateStatus::INSTALLING);
         if (!hal_->otaEnd(true)) {

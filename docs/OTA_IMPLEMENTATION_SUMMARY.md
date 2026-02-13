@@ -354,11 +354,16 @@ Device reboots with new firmware
 ## Security Considerations
 
 ✅ **HTTPS-only** - All downloads from GitHub (enforced)
-✅ **SHA256 verification** - Checksums in manifest, verified before install
+✅ **SHA256 verification** - ✅ **IMPLEMENTED** (Feb 13, 2026) - Incremental checksum verification during streaming downloads
+   - Firmware and filesystem both verified
+   - Installation aborted on mismatch
+   - See [SHA256_SECURITY_AUDIT_2026-02-13.md](SHA256_SECURITY_AUDIT_2026-02-13.md) for security audit details
 ✅ **Signed releases** - GitHub releases are from verified repository
 ✅ **Manifest validation** - JSON schema validation before use
 ✅ **No auto-install by default** - User explicitly enables auto-updates
 ✅ **Confirmation required** - Manual confirmation before download/install
+
+⚠️ **Known Issue:** TLS certificate validation disabled - should be fixed in future update
 
 ---
 

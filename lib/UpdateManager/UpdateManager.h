@@ -124,6 +124,10 @@ private:
     bool install_skip_filesystem_;
     bool install_force_;
 
+    // SHA256 verification context (for incremental hashing during streaming downloads)
+    void* sha_ctx_;
+    bool sha_ctx_initialized_;
+
     /**
      * @brief Compare two semantic versions
      *

@@ -101,6 +101,27 @@ See [Feature Tracker](docs/feature-tracker.md) for full details and planned road
 
 ---
 
+## Recent Security Updates
+
+### ✅ SHA256 OTA Verification - February 13, 2026
+
+**Critical security fix implemented:**
+- **Issue:** SHA256 checksums were generated but never verified during OTA updates (CVSS 7.5 - HIGH severity)
+- **Risk:** Vulnerable to corrupted downloads, MITM attacks, and malicious firmware injection
+- **Fix:** Implemented incremental SHA256 verification during streaming downloads
+- **Impact:** Firmware and filesystem updates now verified before installation; abort on mismatch
+- **Files Changed:** `lib/UpdateManager/UpdateManager.h`, `lib/UpdateManager/UpdateManager.cpp`
+- **Performance:** +265 bytes RAM, ~130ms verification overhead (negligible)
+- **Testing:** ✅ Builds passing (firmware + web UI), ready for deployment
+- **Documentation:** See [SHA256 Security Audit](docs/SHA256_SECURITY_AUDIT_2026-02-13.md) for full analysis
+
+**Remaining Security Work:**
+- ⚠️ Fix TLS certificate validation (currently disabled via `setInsecure()`)
+- 📋 Add code signing (RSA/ECDSA) for defense-in-depth
+- 📋 Implement rollback protection
+
+---
+
 ## Project Structure (Summary)
 
 ```
