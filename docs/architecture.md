@@ -43,6 +43,8 @@ graph TB
         LOGGER[Logger System]
         WEB[WebServer]
         WIFI[WiFi Manager]
+        UPDATE[UpdateManager]
+        HISTORY[HistoricalDataManager]
     end
 
     subgraph "External Services"
@@ -52,6 +54,7 @@ graph TB
         TELEGRAM[Telegram Bot]
         SYSLOG[Syslog Server]
         HASS[Home Assistant MQTT]
+        GITHUB[GitHub Releases]
     end
 
     subgraph "User Interfaces"
@@ -62,7 +65,8 @@ graph TB
     end
 
     ESP32 --> TEMP1 & TEMP2 & PUMP & DOOR & LIGHT & HALL1 & HALL2 & BUZZER
-    MAIN --> TEMP_MGR & PUMP_CTRL & DOOR_CTRL & LIGHT_CTRL & SETTINGS & LOGGER & WEB & WIFI
+    MAIN --> TEMP_MGR & PUMP_CTRL & DOOR_CTRL & LIGHT_CTRL & SETTINGS & LOGGER & WEB & WIFI & UPDATE & HISTORY
+    UPDATE --> GITHUB
     TEMP_MGR --> TEMP1 & TEMP2
     PUMP_CTRL --> PUMP
     DOOR_CTRL --> DOOR & HALL1 & HALL2
@@ -91,6 +95,7 @@ graph TB
 - User Input (Web UI) -> WebServer -> SettingsManager -> LittleFS Storage
 - Status Queries -> WebServer -> Components -> JSON Response
 - Alerts -> Logger -> Syslog/Email/Telegram (when implemented)
+- OTA Updates -> UpdateManager -> HAL (HTTP/OTA) -> ESP32 Flash Partitions
 
 **State Management:**
 
@@ -219,6 +224,21 @@ graph TB
 - **Configurable timeouts** - AP mode duration, retry intervals
 - **Clean separation** - Extracted from main.cpp for better code organization
 - **Encapsulated state** - All WiFi-related globals moved into controller class
+
+### UpdateManager (`UpdateManager.h` / `UpdateManager.cpp`)
+
+- **OTA firmware updates** - Over-the-air firmware and filesystem updates from GitHub Releases
+- **Version manifest** - Fetches and parses version_manifest.json for update availability
+- **Semantic versioning** - Compares major.minor.patch versions to detect newer releases
+- **SHA256 verification** - Incremental checksum verification during streaming downloads
+- **Streaming downloads** - Memory-efficient chunked downloads via HAL httpGetStream
+- **Dual-target updates** - Updates both firmware and LittleFS filesystem partitions
+- **NVS settings backup** - Backs up user settings to NVS before filesystem flash
+- **Deferred installation** - Web handler sets flags, main loop executes for async web server compatibility
+- **Auto-update** - Configurable periodic checks (1-168 hours interval)
+- **Force reinstall** - Option to reinstall current version for recovery
+- **Progress tracking** - Real-time status/progress via REST API for web UI display
+- **REST API** - `/update/check` (public), `/update/status` (public), `/update/install` (protected)
 
 ### DoorController (`DoorController.h` / `DoorController.cpp`)
 
@@ -361,6 +381,7 @@ coop_controller/
 │   ├── SensorManager/             # Temperature/water meter handling
 │   ├── SettingsManager/           # Configuration management
 │   ├── SunriseSunset/             # Sunrise/sunset calculations
+│   ├── UpdateManager/             # OTA firmware update manager
 │   └── WifiController/            # WiFi management
 ├── src/
 │   └── main.cpp                   # Main entry point and loop

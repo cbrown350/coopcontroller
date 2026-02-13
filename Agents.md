@@ -8,12 +8,12 @@
 |------|-------|
 | **Platform** | ESP32 DevKit C v4 (ESP32-WROOM-32) |
 | **Framework** | Arduino via PlatformIO |
-| **C++ Standard** | C++11 (`-std=gnu++11`) |
+| **C++ Standard** | C++17 (`-std=gnu++17`) |
 | **Web UI** | SolidJS + Tailwind CSS + DaisyUI |
 | **Build (firmware)** | `pio run` |
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
-| **Current build** | RAM 17.6%, Flash 81.2% (1,436,321 bytes) |
+| **Current build** | RAM 17.6% (57,704 bytes), Flash 83.4% (1,474,941 bytes) |
 | **Tests** | 576/576 passing (11 components) |
 | **Web access** | `http://coopcontroller.local` |
 
@@ -83,6 +83,7 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
+- SHA256 OTA Verification (incremental SHA256 checksum verification during streaming downloads, aborts on mismatch)
 - Configurable Device Hostname (user-editable setting in web UI, stored in SettingsManager, used for mDNS/WiFi AP/syslog/ArduinoOTA, device restart required, defaults: "CoopController" or "CoopHWEmulator")
 - OTA Update System Complete (full OTA: manifest check, streaming firmware/filesystem download, ESP32 Update.h flash, NVS settings backup, redirect handling, REST API endpoints, web UI with progress, force reinstall option, 71 tests)
 - NVS Settings Preservation for OTA Updates (backup to NVS before filesystem flash, auto-restore on boot, 3 new HAL NVS methods, OTA settings serialization fix, 14 new tests)

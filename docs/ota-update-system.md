@@ -1,6 +1,6 @@
 # OTA Update System
 
-**Status:** In Implementation (Feb 2026)
+**Status:** Complete (Feb 2026)
 
 ## Overview
 
@@ -204,32 +204,32 @@ pio run -e esp32-release
 
 ## Implementation Phases
 
-### Phase 1: Infrastructure (Current)
+### Phase 1: Infrastructure ✅
 - ✅ GitHub Actions workflow with semantic versioning
 - ✅ Version manifest generation script
 - ✅ PlatformIO configuration updates
 - ✅ `/version` endpoint enhancements
 
-### Phase 2: UpdateManager Component (Partial)
+### Phase 2: UpdateManager Component ✅
 - ✅ NVS-based settings preservation (backup before filesystem flash, auto-restore on boot)
 - ✅ SettingsManager OTA settings serialization (getters/setters/JSON for auto_update_enabled, update_check_interval_hours, manifest_url)
 - ✅ HAL NVS methods (nvsWriteString, nvsReadString, nvsRemove) in IHAL, HAL_ESP32, MockHAL
 - ✅ Version comparison logic (semver parsing and comparison)
-- ⏳ HTTP download implementation (checkForUpdates/installUpdate currently stubbed)
-- ⏳ Checksum verification (SHA256)
-- ⏳ Full unit tests with MockHAL
+- ✅ HTTP download implementation (streaming via httpGetStream with chunked writes)
+- ✅ SHA256 incremental checksum verification during download
+- ✅ Full unit tests with MockHAL (71 tests)
 
-### Phase 3: Web UI Integration
-- Settings page controls
-- Update availability badge
-- Manual/automatic update triggering
-- Progress display
+### Phase 3: Web UI Integration ✅
+- ✅ Settings page controls (auto-update toggle, check interval)
+- ✅ Update availability badge with version comparison
+- ✅ Manual/automatic update triggering
+- ✅ Progress display with phase indicator (firmware/filesystem)
 
-### Phase 4: Edge Cases & Optimization
-- Resume interrupted downloads
-- Rollback on failed installation
-- Storage space verification
-- Network error recovery
+### Phase 4: Edge Cases & Optimization (Future Enhancements)
+- 📋 Resume interrupted downloads
+- 📋 Rollback on failed installation
+- 📋 Storage space verification before update
+- 📋 Network error recovery with exponential backoff
 
 ## Error Handling
 

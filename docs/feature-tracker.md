@@ -12,15 +12,15 @@ This document tracks all features: completed, in-progress, and planned.
 | Phase 3.5 (Critical Refactoring) | 100% complete - HAL refactoring complete, all ESP32-specific functions abstracted |
 | Phase 3.5a (Sunrise/Sunset Integration) | 100% complete with accurate UTC to local time conversion |
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
-| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 570 desktop unit tests passing, all 11 core components covered |
+| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 576 desktop unit tests passing, all 11 core components covered |
 
-**Current Build:** RAM 17.6% (57,648 bytes), Flash 81.2% (1,436,321 bytes)
+**Current Build:** RAM 17.6% (57,704 bytes), Flash 83.4% (1,474,941 bytes)
 
 **Latest Build (2026-02-13):** Firmware and web UI builds successful
 
-**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. Actual functionality hasn't been checked for correctness.
+**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification.
 
-**Test Coverage (February 2026):** 575/575 desktop tests passing (100% pass rate)
+**Test Coverage (February 2026):** 576/576 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
@@ -1250,7 +1250,7 @@ The Update page now displays the git commit SHA as a clickable link to the GitHu
 
 Features organized by priority and implementation status.
 
-> **Flash Constraint Note:** Firmware is at 99.5% flash usage (7,183 bytes remaining). OTA Update System is designed to fit within this constraint using streaming downloads and PROGMEM optimization. Features requiring large external libraries remain blocked until flash optimization is performed.
+> **Flash Constraint Note:** Firmware is at 83.4% flash usage (294,531 bytes remaining of 1,769,472 bytes). OTA Update System is complete. Features requiring large external libraries (SMTP, MQTT, Telegram) may still be constrained by flash but are no longer critically blocked.
 
 ### High Priority - Monitoring & Notifications (Blocked by Flash)
 
