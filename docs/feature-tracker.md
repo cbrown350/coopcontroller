@@ -49,16 +49,22 @@ This document tracks all features: completed, in-progress, and planned.
 **Status:** Complete and tested
 
 **Summary:**
-Fixed a bug where the auto-close after sunset feature didn't work because the sunrise open schedule would immediately re-open the door after it was closed.
+Fixed two bugs preventing auto-close after sunset from working.
 
-**Root Cause:**
-`shouldOpenBySchedule()` had no upper time bound - it returned `true` whenever `currentMinutes >= sunrise`, even after sunset. When auto-close fired and closed the door, `shouldOpenBySchedule()` was still true (it's after sunrise and the door is no longer open), so `checkSchedule()` immediately re-opened the door on the next update cycle, creating an open/close loop.
+**Bug 1 - UTC vs Local Time Mismatch (primary cause):**
+`shouldOpenBySchedule()` and `shouldCloseBySchedule()` used `time(nullptr)` + `localtime_r()` to get the current time, but the ESP32 system clock is configured for UTC (`configTime(0, 0, ntpServer)`). Meanwhile, `getSunsetMinutes()` returns local time (it applies `utcOffset_`). The comparison was between UTC current time and local sunset time, so the schedule never matched correctly. For example, at 11:22 PM EST (UTC-5), the UTC time is 4:22 AM (262 minutes) which is less than sunset+45 (1095 minutes), so the close condition was never true in the evening.
+
+**Bug 2 - No Upper Bound on Open Schedule:**
+`shouldOpenBySchedule()` returned `true` anytime after sunrise with no upper bound. After sunset, if auto-close closed the door, the open schedule would immediately re-open it on the next cycle.
 
 **Fix:**
-Added an upper time bound to `shouldOpenBySchedule()` so it only returns true when `currentMinutes >= openTime && currentMinutes < closeTime`. The close time calculation mirrors the logic in `shouldCloseBySchedule()`, including the auto-close after sunset delay when enabled. This ensures the sunrise schedule doesn't fight the sunset/auto-close schedule.
+- Extracted `getCurrentLocalMinutes()` helper that converts UTC system time to local time using the configured timezone offset, with day wraparound handling
+- Both `shouldOpenBySchedule()` and `shouldCloseBySchedule()` now use local time consistently
+- Added upper time bound to `shouldOpenBySchedule()` so it only triggers between sunrise and close time
 
 **Files Modified:**
-- `lib/DoorController/DoorController.cpp` - Added close time upper bound to `shouldOpenBySchedule()`
+- `lib/DoorController/DoorController.cpp` - Added `getCurrentLocalMinutes()`, refactored schedule methods
+- `lib/DoorController/DoorController.h` - Added `getCurrentLocalMinutes()` declaration
 
 **Build Verification:**
 - ESP32: ✅ Firmware builds successfully
@@ -763,7 +769,7 @@ Buzzer sounds on fault conditions (pump failure, sensor error, door fault). Conf
 **Status:** Complete
 
 **Summary:**
-Settings `door_auto_close_after_sunset_enabled` and `door_auto_close_after_sunset_minutes` implemented. Door auto-closes X minutes after sunset. Web UI toggle and delay input in Settings page. Logic in DoorController::shouldCloseBySchedule(). **Bug fix (2026-02-12):** Fixed sunrise schedule re-opening door after auto-close by adding upper time bound to `shouldOpenBySchedule()`.
+Settings `door_auto_close_after_sunset_enabled` and `door_auto_close_after_sunset_minutes` implemented. Door auto-closes X minutes after sunset. Web UI toggle and delay input in Settings page. Logic in DoorController::shouldCloseBySchedule(). **Bug fix (2026-02-12):** Fixed UTC vs local time mismatch in schedule comparisons and added upper time bound to `shouldOpenBySchedule()`.
 
 ---
 

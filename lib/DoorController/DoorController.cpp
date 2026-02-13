@@ -678,25 +678,38 @@ void DoorController::restorePosition() {
     logger.logfInfo("Door position restored: %s", getPositionString().c_str());
 }
 
-// Schedule helpers using sunrise/sunset calculations
-bool DoorController::shouldOpenBySchedule() const {
+// Helper: get current local time in minutes since midnight.
+// ESP32 system clock is set to UTC (configTime(0,0,...)), but sunrise/sunset
+// minutes are in local time (utcOffset applied). Convert UTC to local here.
+int DoorController::getCurrentLocalMinutes() const {
     time_t now = time(nullptr);
-    if (now < 0) return false;
+    if (now < 0) return -1;
 
-    struct tm timeinfo {};                          // storage for localtime
-
+    struct tm timeinfo{};
 #if defined(_WIN32)
-    if (localtime_s(&timeinfo, &now) != 0) return false;
+    if (localtime_s(&timeinfo, &now) != 0) return -1;
 #elif defined(ARDUINO) && !defined(ESP32)
     struct tm* result = localtime(&now);
-    if (result == nullptr) return false;
+    if (result == nullptr) return -1;
     timeinfo = *result;
 #else
-    if (localtime_r(&now, &timeinfo) == nullptr) return false;
+    if (localtime_r(&now, &timeinfo) == nullptr) return -1;
 #endif
-    const struct tm* ti = &timeinfo;                // pointer-to-const
 
-    int currentMinutes = ti->tm_hour * 60 + ti->tm_min;
+    int utcMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+    // Apply timezone offset to convert UTC to local time
+    int localMinutes = utcMinutes + (settingsManager.getTimezoneOffsetHours() * 60);
+    // Handle day wraparound
+    if (localMinutes < 0) localMinutes += 1440;
+    if (localMinutes >= 1440) localMinutes -= 1440;
+    return localMinutes;
+}
+
+// Schedule helpers using sunrise/sunset calculations
+bool DoorController::shouldOpenBySchedule() const {
+    int currentMinutes = getCurrentLocalMinutes();
+    if (currentMinutes < 0) return false;
+
     int openTime = sunriseSunset->getSunriseMinutes() + sunriseOffsetMinutes;
 
     // Calculate the close time (must match shouldCloseBySchedule logic)
@@ -713,22 +726,8 @@ bool DoorController::shouldOpenBySchedule() const {
 }
 
 bool DoorController::shouldCloseBySchedule() const {
-    time_t now = time(nullptr);
-    if (now < 0) return false;
-
-    struct tm timeinfo{};
-#if defined(_WIN32)
-    if (localtime_s(&timeinfo, &now) != 0) return false;
-#elif defined(ARDUINO) && !defined(ESP32)
-    struct tm* result = localtime(&now);
-    if (result == nullptr) return false;
-    timeinfo = *result;
-#else
-    if (localtime_r(&now, &timeinfo) == nullptr) return false;
-#endif
-    const struct tm* ti = &timeinfo;
-
-    int currentMinutes = ti->tm_hour * 60 + ti->tm_min;
+    int currentMinutes = getCurrentLocalMinutes();
+    if (currentMinutes < 0) return false;
 
     int closeTime = sunriseSunset->getSunsetMinutes() + sunsetOffsetMinutes;
     if (settingsManager.getDoorAutoCloseAfterSunsetEnabled()) {

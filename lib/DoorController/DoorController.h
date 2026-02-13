@@ -167,6 +167,16 @@ private:
     void checkSchedule();
 
     /**
+     * @brief Get current local time in minutes since midnight
+     *
+     * Converts UTC system time to local time using timezone offset.
+     * ESP32 system clock runs in UTC; sunrise/sunset are in local time.
+     *
+     * @return Minutes since midnight in local time, or -1 on error
+     */
+    int getCurrentLocalMinutes() const;
+
+    /**
      * @brief Check if door should open by schedule
      *
      * @return true if current time is past sunrise + offset
