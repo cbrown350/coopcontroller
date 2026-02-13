@@ -172,6 +172,7 @@ private:
     void readDallasTemperature(DallasTemperature* dallas, SensorData& sensor);
     void logWaterMeterPulse(const SensorData& sensor) const;
     void calculateFlowRate(SensorData& sensor) const;
+    void calculatePerPulseFlowRate(SensorData& sensor);
     void calculatePerPulseFlowRate(SensorData& sensor) const;
     
 public:

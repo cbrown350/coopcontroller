@@ -15,29 +15,10 @@ void IRAM_ATTR SensorManager::sensor1PulseISR() {
 void SensorManager::sensor1PulseISR() {
 #endif
     unsigned long currentTime = millis();
-    unsigned long prevPulseTime = sensor1.previous_pulse_time.load();
-
-    // Calculate per-pulse flow rate if enabled and we have a previous pulse
-    // Note: Use cached perPulseCalcEnabled_ and pulsesPerGallon for ISR safety (no SettingsManager calls)
-    if (perPulseCalcEnabled_ && prevPulseTime != 0) {
-        // Handle millis() rollover
-        unsigned long timeDiff;
-        if (currentTime >= prevPulseTime) {
-            timeDiff = currentTime - prevPulseTime;
-        } else {
-            timeDiff = (ULONG_MAX - prevPulseTime) + currentTime;
-        }
-
-        // Noise filtering: ignore very short pulses (< 10ms)
-        if (timeDiff >= 10 && pulsesPerGallon > 0.0f) {
-            // Calculate instantaneous flow rate: GPM = 60000 / (pulsesPerGallon * timeDiff_ms)
-            sensor1.flow_rate = 60000.0f / (pulsesPerGallon * static_cast<float>(timeDiff));
-        }
-    }
 
     sensor1.pulse_count++;
-    sensor1.previous_pulse_time.store(currentTime);
-    sensor1.last_pulse_time = currentTime;
+    sensor1.previous_pulse_time.store(sensor1.last_pulse_time.load());
+    sensor1.last_pulse_time.store(currentTime);
 }
 
 #ifdef ESP32
@@ -46,29 +27,10 @@ void IRAM_ATTR SensorManager::sensor2PulseISR() {
 void SensorManager::sensor2PulseISR() {
 #endif
     unsigned long currentTime = millis();
-    unsigned long prevPulseTime = sensor2.previous_pulse_time.load();
-
-    // Calculate per-pulse flow rate if enabled and we have a previous pulse
-    // Note: Use cached perPulseCalcEnabled_ and pulsesPerGallon for ISR safety (no SettingsManager calls)
-    if (perPulseCalcEnabled_ && prevPulseTime != 0) {
-        // Handle millis() rollover
-        unsigned long timeDiff;
-        if (currentTime >= prevPulseTime) {
-            timeDiff = currentTime - prevPulseTime;
-        } else {
-            timeDiff = (ULONG_MAX - prevPulseTime) + currentTime;
-        }
-
-        // Noise filtering: ignore very short pulses (< 10ms)
-        if (timeDiff >= 10 && pulsesPerGallon > 0.0f) {
-            // Calculate instantaneous flow rate: GPM = 60000 / (pulsesPerGallon * timeDiff_ms)
-            sensor2.flow_rate = 60000.0f / (pulsesPerGallon * static_cast<float>(timeDiff));
-        }
-    }
 
     sensor2.pulse_count++;
-    sensor2.previous_pulse_time.store(currentTime);
-    sensor2.last_pulse_time = currentTime;
+    sensor2.previous_pulse_time.store(sensor2.last_pulse_time.load());
+    sensor2.last_pulse_time.store(currentTime);
 }
 
 SensorManager::SensorManager()
@@ -148,24 +110,7 @@ void SensorManager::update() {
 
         // Use per-pulse calculation if enabled, otherwise use interval-based calculation
         if (settingsManager.getWaterMeterPerPulseCalculationEnabled()) {
-            // Check for no-flow timeout (5 seconds)
-            unsigned long currentTime = millis();
-            unsigned long lastPulseTime = sensor1.last_pulse_time.load();
-
-            if (lastPulseTime != 0) {
-                // Handle millis() rollover
-                unsigned long timeSinceLastPulse;
-                if (currentTime >= lastPulseTime) {
-                    timeSinceLastPulse = currentTime - lastPulseTime;
-                } else {
-                    timeSinceLastPulse = (ULONG_MAX - lastPulseTime) + currentTime;
-                }
-
-                // Set flow rate to 0 if no pulse for 5 seconds
-                if (timeSinceLastPulse > 5000) {
-                    sensor1.flow_rate = 0.0f;
-                }
-            }
+            calculatePerPulseFlowRate(sensor1);
         } else {
             calculateFlowRate(sensor1);
         }
@@ -182,24 +127,7 @@ void SensorManager::update() {
 
         // Use per-pulse calculation if enabled, otherwise use interval-based calculation
         if (settingsManager.getWaterMeterPerPulseCalculationEnabled()) {
-            // Check for no-flow timeout (5 seconds)
-            unsigned long currentTime = millis();
-            unsigned long lastPulseTime = sensor2.last_pulse_time.load();
-
-            if (lastPulseTime != 0) {
-                // Handle millis() rollover
-                unsigned long timeSinceLastPulse;
-                if (currentTime >= lastPulseTime) {
-                    timeSinceLastPulse = currentTime - lastPulseTime;
-                } else {
-                    timeSinceLastPulse = (ULONG_MAX - lastPulseTime) + currentTime;
-                }
-
-                // Set flow rate to 0 if no pulse for 5 seconds
-                if (timeSinceLastPulse > 5000) {
-                    sensor2.flow_rate = 0.0f;
-                }
-            }
+            calculatePerPulseFlowRate(sensor2);
         } else {
             calculateFlowRate(sensor2);
         }
@@ -296,6 +224,40 @@ void SensorManager::calculateFlowRate(SensorData& sensor) const {
         sensor.last_flow_calculation_time = currentTime;
         
         logger.logDebug(String("Flow rate calculation - Pulses: ") + String(pulses) + ", Time: " + String(timeDiff) + " ms, Rate: " + String(sensor.flow_rate) + " GPM");
+    }
+}
+
+void SensorManager::calculatePerPulseFlowRate(SensorData& sensor) {
+    unsigned long currentTime = millis();
+    unsigned long lastPulse = sensor.last_pulse_time.load();
+    unsigned long prevPulse = sensor.previous_pulse_time.load();
+
+    // Calculate flow rate from the two most recent pulse timestamps (set by ISR)
+    if (lastPulse != 0 && prevPulse != 0) {
+        unsigned long timeDiff;
+        if (lastPulse >= prevPulse) {
+            timeDiff = lastPulse - prevPulse;
+        } else {
+            timeDiff = (ULONG_MAX - prevPulse) + lastPulse;
+        }
+
+        if (timeDiff >= 10 && pulsesPerGallon > 0.0f) {
+            sensor.flow_rate = 60000.0f / (pulsesPerGallon * static_cast<float>(timeDiff));
+        }
+    }
+
+    // No-flow timeout: set flow rate to 0 if no pulse for 5 seconds
+    if (lastPulse != 0) {
+        unsigned long timeSinceLastPulse;
+        if (currentTime >= lastPulse) {
+            timeSinceLastPulse = currentTime - lastPulse;
+        } else {
+            timeSinceLastPulse = (ULONG_MAX - lastPulse) + currentTime;
+        }
+
+        if (timeSinceLastPulse > 5000) {
+            sensor.flow_rate = 0.0f;
+        }
     }
 }
 
