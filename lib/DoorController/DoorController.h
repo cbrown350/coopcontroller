@@ -167,6 +167,14 @@ private:
     void checkSchedule();
 
     /**
+     * @brief Check if door should auto-close after sunset
+     *
+     * Works independently of auto mode. Only triggers when
+     * door_auto_close_after_sunset_enabled is true.
+     */
+    void checkAutoCloseAfterSunset();
+
+    /**
      * @brief Get current local time in minutes since midnight
      *
      * Converts UTC system time to local time using timezone offset.

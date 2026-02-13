@@ -158,9 +158,13 @@ void DoorController::update() {
         setState(DoorState::FAULT);
     }
     
-    // Check automatic schedule
-    if (autoMode && (currentState == DoorState::IDLE || currentState == DoorState::OPEN || currentState == DoorState::CLOSED)) {
-        checkSchedule();
+    // Check automatic schedule (sunrise/sunset open/close requires autoMode)
+    if (currentState == DoorState::IDLE || currentState == DoorState::OPEN || currentState == DoorState::CLOSED) {
+        if (autoMode) {
+            checkSchedule();
+        }
+        // Auto-close after sunset works independently of autoMode
+        checkAutoCloseAfterSunset();
     }
 }
 
@@ -395,6 +399,22 @@ void DoorController::checkSchedule() {
     } else if (shouldCloseBySchedule() && currentPosition != DoorPosition::CLOSED) {
         logger.logInfo("Schedule: Closing door (sunset)");
         close(TriggerSource::SUNSET);
+    }
+}
+
+void DoorController::checkAutoCloseAfterSunset() {
+    if (lockoutEnabled) return;
+    if (!settingsManager.getDoorAutoCloseAfterSunsetEnabled()) return;
+    if (autoMode) return; // Already handled by checkSchedule when autoMode is on
+    if (currentPosition == DoorPosition::CLOSED) return;
+
+    int currentMinutes = getCurrentLocalMinutes();
+    if (currentMinutes < 0) return;
+
+    int autoCloseTime = sunriseSunset->getSunsetMinutes() + settingsManager.getDoorAutoCloseAfterSunsetMinutes();
+    if (currentMinutes >= autoCloseTime) {
+        logger.logInfo("Auto-close after sunset: Closing door");
+        close(TriggerSource::AUTO_CLOSE_SUNSET);
     }
 }
 
