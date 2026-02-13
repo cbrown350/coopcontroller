@@ -604,12 +604,9 @@ void setup() // NOSONAR - complexity ok
         
         webServer.loop();
 
-        // Periodic OTA update check (based on auto_update_enabled setting and interval)
-        static unsigned long lastUpdateCheck = 0;
-        if (currentTime - lastUpdateCheck >= 60000) { // Check eligibility every 60s
-            lastUpdateCheck = currentTime;
-            updateManager.update();
-        }
+        // OTA update: check for deferred install requests every loop,
+        // and periodic auto-update checks based on settings interval
+        updateManager.update();
 
         delay(10);
         

@@ -856,6 +856,7 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
               return false;
             }
           }
+          esp_task_wdt_reset();  // Feed watchdog during long downloads
           yield();  // Allow async web server to handle status requests
         }
       } else {

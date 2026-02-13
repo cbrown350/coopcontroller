@@ -1010,28 +1010,43 @@ Full over-the-air firmware and filesystem update system with GitHub Releases int
 3. **UpdateManager (lib/UpdateManager/)**
    - `checkForUpdates()` - fetches manifest JSON, parses with ArduinoJson, compares semantic versions
    - `installUpdate()` - streams firmware via httpGetStream, writes chunks via otaWrite, handles filesystem too
-   - `update()` - periodic auto-check based on settings interval
+   - `requestInstall()` - deferred install mechanism for web handler (sets flags, executed by main loop)
+   - `update()` - periodic auto-check based on settings interval, plus deferred install execution
    - `parseVersion()` / `isVersionNewer()` - semantic version comparison (major.minor.patch)
+   - Force update support: reinstall even when version is current
+   - Phase tracking: reports "firmware", "filesystem", or "complete" during install
    - NVS settings backup before filesystem flash
    - Status tracking: IDLE, CHECKING, AVAILABLE, CURRENT, DOWNLOADING, INSTALLING, COMPLETE, ERROR
 
 4. **REST API Endpoints**
    - `GET /update/check` (public) - triggers update check, returns manifest info
-   - `GET /update/status` (public) - returns current update status/progress
-   - `POST /update/install` (auth required) - starts firmware installation
+   - `GET /update/status` (public) - returns current update status/progress with phase info
+   - `POST /update/install` (auth required) - starts firmware installation, supports `force` and `skip_filesystem` params
    - OTA settings in `/update_settings`: auto_update_enabled, update_check_interval_hours, manifest_url
 
 5. **main.cpp Integration**
    - UpdateManager instance created and initialized after web server
-   - Periodic update eligibility check in main loop (every 60s)
+   - `updateManager.update()` called every loop iteration for deferred install responsiveness
 
-6. **Web UI (Update.tsx, Settings.tsx)**
+6. **HAL_ESP32 Reliability**
+   - Incomplete download detection in `httpGetStream` (content-length vs bytes downloaded)
+   - `yield()` after each chunk for AsyncWebServer responsiveness during downloads
+   - `esp_task_wdt_reset()` in download loop to prevent WDT reset during long filesystem downloads
+
+7. **Web UI (Update.tsx, Settings.tsx)**
    - Full OTA UI: check button, version comparison, install with confirmation dialog
+   - Force reinstall option when firmware is already up to date
    - Progress bar with real-time status polling during download/install
+   - Phase display (firmware vs filesystem) during update
    - Error display and ElegantOTA iframe fallback
    - Settings page: auto-update toggle, check interval input
 
-**Testing (67 tests):**
+8. **Bug Fixes**
+   - NVS key `"user_settings_json"` exceeded ESP32's 15-char limit; changed to `"json"`
+   - `restoreFromNVS()` only clears NVS backup after successful filesystem write
+   - Deferred install prevents web handler from blocking AsyncWebServer event loop
+
+**Testing (71 tests):**
 - Version parsing: valid semver, pre-release suffix, build metadata, invalid formats, edge cases
 - Version comparison: newer major/minor/patch, same version, older version, dev version handling
 - checkForUpdates: network failure, invalid JSON, missing fields, URL tracking, timing
@@ -1049,7 +1064,7 @@ Full over-the-air firmware and filesystem update system with GitHub Releases int
 - `web/src/Update.tsx` - Complete OTA UI
 - `web/src/Settings.tsx` - OTA settings section
 - `web/src/types.ts` - OTA settings types
-- `test/unit_desktop/test_UpdateManager/test_UpdateManager.cpp` - 67 tests
+- `test/unit_desktop/test_UpdateManager/test_UpdateManager.cpp` - 71 tests
 
 **Build Verification:**
 - ESP32: ✅ Firmware builds successfully

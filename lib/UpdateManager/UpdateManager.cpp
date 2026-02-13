@@ -28,6 +28,10 @@ void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
     current_operation_start_ = 0;
     last_error_message_ = "";
 
+    install_requested_ = false;
+    install_skip_filesystem_ = false;
+    install_force_ = false;
+
     device_version_ = firmwareVersion;
 
     logger.logDebug("UpdateManager initialized with version: " + device_version_);
@@ -309,11 +313,25 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
     hal_->restart();
 }
 
+void UpdateManager::requestInstall(bool skip_filesystem, bool force) {
+    install_requested_ = true;
+    install_skip_filesystem_ = skip_filesystem;
+    install_force_ = force;
+    logger.logInfo("Update install requested (deferred to main loop)");
+}
+
 void UpdateManager::update() {
     if (!hal_) return;
     if (status_ == UpdateStatus::DOWNLOADING || status_ == UpdateStatus::INSTALLING ||
         status_ == UpdateStatus::VERIFYING || status_ == UpdateStatus::CHECKING) {
         return; // Already busy
+    }
+
+    // Handle deferred install request from web handler
+    if (install_requested_) {
+        install_requested_ = false;
+        installUpdate(install_skip_filesystem_, install_force_);
+        return;
     }
 
     if (!settingsManager.getAutoUpdateEnabled()) return;

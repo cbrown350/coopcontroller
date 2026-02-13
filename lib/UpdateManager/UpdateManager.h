@@ -119,6 +119,11 @@ private:
     // Phase tracking
     String phase_;
 
+    // Deferred install request (set by web handler, executed by main loop)
+    bool install_requested_;
+    bool install_skip_filesystem_;
+    bool install_force_;
+
     /**
      * @brief Compare two semantic versions
      *
@@ -191,10 +196,19 @@ public:
     void installUpdate(bool skip_filesystem = false, bool force = false);
 
     /**
-     * @brief Periodic update check for main loop
+     * @brief Request deferred install (called from web handler)
+     *
+     * Sets a flag so installUpdate() runs from the main loop via update(),
+     * allowing the web server to respond to status poll requests during download.
+     */
+    void requestInstall(bool skip_filesystem = false, bool force = false);
+
+    /**
+     * @brief Periodic update check and deferred install for main loop
      *
      * Call from main loop. Checks for updates automatically based on
      * auto_update_enabled setting and check interval.
+     * Also executes deferred install requests.
      */
     void update();
 

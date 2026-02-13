@@ -1029,11 +1029,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       return;
                   }
 
-                  // Respond before starting (install may reboot)
+                  // Request deferred install (runs from main loop so web server can serve status)
+                  updateManager_->requestInstall(skipFs, force);
+
                   response->send(200, "application/json", R"({"status":"installing","message":"Update starting..."})");
 
-                  // Start installation (will reboot on success)
-                  updateManager_->installUpdate(skipFs, force);
               });
 
     // Factory reset endpoint
