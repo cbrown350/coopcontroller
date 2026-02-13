@@ -1438,3 +1438,57 @@ TEST_F(ScheduledCyclesTest, SettingsConstraintsEnforced) {
   settingsManager.setPumpMinCycleRunSeconds(300);
   EXPECT_EQ(settingsManager.getPumpMinCycleRunSeconds(), 300u);
 }
+
+TEST_F(ScheduledCyclesTest, GracePeriodRespectedAfterScheduledCycleEnds) {
+  // This tests the bug fix where grace period wasn't being respected when
+  // a scheduled maintenance cycle completed, causing immediate flow warnings
+
+  enableScheduledCycles(3, 120); // 3 cycles/day, 120s each
+  settingsManager.setPumpOffFlowGracePeriodSeconds(30); // 30s grace period
+  setTemperature(40.0f); // Above threshold, pump idle
+  pumpController.update();
+
+  // Advance to trigger scheduled cycle
+  advanceTime(expectedIntervalMs(3) + 1000);
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isPumpOn());
+  EXPECT_TRUE(pumpController.isScheduledCycleActive());
+
+  // Advance to just before cycle completes
+  advanceTime(119000); // 119 seconds
+  pumpController.update();
+  EXPECT_TRUE(pumpController.isPumpOn());
+
+  // Complete the scheduled cycle
+  advanceTime(2000); // Total: 121 seconds
+  pumpController.update();
+
+  // Pump should now be off
+  EXPECT_FALSE(pumpController.isPumpOn());
+  EXPECT_FALSE(pumpController.isScheduledCycleActive());
+
+  // Simulate residual flow immediately after pump stops
+  // (water still flowing through pipes)
+  setFlowRate(1.5f);
+  advanceTime(100); // Very short time after pump stops
+  pumpController.update();
+
+  // Should NOT detect pump-off flow yet (still in grace period)
+  EXPECT_FALSE(pumpController.getPumpOffFlowDetected());
+
+  // Advance time within grace period with continued flow
+  advanceTime(15000); // 15.1s elapsed since pump stopped
+  setFlowRate(1.5f);
+  pumpController.update();
+
+  // Still in grace period (< 30s)
+  EXPECT_FALSE(pumpController.getPumpOffFlowDetected());
+
+  // Now advance past grace period with flow
+  advanceTime(16000); // Total: 31.1s since pump stopped
+  setFlowRate(1.5f);
+  pumpController.update();
+
+  // Now flow should be detected (past grace period)
+  EXPECT_TRUE(pumpController.getPumpOffFlowDetected());
+}

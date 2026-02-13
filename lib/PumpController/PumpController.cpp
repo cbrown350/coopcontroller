@@ -515,13 +515,21 @@ void PumpController::checkPumpOffFlow(unsigned long currentTime) {
     
     unsigned long gracePeriodMs = (unsigned long)pump_off_flow_grace_period_seconds * 1000UL;
     
-    // Handle millis() rollover
+    // Handle millis() rollover and same-cycle timing
     unsigned long timeSinceOff = 0;
     if (currentTime >= pump_turned_off_time) {
         timeSinceOff = currentTime - pump_turned_off_time;
     } else {
-        // Rollover occurred
-        timeSinceOff = (ULONG_MAX - pump_turned_off_time) + currentTime;
+        // Check if this is a real rollover or just same-cycle timing
+        // (pump turned off during current update() after currentTime was captured)
+        unsigned long diff = pump_turned_off_time - currentTime;
+        if (diff < 1000) {
+            // Small difference means pump just turned off in this cycle
+            timeSinceOff = 0;
+        } else {
+            // Large difference means real millis() rollover occurred (~49 days)
+            timeSinceOff = (ULONG_MAX - pump_turned_off_time) + currentTime;
+        }
     }
     
     // Only check after grace period has elapsed
