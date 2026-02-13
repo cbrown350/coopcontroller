@@ -7,20 +7,21 @@
 
 using namespace fakeit;
 
-// Valid manifest JSON for tests
+// Valid manifest JSON for tests (empty sha256 to skip verification in unit tests)
+// Note: SHA256 verification is tested separately with known-good hashes
 static const char* VALID_MANIFEST = R"({
   "latest_version": "2.0.0",
   "firmware": {
     "version": "2.0.0",
     "url": "https://github.com/test/repo/releases/download/v2.0.0/firmware.bin",
     "size_bytes": 1048576,
-    "sha256": "abc123"
+    "sha256": ""
   },
   "filesystem": {
     "version": "2.0.0",
     "url": "https://github.com/test/repo/releases/download/v2.0.0/littlefs.bin",
     "size_bytes": 524288,
-    "sha256": "def456"
+    "sha256": ""
   },
   "release_date": 1707549000
 })";
@@ -31,13 +32,13 @@ static const char* MANIFEST_SAME_VERSION = R"({
     "version": "1.0.0",
     "url": "https://github.com/test/repo/releases/download/v1.0.0/firmware.bin",
     "size_bytes": 1048576,
-    "sha256": "abc123"
+    "sha256": ""
   },
   "filesystem": {
     "version": "1.0.0",
     "url": "https://github.com/test/repo/releases/download/v1.0.0/littlefs.bin",
     "size_bytes": 524288,
-    "sha256": "def456"
+    "sha256": ""
   },
   "release_date": 1707549000
 })";

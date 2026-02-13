@@ -14,7 +14,7 @@
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
 | **Current build** | RAM 17.6%, Flash 81.2% (1,436,321 bytes) |
-| **Tests** | 575/575 passing (11 components) |
+| **Tests** | 576/576 passing (11 components) |
 | **Web access** | `http://coopcontroller.local` |
 
 ---
@@ -112,8 +112,16 @@ See [Feature Tracker](docs/feature-tracker.md) for full details and planned road
 - **Impact:** Firmware and filesystem updates now verified before installation; abort on mismatch
 - **Files Changed:** `lib/UpdateManager/UpdateManager.h`, `lib/UpdateManager/UpdateManager.cpp`
 - **Performance:** +265 bytes RAM, ~130ms verification overhead (negligible)
-- **Testing:** ✅ Builds passing (firmware + web UI), ready for deployment
+- **Testing:** ✅ Builds passing (firmware + web UI + desktop unit tests), ready for deployment
 - **Documentation:** See [SHA256 Security Audit](docs/SHA256_SECURITY_AUDIT_2026-02-13.md) for full analysis
+
+### ✅ Desktop Unit Test SHA256 Mock - February 13, 2026
+
+**Issue:** Desktop unit tests failed to compile after SHA256 verification was added to UpdateManager, as the `mbedtls/sha256.h` header is ESP32-specific and unavailable in the native desktop test environment.
+
+**Fix:** Created a portable SHA256 mock implementation at `test/unit_desktop/desktop_mocks/mbedtls/sha256.h` that provides the same API as mbedTLS for desktop testing.
+
+**Result:** All 576 desktop unit tests now pass, including test_CoopControllerWebServer and test_UpdateManager.
 
 **Remaining Security Work:**
 - ⚠️ Fix TLS certificate validation (currently disabled via `setInsecure()`)
