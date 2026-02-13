@@ -59,7 +59,7 @@ struct UpdateManifest {
     String latest_version;
     VersionInfo firmware;
     VersionInfo filesystem;
-    uint64_t release_date;
+    String release_date;
     String changelog;
 };
 

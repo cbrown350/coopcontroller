@@ -142,7 +142,7 @@ void UpdateManager::checkForUpdates() {
 
     // Extract manifest data
     manifest_.latest_version = doc["latest_version"].as<String>();
-    manifest_.release_date = doc["release_date"].as<uint64_t>();
+    manifest_.release_date = doc["release_date"].as<String>();
 
     if (doc["firmware"].is<JsonObject>()) {
         manifest_.firmware.version = doc["firmware"]["version"].as<String>();
@@ -401,6 +401,9 @@ JsonDocument UpdateManager::getCheckResponseJson() const {
     filesystem["version"] = manifest_.filesystem.version;
     filesystem["url"] = manifest_.filesystem.url;
     filesystem["size_bytes"] = manifest_.filesystem.size_bytes;
+
+    doc["release_date"] = manifest_.release_date;
+    doc["github_repo"] = String(githubRepo);
 
     return doc;
 }

@@ -16,7 +16,7 @@ This document tracks all features: completed, in-progress, and planned.
 
 **Current Build:** RAM 17.6% (57,648 bytes), Flash 81.2% (1,436,321 bytes)
 
-**Latest Build (2026-02-12):** Firmware and web UI builds successful
+**Latest Build (2026-02-13):** Firmware and web UI builds successful
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. Actual functionality hasn't been checked for correctness.
 
@@ -42,6 +42,32 @@ This document tracks all features: completed, in-progress, and planned.
 ---
 
 ## Completed Features
+
+### Release Date Display on Update Page ✅
+
+**Implemented:** 2026-02-13
+**Status:** Complete
+
+**Summary:**
+The OTA update check now displays the release date from the version manifest alongside the available version number, allowing users to compare it against the current firmware/filesystem build dates shown on the page.
+
+**Key Changes:**
+- Fixed `UpdateManifest.release_date` type from `uint64_t` to `String` to correctly parse ISO 8601 date strings from the manifest
+- Added `release_date` field to `/update/check` JSON response via `getCheckResponseJson()`
+- Web UI formats the ISO 8601 date into human-readable format matching build date style (e.g., "Feb 13 2026 06:47:52 UTC")
+- Added `release_date` to `UpdateCheckResult` TypeScript interface
+
+**Files Modified:**
+- `lib/UpdateManager/UpdateManager.h` - Changed release_date type to String
+- `lib/UpdateManager/UpdateManager.cpp` - Parse as String, include in check response JSON
+- `web/src/Update.tsx` - Added formatReleaseDate helper and release date display
+- `docs/ota-update-system.md` - Updated API response example
+
+**Build Verification:**
+- ESP32: ✅ Firmware builds successfully
+- Web UI: ✅ TypeScript/Vite compilation successful
+
+---
 
 ### Auto-Close After Sunset Schedule Bug Fix ✅
 

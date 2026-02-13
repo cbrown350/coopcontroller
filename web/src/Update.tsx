@@ -20,6 +20,8 @@ interface UpdateCheckResult {
   last_check_time: number;
   firmware: { version: string; url: string; size_bytes: number };
   filesystem: { version: string; url: string; size_bytes: number };
+  release_date?: string;
+  github_repo?: string;
 }
 
 interface UpdateStatus {
@@ -143,6 +145,14 @@ function Update() {
     return s === 'downloading' || s === 'verifying' || s === 'installing' || s === 'checking';
   };
 
+  const formatReleaseDate = (isoDate: string) => {
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return isoDate;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${months[d.getUTCMonth()]} ${pad(d.getUTCDate())} ${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
+  };
+
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -208,7 +218,32 @@ function Update() {
             <div class="card bg-base-200 card-sm shadow-sm mb-4">
               <div class="card-body">
                 <p>Current Version: <span class="font-mono">{checkResult()!.current_version}</span></p>
-                <p>Available Version: <span class="font-mono">{checkResult()!.available_version}</span></p>
+                <p>Available Version:{' '}
+                  <Show when={checkResult()?.github_repo || versionInfo()?.github_repo} fallback={<span class="font-mono">{checkResult()!.available_version}</span>}>
+                    <a
+                      href={`https://github.com/${(checkResult()?.github_repo || versionInfo()?.github_repo)}/releases/tag/v${checkResult()!.available_version}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="link link-primary font-mono"
+                    >
+                      {checkResult()!.available_version}
+                    </a>
+                  </Show>
+                </p>
+                <Show when={checkResult()!.release_date}>
+                  <p>Release Date: <span class="font-mono">{formatReleaseDate(checkResult()!.release_date!)}</span>
+                    <Show when={checkResult()?.github_repo || versionInfo()?.github_repo}>
+                      {' '}<a
+                        href={`https://github.com/${(checkResult()?.github_repo || versionInfo()?.github_repo)}/releases/tag/v${checkResult()!.available_version}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="link link-primary text-sm"
+                      >
+                        (View Release)
+                      </a>
+                    </Show>
+                  </p>
+                </Show>
                 <Show when={checkResult()!.update_available}>
                   <div role="alert" class="alert alert-info mt-2">
                     A new update is available!

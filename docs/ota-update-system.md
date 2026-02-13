@@ -107,7 +107,8 @@ Check for available updates without installing.
       "url": "https://github.com/.../littlefs.bin",
       "size_bytes": 262144
     }
-  }
+  },
+  "release_date": "2026-02-13T06:47:52+00:00"
 }
 ```
 
