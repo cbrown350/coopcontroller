@@ -851,7 +851,7 @@ TEST_F(UpdateManagerTest, GetManifest_ReturnsManifestData) {
     EXPECT_EQ(manifest.latest_version, "2.0.0");
     EXPECT_EQ(manifest.firmware.size_bytes, (uint32_t)1048576);
     EXPECT_EQ(manifest.filesystem.size_bytes, (uint32_t)524288);
-    EXPECT_EQ(manifest.release_date, (uint64_t)1707549000);
+    EXPECT_EQ(manifest.release_date, "1707549000");
 }
 
 TEST_F(UpdateManagerTest, ToJson_PopulatesFields) {
