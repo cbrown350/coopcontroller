@@ -684,7 +684,7 @@ bool DoorController::shouldOpenBySchedule() const {
     if (now < 0) return false;
 
     struct tm timeinfo {};                          // storage for localtime
-    
+
 #if defined(_WIN32)
     if (localtime_s(&timeinfo, &now) != 0) return false;
 #elif defined(ARDUINO) && !defined(ESP32)
@@ -699,7 +699,17 @@ bool DoorController::shouldOpenBySchedule() const {
     int currentMinutes = ti->tm_hour * 60 + ti->tm_min;
     int openTime = sunriseSunset->getSunriseMinutes() + sunriseOffsetMinutes;
 
-    return (currentMinutes >= openTime && currentPosition != DoorPosition::OPEN);
+    // Calculate the close time (must match shouldCloseBySchedule logic)
+    int closeTime = sunriseSunset->getSunsetMinutes() + sunsetOffsetMinutes;
+    if (settingsManager.getDoorAutoCloseAfterSunsetEnabled()) {
+        int autoCloseTime = sunriseSunset->getSunsetMinutes() + settingsManager.getDoorAutoCloseAfterSunsetMinutes();
+        closeTime = std::max(closeTime, autoCloseTime);
+    }
+
+    // Only open during the daytime window: after sunrise but before close time
+    // Without this upper bound, the open schedule would re-open the door after
+    // auto-close fires at sunset, creating an open/close loop
+    return (currentMinutes >= openTime && currentMinutes < closeTime && currentPosition != DoorPosition::OPEN);
 }
 
 bool DoorController::shouldCloseBySchedule() const {

@@ -16,7 +16,7 @@ This document tracks all features: completed, in-progress, and planned.
 
 **Current Build:** RAM 17.6% (57,648 bytes), Flash 81.2% (1,436,321 bytes)
 
-**Latest Build (2026-02-11):** Firmware and web UI builds successful
+**Latest Build (2026-02-12):** Firmware and web UI builds successful
 
 **Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. Actual functionality hasn't been checked for correctness.
 
@@ -42,6 +42,30 @@ This document tracks all features: completed, in-progress, and planned.
 ---
 
 ## Completed Features
+
+### Auto-Close After Sunset Schedule Bug Fix ✅
+
+**Fixed:** 2026-02-12
+**Status:** Complete and tested
+
+**Summary:**
+Fixed a bug where the auto-close after sunset feature didn't work because the sunrise open schedule would immediately re-open the door after it was closed.
+
+**Root Cause:**
+`shouldOpenBySchedule()` had no upper time bound - it returned `true` whenever `currentMinutes >= sunrise`, even after sunset. When auto-close fired and closed the door, `shouldOpenBySchedule()` was still true (it's after sunrise and the door is no longer open), so `checkSchedule()` immediately re-opened the door on the next update cycle, creating an open/close loop.
+
+**Fix:**
+Added an upper time bound to `shouldOpenBySchedule()` so it only returns true when `currentMinutes >= openTime && currentMinutes < closeTime`. The close time calculation mirrors the logic in `shouldCloseBySchedule()`, including the auto-close after sunset delay when enabled. This ensures the sunrise schedule doesn't fight the sunset/auto-close schedule.
+
+**Files Modified:**
+- `lib/DoorController/DoorController.cpp` - Added close time upper bound to `shouldOpenBySchedule()`
+
+**Build Verification:**
+- ESP32: ✅ Firmware builds successfully
+- Web UI: ✅ TypeScript/Vite compilation successful
+- Tests: ✅ 575/575 passing
+
+---
 
 ### Configurable Device Hostname ✅
 
@@ -739,7 +763,7 @@ Buzzer sounds on fault conditions (pump failure, sensor error, door fault). Conf
 **Status:** Complete
 
 **Summary:**
-Settings `door_auto_close_after_sunset_enabled` and `door_auto_close_after_sunset_minutes` implemented. Door auto-closes X minutes after sunset. Web UI toggle and delay input in Settings page. Logic in DoorController::shouldCloseBySchedule().
+Settings `door_auto_close_after_sunset_enabled` and `door_auto_close_after_sunset_minutes` implemented. Door auto-closes X minutes after sunset. Web UI toggle and delay input in Settings page. Logic in DoorController::shouldCloseBySchedule(). **Bug fix (2026-02-12):** Fixed sunrise schedule re-opening door after auto-close by adding upper time bound to `shouldOpenBySchedule()`.
 
 ---
 
