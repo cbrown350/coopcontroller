@@ -65,6 +65,8 @@ private:
   mutable UUID uuidGenerator;                ///< UUID generator for unique entry IDs
 
   SimpleSyslog* syslog;                      ///< Syslog client for remote logging
+  String syslogServerStr_;                   ///< Persistent copy of syslog server (SimpleSyslog stores raw pointer)
+  String syslogHostnameStr_;                 ///< Persistent copy of hostname (SimpleSyslog stores raw pointer)
 
   LogLevel currentLogLevel_;                 ///< Current minimum log level
 

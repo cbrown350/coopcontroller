@@ -208,6 +208,13 @@ void setup() // NOSONAR - complexity ok
 
     settingsManager.begin(&hal);
     settingsManager.load();
+    
+    // Reconfigure syslog from runtime settings (overrides compile-time defaults if configured)
+    if (settingsManager.getSyslogServer().length() > 0) {
+        logger.reconfigureSyslog(settingsManager.getSyslogServer(),
+                                settingsManager.getSyslogPort(),
+                                settingsManager.getHostname().c_str());
+    }
 
     // Set log level from settings
     logger.setLogLevel(logger.stringToLogLevel(settingsManager.getLogLevel()));
@@ -257,13 +264,6 @@ void setup() // NOSONAR - complexity ok
     // Set water meter calibration from settings
     sensorManager.setPulsesPerGallon(settingsManager.getPulsesPerGallon());
     sensorManager.setFlowCalculationIntervalSeconds(settingsManager.getFlowCalculationIntervalSeconds());
-    
-    // Reconfigure syslog from runtime settings (overrides compile-time defaults if configured)
-    if (settingsManager.getSyslogServer().length() > 0) {
-        logger.reconfigureSyslog(settingsManager.getSyslogServer(),
-                                settingsManager.getSyslogPort(),
-                                settingsManager.getHostname().c_str());
-    }
     
     logger.logInfo("Coop controller components initialized");
 

@@ -5,6 +5,7 @@
 
 #include "IHAL.h"
 
+#include <stdint.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
@@ -122,8 +123,8 @@ struct user_settings // NOSONAR
     // SYSLOG CONFIGURATION
     // ========================================================================
 
-    String syslog_server = "";              ///< Syslog server address (empty = use compile-time default)
-    int    syslog_port = 514;               ///< Syslog server port (default: 514)
+    String syslog_server = syslogServer;              ///< Syslog server address (empty = use compile-time default)
+    uint16_t    syslog_port = (uint16_t)atoi(syslogPort);   ///< Syslog server port (default: 514)
 
     // ========================================================================
     // FLOW CALCULATION INTERVAL

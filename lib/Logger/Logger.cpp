@@ -46,7 +46,9 @@ void Logger::reconfigureSyslog(const String& server, int port, const char* hostn
   }
 
   if (server.length() > 0 && port > 0) {
-    syslog = new SimpleSyslog(hostname, "CoopController", server.c_str(), (uint16_t)port, 400); // NOSONAR
+    syslogServerStr_ = server;
+    syslogHostnameStr_ = hostname;
+    syslog = new SimpleSyslog(syslogHostnameStr_.c_str(), "CoopController", syslogServerStr_.c_str(), (uint16_t)port, 400); // NOSONAR
     logInfo(String("Syslog reconfigured: ") + server + ":" + String(port));
   } else {
     logInfo("Syslog disabled (no server configured)");

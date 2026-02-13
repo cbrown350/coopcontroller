@@ -805,7 +805,8 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.api_password = doc["api_password"] | defaultSettings.api_password;
 
     // Load syslog configuration
-    if (doc["syslog_server"].is<const char*>()) settings.syslog_server = doc["syslog_server"].as<String>();
+    if (doc["syslog_server"].is<const char*>() && strlen(doc["syslog_server"].as<const char*>()) > 0) settings.syslog_server = doc["syslog_server"].as<String>();
+    else settings.syslog_server = defaultSettings.syslog_server;
     settings.syslog_port = doc["syslog_port"] | defaultSettings.syslog_port;
 
     // Load flow calculation interval

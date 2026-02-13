@@ -51,7 +51,7 @@ static inline const char* const githubRepo __attribute__((unused)) = (strcmp(TOS
 
 
 static inline const char* const syslogServer __attribute__((unused)) = (strcmp(TOSTRING(SYSLOG_SERVER), "") == 0 || strcmp(TOSTRING(SYSLOG_SERVER), "1") == 0) ? "" : TOSTRING(SYSLOG_SERVER);
-static inline const char* const syslogPort __attribute__((unused)) = (strcmp(TOSTRING(SYSLOG_PORT), "") == 0 || strcmp(TOSTRING(SYSLOG_PORT), "1") == 0) ? "" : TOSTRING(SYSLOG_PORT);
+static inline const char* const syslogPort __attribute__((unused)) = (strcmp(TOSTRING(SYSLOG_PORT), "") == 0 || strcmp(TOSTRING(SYSLOG_PORT), "1") == 0) ? "514" : TOSTRING(SYSLOG_PORT);
 
 static inline const char* const hostName __attribute__((unused)) = (strcmp(TOSTRING(HOST_NAME), "") == 0) ? "coopcontroller" : TOSTRING(HOST_NAME);
 static inline const char* const otaPasswd __attribute__((unused)) = (strcmp(TOSTRING(OTA_PASSWD), "") == 0 || strcmp(TOSTRING(OTA_PASSWD), "1") == 0) ? "" : TOSTRING(OTA_PASSWD);
