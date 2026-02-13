@@ -243,7 +243,7 @@ void setup() // NOSONAR - complexity ok
     sensorManager.begin(TEMP_METER_PIN, TEMP_METER_2_PIN);
     pumpController.begin(&sensorManager, &sensorManager, OUT_PUMP_PIN);
     buzzerController.begin(BUZZER_B_PIN);
-    wifiController.begin(&hal, &settingsManager, &buzzerController, hostName, apPasswd);
+    wifiController.begin(&hal, &settingsManager, &buzzerController, apPasswd);
     doorController.begin(&buzzerController, &sunriseSunset);
     doorController.setLockoutEnabled(settingsManager.getDoorLockoutEnabled());
     doorController.setAutoCalcTimeoutEnabled(settingsManager.getDoorTimeoutAutoCalcEnabled());
@@ -262,7 +262,7 @@ void setup() // NOSONAR - complexity ok
     if (settingsManager.getSyslogServer().length() > 0) {
         logger.reconfigureSyslog(settingsManager.getSyslogServer(),
                                 settingsManager.getSyslogPort(),
-                                hostName);
+                                settingsManager.getHostname().c_str());
     }
     
     logger.logInfo("Coop controller components initialized");

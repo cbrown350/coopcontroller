@@ -40,8 +40,6 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
               [](IWebRequest *request, IWebResponse *response)
               {
                   String jsonResponse = settingsManager.toJson(false);
-                  // add hostName
-                  jsonResponse.replace("}", R"(,"hostname":")" + String(hostName) + R"("})");
                   response->send(200, "application/json", jsonResponse.c_str());
               });
 
@@ -158,6 +156,10 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                   if (jsonObj["wifi_bssid_preference"].is<const char*>()) {
                       settingsManager.setWifiBssidPreference(jsonObj["wifi_bssid_preference"].as<String>());
+                  }
+
+                  if (jsonObj["hostname"].is<const char*>()) {
+                      settingsManager.setHostname(jsonObj["hostname"].as<String>());
                   }
 
                   // Handle buzzer settings
@@ -310,7 +312,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   if (syslogChanged) {
                       logger.reconfigureSyslog(settingsManager.getSyslogServer(),
                                               settingsManager.getSyslogPort(),
-                                              hostName);
+                                              settingsManager.getHostname().c_str());
                   }
 
                   // Handle flow calculation interval
@@ -1227,8 +1229,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     
         
     // Setup ArduinoOTA - Note: ArduinoOTA is ESP32-specific, not part of HAL
-    if (hostName && strlen(hostName) > 0) {
-        ArduinoOTA.setHostname(hostName); // Need to set hostname in all places for mDNS to work
+    if (settingsManager.getHostname().length() > 0) {
+        ArduinoOTA.setHostname(settingsManager.getHostname().c_str()); // Need to set hostname in all places for mDNS to work
     }
     if (otaPasswd && strlen(otaPasswd) > 0) {
         ArduinoOTA.setPassword(otaPasswd); // Optional for authentication

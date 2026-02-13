@@ -16,6 +16,7 @@ Get current system settings. **Public** (password field excluded for security).
 
 ```json
 {
+  "hostname": "CoopController",
   "ssid": "MyNetwork",
   "ap_mode": false,
   "enabled": true,
@@ -44,6 +45,7 @@ Update system settings. Only provided fields are updated.
 
 ```json
 {
+  "hostname": "MyCoopController",
   "ssid": "NewNetwork",
   "passwd": "NewPassword",
   "temp_threshold_on_f": 32.0,
@@ -54,7 +56,7 @@ Update system settings. Only provided fields are updated.
 
 **Response:** `200 OK` with "ok" text.
 
-**Note:** WiFi settings (ssid, passwd, ap_mode) trigger system restart after save.
+**Note:** WiFi settings (ssid, passwd, ap_mode) trigger system restart after save. Hostname changes take effect immediately for most uses, but mDNS and WiFi AP name changes require device restart.
 
 ---
 

@@ -30,6 +30,7 @@
   "pump_min_daily_cycles": 3,
   "pump_min_cycle_run_seconds": 120,
   "watchdog_timeout_seconds": 30,
+  "hostname": "CoopController",
   "wifi_led_enabled": true,
   "telegram_bot_token": "",
   "telegram_chat_ids": [],

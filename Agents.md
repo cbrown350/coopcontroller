@@ -83,6 +83,7 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
+- Configurable Device Hostname (user-editable setting in web UI, stored in SettingsManager, used for mDNS/WiFi AP/syslog/ArduinoOTA, device restart required, defaults: "CoopController" or "CoopHWEmulator")
 - OTA Update System Complete (full OTA: manifest check, streaming firmware/filesystem download, ESP32 Update.h flash, NVS settings backup, redirect handling, REST API endpoints, web UI with progress, force reinstall option, 71 tests)
 - NVS Settings Preservation for OTA Updates (backup to NVS before filesystem flash, auto-restore on boot, 3 new HAL NVS methods, OTA settings serialization fix, 14 new tests)
 - Git Commit SHA on Update Page (clickable link to GitHub commit, build flag pipeline)

@@ -11,11 +11,10 @@
 #define WIFI_RECONNECT_TIMEOUT 10000  // Wait 10 seconds for reconnection
 
 
-void WifiController::begin(IHAL* hal, SettingsManager* settings, BuzzerController* buzzer, const char* _hostName, const char* _apPasswd) {
+void WifiController::begin(IHAL* hal, SettingsManager* settings, BuzzerController* buzzer, const char* _apPasswd) {
     _hal = hal;
     settingsManager_ = settings;
     buzzerController_ = buzzer;
-    hostName_ = _hostName;
     apPasswd_ = _apPasswd;
     bssidReconnectAttempt_ = false;
 
@@ -137,10 +136,10 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
     if (settingsManager_->isAPMode()) {
         logger.logInfo("Starting AP mode for " + String(settingsManager_->getWifiAPDurationMinutes()) + " minutes");
         if (apPasswd_ && strlen(apPasswd_) > 0) {
-            _hal->wifiBeginAP(hostName_, apPasswd_);
+            _hal->wifiBeginAP(settingsManager_->getHostname().c_str(), apPasswd_);
             logger.logDebug("AP password configured");
         } else {
-            _hal->wifiBeginAP(hostName_, (const char*)nullptr);
+            _hal->wifiBeginAP(settingsManager_->getHostname().c_str(), (const char*)nullptr);
         }
         // Note: WiFi.softAPsetHostname() not available in HAL - using hostname from wifiBeginAP
         logger.logInfo("AP mode started, IP address: " + _hal->wifiGetAPIP());
@@ -165,9 +164,9 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
         }
         
         // Note: WiFiClass::setHostname() not available in HAL - hostname handled in wifiBegin
-        if (hostName_ && strlen(hostName_) > 0) {
-            _hal->wifiSetHostname(hostName_); // Need to set hostname in all places for mDNS to work
-            logger.logDebug("Hostname set to: " + String(hostName_));
+        if (settingsManager_->getHostname().length() > 0) {
+            _hal->wifiSetHostname(settingsManager_->getHostname().c_str()); // Need to set hostname in all places for mDNS to work
+            logger.logDebug("Hostname set to: " + String(settingsManager_->getHostname().c_str()));
         }
         
         // Disable auto-reconnect and persistent storage - credentials managed by settingsManager
@@ -231,15 +230,15 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             logger.logInfo("MAC Address: " + _hal->wifiGetMacAddress());
             isInAPMode_ = false;
             
-            if (hostName_ && strlen(hostName_) > 0) {
+            if (settingsManager_->getHostname().length() > 0) {
                 int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !_hal->mdnsBegin(hostName_)) { // NOSONAR - nesting ok
+                while(mDNSRetries > 0 && !_hal->mdnsBegin(settingsManager_->getHostname().c_str())) { // NOSONAR - nesting ok
                     logger.logDebug("Starting mDNS...");
                     delay(1000);
                     mDNSRetries--;
                 }
                 
-                logger.logDebug("mDNS started"); 
+                logger.logDebug("mDNS started: http://" + settingsManager_->getHostname() + ".local"); 
             }
 
             // Mark that WiFi has successfully connected at least once
@@ -347,15 +346,15 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
                 buzzerController_->clearAlert(AlertType::WIFI_DISCONNECTED);
             }
             
-            if (hostName_ && strlen(hostName_) > 0) {
+            if (settingsManager_->getHostname().length() > 0) {
                 int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !_hal->mdnsBegin(hostName_)) { // NOSONAR - nesting ok
+                while(mDNSRetries > 0 && !_hal->mdnsBegin(settingsManager_->getHostname().c_str())) { // NOSONAR - nesting ok
                     logger.logDebug("Starting mDNS...");
                     delay(1000);
                     mDNSRetries--;
                 }
                 
-                logger.logDebug("mDNS started"); 
+                logger.logDebug("mDNS started: http://" + settingsManager_->getHostname() + ".local"); 
             }
 
             // Mark that WiFi has successfully connected at least once

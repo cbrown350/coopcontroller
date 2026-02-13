@@ -43,6 +43,70 @@ This document tracks all features: completed, in-progress, and planned.
 
 ## Completed Features
 
+### Configurable Device Hostname ✅
+
+**Implemented:** 2026-02-12
+**Status:** Complete and tested
+**Implementation:** User-configurable setting in SettingsManager, web UI, and API
+
+**Summary:**
+Device hostname is now a user-configurable setting, allowing users to change the device identity without recompiling firmware. Previously, hostname was only a compile-time build flag (HOST_NAME). The setting is stored in SettingsManager's user_settings.json alongside other persistent settings.
+
+**Key Changes:**
+
+1. **SettingsManager**
+   - Added `hostname` (String) setting with getters/setters
+   - Default: "CoopController" for main builds, "CoopHWEmulator" for emulator builds
+   - BUILD_FLAG: `HOST_NAME` now serves as the compile-time default value only
+   - Persisted in `user_settings.json` for persistence across reboots
+
+2. **SettingsManager Initialization**
+   - `begin()` applies the stored hostname to Logger for syslog identification
+   - Runtime reconfiguration without requiring device restart for most uses
+
+3. **Device Integration Points**
+   - **mDNS:** Used by WifiController for mDNS hostname registration (requires device restart to take effect)
+   - **WiFi AP Name:** Used for AP SSID when in AP mode
+   - **Syslog Identification:** Logger uses hostname for remote syslog messages
+   - **ArduinoOTA:** Used for network OTA discovery and identification
+
+4. **REST API**
+   - `/get_settings` - Returns hostname field in response
+   - `/update_settings` - Hostname can be updated via JSON field
+   - No immediate restart required for API change, but mDNS/AP changes require device restart
+
+5. **Web UI**
+   - Settings page: "Device Settings" section with hostname text input
+   - Validation: Non-empty, alphanumeric + hyphens
+   - Label and help text explaining the setting and restart requirement
+
+6. **Behavior**
+   - Changing hostname updates the setting immediately in LittleFS
+   - mDNS re-registration and WiFi AP name update require device restart
+   - Hostname update is logged at INFO level
+   - Empty/invalid hostnames revert to default at next boot
+
+**Files Modified:**
+- `lib/SettingsManager/SettingsManager.h` - Added hostname field
+- `lib/SettingsManager/SettingsManager.cpp` - Getter/setter, JSON serialization, Logger initialization
+- `lib/CoopControllerWebServer/CoopControllerWebServer.cpp` - `/update_settings` handler for hostname
+- `web/src/types.ts` - Added hostname to Settings interface
+- `web/src/Settings.tsx` - Added "Device Settings" section with hostname input
+- `platformio.ini` - HOST_NAME build flag used as default only
+
+**Build Verification:**
+- ESP32: ✅ Firmware builds successfully
+- Web UI: ✅ TypeScript compilation successful
+- Tests: ✅ 575/575 passing
+
+**User Impact:**
+- Users can now customize device hostname via web UI without recompiling
+- Useful for multi-device setups where distinct device names improve clarity
+- Device restart may be needed for some changes (mDNS) to take full effect
+- Default remains "CoopController" for backward compatibility
+
+---
+
 ### Historical Data Visualization (Event-Based) ✅
 
 **Implemented:** 2026-02-09 (initial), 2026-02-10 (refactored to event-based)

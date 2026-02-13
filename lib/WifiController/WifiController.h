@@ -79,8 +79,7 @@ private:
     unsigned long lastLedToggle;        ///< Last time LED was toggled
     bool ledState;                      ///< Current LED state
 
-    // Hostname and passwords (from build flags)
-    const char* hostName_;              ///< mDNS hostname
+    // Passwords (from build flags)
     const char* apPasswd_;              ///< AP mode password
 
     // ========================================================================
@@ -148,10 +147,9 @@ public:
      * @param hal Pointer to hardware abstraction layer
      * @param settings Pointer to settings manager
      * @param buzzer Pointer to buzzer controller
-     * @param hostName mDNS hostname for device
      * @param apPasswd Password for AP mode
      */
-    void begin(IHAL* hal, SettingsManager* settings, BuzzerController* buzzer, const char* hostName, const char* apPasswd);
+    void begin(IHAL* hal, SettingsManager* settings, BuzzerController* buzzer, const char* apPasswd);
 
     // ========================================================================
     // MAIN UPDATE LOOP

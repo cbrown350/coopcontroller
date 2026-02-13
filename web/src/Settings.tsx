@@ -272,6 +272,7 @@ function Settings() {
       setError('')
 
       const settingsPayload: any = {
+        hostname: hostname(),
         ssid: ssid(),
         temp_threshold_on_f: tempThresholdOnF() ?? 34.0,
         temp_threshold_off_f: tempThresholdOffF() ?? 36.0,
@@ -527,7 +528,21 @@ function Settings() {
       ) : (
         <div onInput={markChanged} onChange={markChanged}>
 
-          <h2 class="text-lg font-bold mb-4">Wifi Settings</h2>
+          <h2 class="text-lg font-bold mb-4">Device Settings</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Hostname</legend>
+              <Show when={loaded()}>
+                <input type="text" id="hostname" value={hostname()} onInput={(e) => setHostname(e.target.value)} placeholder="CoopController" class="input" maxLength={32} pattern="[a-zA-Z0-9\-]+" />
+              </Show>
+              <Show when={!loaded()}>
+                <input type="text" placeholder="--" value="--" disabled class="input input-disabled" />
+              </Show>
+              <div class="fieldset-label">Device hostname for mDNS and AP mode (e.g. {hostname()}.local). Changing requires restart.</div>
+            </fieldset>
+          </div>
+
+          <h2 class="text-lg font-bold mb-4 mt-10">Wifi Settings</h2>
           {apMode() ? (
             <div>
               <fieldset class="fieldset">

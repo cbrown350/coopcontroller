@@ -76,7 +76,7 @@ protected:
         wifiController = new WifiController();
 
         // Initialize WifiController - this will succeed since WiFi is "connected"
-        wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+        wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
         // Reset to disconnected state for tests that need it
         // Tests can override by setting WiFi status before their operations
@@ -105,7 +105,7 @@ protected:
 TEST_F(WifiControllerTest, BeginInitializesWiFiLEDWhenEnabled) {
     sm.setWifiLedEnabled(true);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // LED should be initialized (we can verify by checking if it doesn't crash)
     SUCCEED();
@@ -114,7 +114,7 @@ TEST_F(WifiControllerTest, BeginInitializesWiFiLEDWhenEnabled) {
 TEST_F(WifiControllerTest, BeginDoesNotInitializeWiFiLEDWhenDisabled) {
     sm.setWifiLedEnabled(false);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // LED should not be initialized
     SUCCEED();
@@ -123,7 +123,7 @@ TEST_F(WifiControllerTest, BeginDoesNotInitializeWiFiLEDWhenDisabled) {
 TEST_F(WifiControllerTest, BeginCallsWifiSetup) {
     sm.setAPMode(false);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Verify wifiSetup was called by checking connection state
     auto status = wifiController->getStatus();
@@ -133,7 +133,7 @@ TEST_F(WifiControllerTest, BeginCallsWifiSetup) {
 TEST_F(WifiControllerTest, BeginStartsAPModeWhenEnabled) {
     sm.setAPMode(true);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     EXPECT_EQ(status.state, WifiState::WIFI_AP_MODE);
@@ -159,7 +159,7 @@ TEST_F(WifiControllerTest, UpdateChecksConnectionEvery30Seconds) {
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     mockHAL->setMillis(29000);
     wifiController->update();
     
@@ -180,7 +180,7 @@ TEST_F(WifiControllerTest, UpdateDetectsDisconnection) {
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate disconnection
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
@@ -198,7 +198,7 @@ TEST_F(WifiControllerTest, UpdateDetectsDisconnection) {
 TEST_F(WifiControllerTest, UpdateHandlesWifiChangedFlag) {
     sm.setWifiChanged(true);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     mockHAL->setMillis(31000);
     wifiController->update();
     
@@ -209,7 +209,7 @@ TEST_F(WifiControllerTest, UpdateHandlesWifiChangedFlag) {
 TEST_F(WifiControllerTest, UpdateDoesNotTriggerBuzzerWhenAlreadyDisconnected) {
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     mockBuzzer->reset();
     mockHAL->setMillis(31000);
     
@@ -253,7 +253,7 @@ TEST_F(WifiControllerTest, GetStatusReturnsConnectedState) {
 
 TEST_F(WifiControllerTest, GetStatusReturnsAPModeState) {
     sm.setAPMode(true);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     EXPECT_EQ(status.state, WifiState::WIFI_AP_MODE);
@@ -278,7 +278,7 @@ TEST_F(WifiControllerTest, IsConnectedReturnsFalseWhenDisconnected) {
 
 TEST_F(WifiControllerTest, IsConnectedReturnsFalseInAPMode) {
     sm.setAPMode(true);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     EXPECT_FALSE(wifiController->isConnected());
 }
@@ -289,14 +289,14 @@ TEST_F(WifiControllerTest, IsConnectedReturnsFalseInAPMode) {
 
 TEST_F(WifiControllerTest, IsInAPModeReturnsTrueWhenInAPMode) {
     sm.setAPMode(true);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     EXPECT_TRUE(wifiController->isInAPMode());
 }
 
 TEST_F(WifiControllerTest, IsInAPModeReturnsFalseWhenInStationMode) {
     sm.setAPMode(false);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     EXPECT_FALSE(wifiController->isInAPMode());
 }
@@ -339,7 +339,7 @@ TEST_F(WifiControllerTest, GetSSIDReturnsEmptyWhenDisconnected) {
 
 TEST_F(WifiControllerTest, GetSSIDReturnsAPSSIDWhenInAPMode) {
     sm.setAPMode(true);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     EXPECT_EQ(wifiController->getSSID(), "CoopController");
 }
@@ -417,7 +417,7 @@ TEST_F(WifiControllerTest, StartAPModeStartsAccessPoint) {
 
     // Simulate the restart by calling begin() again with APMode enabled
     mockHAL->reset();  // Reset HAL state
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     // Now AP mode should be active
     auto status = wifiController->getStatus();
@@ -430,7 +430,7 @@ TEST_F(WifiControllerTest, StartAPModeUsesConfiguredSSID) {
 
     // Simulate restart by calling begin() again
     mockHAL->reset();
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     EXPECT_EQ(wifiController->getSSID(), "CoopController");
 }
@@ -440,7 +440,7 @@ TEST_F(WifiControllerTest, StartAPModeUsesPasswordIfConfigured) {
 
     // Simulate restart by calling begin() again
     mockHAL->reset();
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     // AP should start (password is optional)
     auto status = wifiController->getStatus();
@@ -529,7 +529,7 @@ TEST_F(WifiControllerTest, UpdateLedHeartbeatsWhenConnected) {
 
 TEST_F(WifiControllerTest, UpdateLedFastBlinksInAPMode) {
     sm.setAPMode(true);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     mockHAL->setMillis(0);
     
     // First update - LED should turn on
@@ -565,7 +565,7 @@ TEST_F(WifiControllerTest, RetryLogicRetriesConnectionOnFailure) {
     sm.setWifiMaxRetries(3);
     sm.setWifiRetryDelaySeconds(30);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate multiple connection attempts
     for (int i = 0; i < 5; i++) {
@@ -583,7 +583,7 @@ TEST_F(WifiControllerTest, RetryLogicStopsAfterMaxRetries) {
     sm.setWifiMaxRetries(3);
     sm.setWifiRetryDelaySeconds(30);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate more than max retries
     for (int i = 0; i < 10; i++) {
@@ -600,7 +600,7 @@ TEST_F(WifiControllerTest, RetryLogicRespectsRetryDelay) {
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setWifiRetryDelaySeconds(60);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     mockHAL->setMillis(31000);
     wifiController->update();
     
@@ -616,7 +616,7 @@ TEST_F(WifiControllerTest, RetryLogicRespectsRetryDelay) {
 TEST_F(WifiControllerTest, APModeDurationIsRespected) {
     sm.setAPMode(true);
     sm.setWifiAPDurationMinutes(5);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate time passing
     mockHAL->setMillis(5 * 60 * 1000); // 5 minutes
@@ -630,7 +630,7 @@ TEST_F(WifiControllerTest, APModeDurationIsRespected) {
 TEST_F(WifiControllerTest, APModeDurationExitsAfterTimeout) {
     sm.setAPMode(true);
     sm.setWifiAPDurationMinutes(1);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate time passing beyond AP duration
     mockHAL->setMillis(2 * 60 * 1000); // 2 minutes
@@ -651,14 +651,14 @@ TEST_F(WifiControllerTest, HasConnectedPreventsAPModeOnFirstConnection) {
     sm.setHasConnected(false);
 
     // begin() will fail and trigger restart to AP mode since hasConnected=false
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     // Verify AP mode was triggered (settings saved)
     EXPECT_TRUE(sm.isAPMode());  // Should have switched to AP mode
 
     // Simulate the restart by calling begin() again with AP mode
     mockHAL->reset();
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     // Now in AP mode
     auto status = wifiController->getStatus();
@@ -669,7 +669,7 @@ TEST_F(WifiControllerTest, HasConnectedAllowsAPModeAfterPreviousConnection) {
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setHasConnected(true);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should not immediately go to AP mode if has connected before
@@ -685,7 +685,7 @@ TEST_F(WifiControllerTest, AutomaticReconnectionAttemptsOnDisconnection) {
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate disconnection
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
@@ -703,7 +703,7 @@ TEST_F(WifiControllerTest, AutomaticReconnectionStopsAfterMaxRetries) {
     mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     sm.setWifiMaxRetries(2);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate disconnection and multiple retries
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
@@ -725,7 +725,7 @@ TEST_F(WifiControllerTest, AutomaticReconnectionStopsAfterMaxRetries) {
 // ============================================================================
 
 TEST_F(WifiControllerTest, MDNSIsInitialized) {
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // mDNS should be initialized (verify by not crashing)
     SUCCEED();
@@ -757,7 +757,7 @@ TEST_F(WifiControllerTest, HandlesEmptySSID) {
     sm.setSSID("");
     sm.setPassword("TestPassword");
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should handle empty SSID gracefully
@@ -768,7 +768,7 @@ TEST_F(WifiControllerTest, HandlesEmptyPassword) {
     sm.setSSID("TestSSID");
     sm.setPassword("");
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should handle empty password gracefully
@@ -778,7 +778,7 @@ TEST_F(WifiControllerTest, HandlesEmptyPassword) {
 TEST_F(WifiControllerTest, HandlesZeroMaxRetries) {
     sm.setWifiMaxRetries(0);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should not retry if max retries is 0
@@ -788,7 +788,7 @@ TEST_F(WifiControllerTest, HandlesZeroMaxRetries) {
 TEST_F(WifiControllerTest, HandlesVeryLargeMaxRetries) {
     sm.setWifiMaxRetries(1000);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should handle large retry count
@@ -798,7 +798,7 @@ TEST_F(WifiControllerTest, HandlesVeryLargeMaxRetries) {
 TEST_F(WifiControllerTest, HandlesZeroRetryDelay) {
     sm.setWifiRetryDelaySeconds(0);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should handle zero retry delay
@@ -808,7 +808,7 @@ TEST_F(WifiControllerTest, HandlesZeroRetryDelay) {
 TEST_F(WifiControllerTest, HandlesVeryLargeRetryDelay) {
     sm.setWifiRetryDelaySeconds(3600); // 1 hour
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should handle large retry delay
@@ -819,7 +819,7 @@ TEST_F(WifiControllerTest, HandlesZeroAPDuration) {
     sm.setAPMode(true);
     sm.setWifiAPDurationMinutes(0);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should handle zero AP duration
@@ -830,7 +830,7 @@ TEST_F(WifiControllerTest, HandlesVeryLargeAPDuration) {
     sm.setAPMode(true);
     sm.setWifiAPDurationMinutes(1440); // 24 hours
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Should handle large AP duration
@@ -840,7 +840,7 @@ TEST_F(WifiControllerTest, HandlesVeryLargeAPDuration) {
 TEST_F(WifiControllerTest, HandlesRapidConnectionDisconnection) {
     mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Rapidly disconnect and reconnect
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
@@ -862,7 +862,7 @@ TEST_F(WifiControllerTest, HandlesRapidConnectionDisconnection) {
 TEST_F(WifiControllerTest, HandlesMultipleUpdates) {
     mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Multiple updates should not cause issues
     for (int i = 0; i < 10; i++) {
@@ -877,7 +877,7 @@ TEST_F(WifiControllerTest, HandlesMultipleUpdates) {
 TEST_F(WifiControllerTest, HandlesRSSIVariations) {
     mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate RSSI variations
     mockHAL->setWiFiRSSI(-30);
@@ -899,7 +899,7 @@ TEST_F(WifiControllerTest, HandlesRSSIVariations) {
 TEST_F(WifiControllerTest, HandlesIPAddressChange) {
     mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate IP address change
     mockHAL->setWiFiLocalIP("192.168.1.100");
@@ -923,7 +923,7 @@ TEST_F(WifiControllerTest, FullConnectionCycle) {
     sm.setSSID("TestSSID");
     sm.setPassword("TestPassword");
 
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     // Simulate connection process - WiFi connects during checkWifiConnection()
     mockHAL->setWiFiStatus(WL_CONNECTED); // WiFi becomes connected
@@ -944,7 +944,7 @@ TEST_F(WifiControllerTest, FullDisconnectionAndReconnectionCycle) {
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate disconnection
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
@@ -973,7 +973,7 @@ TEST_F(WifiControllerTest, FullDisconnectionAndReconnectionCycle) {
 TEST_F(WifiControllerTest, APModeToStationModeTransition) {
     sm.setAPMode(true);
 
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     auto status1 = wifiController->getStatus();
     EXPECT_EQ(status1.state, WifiState::WIFI_AP_MODE);
@@ -983,7 +983,7 @@ TEST_F(WifiControllerTest, APModeToStationModeTransition) {
     mockHAL->setWiFiStatus(WL_CONNECTED);
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     // Now reset to disconnected to verify state
     mockHAL->setWiFiStatus(WL_DISCONNECTED);
@@ -998,7 +998,7 @@ TEST_F(WifiControllerTest, MultipleConnectionAttempts) {
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     sm.setWifiMaxRetries(3);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate multiple failed connection attempts
     for (int i = 0; i < 5; i++) {
@@ -1015,7 +1015,7 @@ TEST_F(WifiControllerTest, MultipleConnectionAttempts) {
 TEST_F(WifiControllerTest, LEDControlWithConnectionStateChanges) {
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // LED should be off when disconnected
     wifiController->updateLed();
@@ -1042,7 +1042,7 @@ TEST_F(WifiControllerTest, AllGettersReturnValidValues) {
     mockHAL->setWiFiLocalIP("192.168.1.100");
     mockHAL->setWiFiRSSI(-50);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // All getters should return valid values
     EXPECT_FALSE(wifiController->getIPAddress().length() == 0);
@@ -1055,7 +1055,7 @@ TEST_F(WifiControllerTest, AllGettersReturnValidValues) {
 TEST_F(WifiControllerTest, StateTransitionsAreCorrect) {
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
 
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     auto status1 = wifiController->getStatus();
     EXPECT_EQ(status1.state, WifiState::WIFI_DISCONNECTED);
@@ -1085,7 +1085,7 @@ TEST_F(WifiControllerTest, SettingsIntegrationWorksCorrectly) {
     sm.setWifiRetryDelaySeconds(60);
     sm.setWifiAPDurationMinutes(15);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     auto status = wifiController->getStatus();
     // Settings should be integrated correctly
@@ -1095,7 +1095,7 @@ TEST_F(WifiControllerTest, SettingsIntegrationWorksCorrectly) {
 TEST_F(WifiControllerTest, BuzzerIntegrationWorksCorrectly) {
     mockHAL->setWiFiStatus(WL_CONNECTED); // WL_CONNECTED
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // Simulate disconnection
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
@@ -1114,7 +1114,7 @@ TEST_F(WifiControllerTest, HALIntegrationWorksCorrectly) {
     mockHAL->setWiFiLocalIP("192.168.1.100");
     mockHAL->setWiFiRSSI(-50);
     
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     
     // HAL methods should be called correctly
     EXPECT_EQ(wifiController->getSSID(), "TestSSID");
@@ -1125,7 +1125,7 @@ TEST_F(WifiControllerTest, HALIntegrationWorksCorrectly) {
 TEST_F(WifiControllerTest, CompleteOperationSequence) {
     // Start in AP mode
     sm.setAPMode(true);
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     auto status1 = wifiController->getStatus();
     EXPECT_EQ(status1.state, WifiState::WIFI_AP_MODE);
@@ -1135,7 +1135,7 @@ TEST_F(WifiControllerTest, CompleteOperationSequence) {
     mockHAL->setWiFiStatus(WL_CONNECTED);
     mockHAL->setWiFiSSID("TestSSID");
     mockHAL->setWiFiLocalIP("192.168.1.100");
-    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopController", "CoopAP");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
 
     auto status2 = wifiController->getStatus();
     EXPECT_EQ(status2.state, WifiState::WIFI_CONNECTED);

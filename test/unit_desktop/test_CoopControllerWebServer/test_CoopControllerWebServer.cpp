@@ -133,7 +133,7 @@ protected:
         buzzerController.begin(27);
         doorController.begin(&buzzerController, &sunriseSunset);
         lightController.begin(mockHal, &sunriseSunset);
-        wifiController.begin(mockHal, &settingsManager, &buzzerController, "CoopController", "CoopAP");
+        wifiController.begin(mockHal, &settingsManager, &buzzerController, "CoopAP");
         historyManager.begin(true, 1440, 60, 10);
     }
 
