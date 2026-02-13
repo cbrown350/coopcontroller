@@ -165,12 +165,6 @@ jobs:
       - name: Generate Changelog
         id: changelog
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "CHANGELOG=No changelog available for manual releases." >> $GITHUB_ENV
-            echo "Manual workflow dispatch - skipping changelog generation"
-            exit 0
-          fi
-
           # Get the previous tag (if it exists)
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           echo "Previous tag: $PREVIOUS_TAG"
