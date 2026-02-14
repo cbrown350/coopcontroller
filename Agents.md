@@ -27,7 +27,8 @@
 | [Hardware](docs/hardware.md) | Hardware requirements, pin configuration, wiring, PlatformIO change approval process |
 | [API Reference](docs/api-reference.md) | All REST API endpoints (main controller) |
 | [Development Guide](docs/development-guide.md) | Setup, build commands, coding standards, testing guide, ArduinoFake mock setup |
-| [Feature Tracker](docs/feature-tracker.md) | Completed features, in-progress work, planned features roadmap |
+| [Feature Tracker](docs/feature-tracker.md) | In-progress and planned features |
+| [Feature Tracker - Finished](docs/feature-tracker-finished.md) | Archive of all completed features (43 features) |
 | [Hardware Emulator](docs/hardware-emulator.md) | Emulator architecture, pin mapping, wiring, 40+ API endpoints, test scenarios |
 | [Contributing](docs/contributing.md) | PR workflow, code review, branch management, security/sensitive files |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues, debug tools, recovery procedures |

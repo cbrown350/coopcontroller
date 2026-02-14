@@ -55,19 +55,14 @@ All pins defined in `platformio.ini` as build flags. Inputs/outputs are active h
 | 33 | TEMP_METER_2_PIN | Sensor 2 Input | Input+Pullup | Auto-detects Dallas temp or water meter |
 | 26 | OUT_PUMP_PIN | Pump Control | Output | Relay control for water pump |
 | 25 | OUT_LIGHT_PIN | Light Control | PWM Output | LEDC channel 0, 5kHz, 8-bit resolution |
-
-### Pins Defined for Future Implementation
-
-| Pin | Constant | Function | Type | Status |
-|-----|----------|----------|------|--------|
-| TBD | WIFI_LED_B_PIN | WiFi Status LED | Output | Heartbeat when connected, active low |
-| TBD | BUZZER_B_PIN | Alert Buzzer | Output | Active low |
-| TBD | OUT_DOOR_A_OPEN_POS_PIN | Door Open Positive | Output | DRV8833 motor control |
-| TBD | OUT_DOOR_A_OPEN_NEG_PIN | Door Open Negative | Output | DRV8833 motor control |
-| TBD | DOOR_A_FAULT_B_PIN | Door Fault Input | Input | Active LOW from DRV8833 |
-| TBD | DOOR_MANUAL_SWITCH_B_PIN | Manual Door Switch | Input | Momentary switch |
-| TBD | DOOR_A_HALL_SENSOR_OPEN_B_PIN | Door Open Sensor | Input | Hall effect, active low |
-| TBD | DOOR_A_HALL_SENSOR_CLOSED_B_PIN | Door Closed Sensor | Input | Hall effect, active low |
+|  | WIFI_LED_B_PIN | WiFi Status LED | Output | Heartbeat when connected, active low |
+|  | BUZZER_B_PIN | Alert Buzzer | Output | Active low |
+|  | OUT_DOOR_A_OPEN_POS_PIN | Door Open Positive | Output | DRV8833 motor control |
+|  | OUT_DOOR_A_OPEN_NEG_PIN | Door Open Negative | Output | DRV8833 motor control |
+|  | DOOR_A_FAULT_B_PIN | Door Fault Input | Input | Active LOW from DRV8833 |
+|  | DOOR_MANUAL_SWITCH_B_PIN | Manual Door Switch | Input | Momentary switch |
+|  | DOOR_A_HALL_SENSOR_OPEN_B_PIN | Door Open Sensor | Input | Hall effect, active low |
+|  | DOOR_A_HALL_SENSOR_CLOSED_B_PIN | Door Closed Sensor | Input | Hall effect, active low |
 
 ### Pin Safety Rules
 
