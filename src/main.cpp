@@ -265,7 +265,29 @@ void setup() // NOSONAR - complexity ok
     sensorManager.setPulsesPerGallon(settingsManager.getPulsesPerGallon());
     sensorManager.setFlowCalculationIntervalSeconds(settingsManager.getFlowCalculationIntervalSeconds());
     
-    logger.logInfo("Coop controller components initialized");
+    logger.logInfo("Coop controller components initialized");    
+    
+    // Check reset reason - deferred until after logger/Wifi is initialized to capture any watchdog resets during bootup
+    switch (int resetReason = hal.getResetReason(); resetReason) {
+        case ESP_RST_TASK_WDT:
+            logger.logError("System was reset by Task Watchdog Timer!");
+            break;
+        case ESP_RST_INT_WDT:
+            logger.logError("System was reset by Interrupt Watchdog Timer!");
+            break;
+        case ESP_RST_WDT:
+            logger.logError("System was reset by other Watchdog!");
+            break;
+        case ESP_RST_POWERON:
+            logger.logInfo("System powered on normally");
+            break;
+        case ESP_RST_SW:
+            logger.logInfo("System reset by software");
+            break;
+        default:
+            logger.logWarning(String("System reset reason: ") + String(resetReason));
+            break;
+    }
 
     // Initialize Task Watchdog Timer
     int watchdogTimeout = settingsManager.getWatchdogTimeoutSeconds();
