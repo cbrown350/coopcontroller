@@ -267,6 +267,12 @@ public:
   virtual uint32_t getHeapSize() = 0;
 
   /**
+   * @brief Get minimum free heap since boot (watermark)
+   * @return Minimum free heap in bytes
+   */
+  virtual uint32_t getMinFreeHeap() = 0;
+
+  /**
    * @brief Get chip model string
    * @return Chip model (e.g., "ESP32-D0WDQ6")
    */

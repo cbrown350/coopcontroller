@@ -223,28 +223,6 @@ void setup() // NOSONAR - complexity ok
     logger.logInfo("ESP Coop Controller System starting up...");
     logger.logInfo(String("Firmware version: ") + firmwareVersion);
     logger.logInfo(String("Chip family: ") + chipFamily);
-    
-    // Check reset reason
-    switch (int resetReason = hal.getResetReason(); resetReason) {
-        case ESP_RST_TASK_WDT:
-            logger.logError("System was reset by Task Watchdog Timer!");
-            break;
-        case ESP_RST_INT_WDT:
-            logger.logError("System was reset by Interrupt Watchdog Timer!");
-            break;
-        case ESP_RST_WDT:
-            logger.logError("System was reset by other Watchdog!");
-            break;
-        case ESP_RST_POWERON:
-            logger.logInfo("System powered on normally");
-            break;
-        case ESP_RST_SW:
-            logger.logInfo("System reset by software");
-            break;
-        default:
-            logger.logWarning(String("System reset reason: ") + String(resetReason));
-            break;
-    }
 
     // Initialize coop controller components
     sensorManager.begin(TEMP_METER_PIN, TEMP_METER_2_PIN);
@@ -283,6 +261,9 @@ void setup() // NOSONAR - complexity ok
             break;
         case ESP_RST_SW:
             logger.logInfo("System reset by software");
+            break;
+        case ESP_RST_PANIC:
+            logger.logError("System was reset by software PANIC/exception!");
             break;
         default:
             logger.logWarning(String("System reset reason: ") + String(resetReason));
@@ -650,26 +631,8 @@ void setup() // NOSONAR - complexity ok
                 }
             }
             
-            // Format uptime
-            unsigned long uptimeSeconds = millis() / 1000;
-            unsigned long days = uptimeSeconds / 86400;
-            uptimeSeconds %= 86400;
-            unsigned long hours = uptimeSeconds / 3600;
-            uptimeSeconds %= 3600;
-            unsigned long minutes = uptimeSeconds / 60;
-            uptimeSeconds %= 60;
-            
-            String uptimeFormatted = "";
-            if (days > 0) uptimeFormatted += String(days) + "d ";
-            if (hours > 0 || days > 0) uptimeFormatted += String(hours) + "h ";
-            if (minutes > 0 || hours > 0 || days > 0) uptimeFormatted += String(minutes) + "m ";
-            uptimeFormatted += String(uptimeSeconds) + "s";
-            
-            logger.logVerbose(String("System Status - Uptime: ") + uptimeFormatted + 
-                        ", Free heap: " + String(heapFree) + " bytes (" + 
-                        String(heapUsedPercent, 1) + "% used), " +
-                        ", Chip: " + hal.getChipModel() + 
-                        ", CPU: " + ESP.getCpuFreqMHz() + " MHz");
+            uint32_t minFreeHeap = hal.getMinFreeHeap();
+            logger.logfInfo("Heap: %u free, %u min, %.1f%% used", heapFree, minFreeHeap, heapUsedPercent);
         }
     }
 }

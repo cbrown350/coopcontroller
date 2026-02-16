@@ -193,6 +193,10 @@ public:
         return mockHeapSize;
     }
 
+    uint32_t getMinFreeHeap() override {
+        return mockMinFreeHeap;
+    }
+
     const char* getChipModel() override {
         return "ESP32-D0WDQ6";
     }
@@ -613,6 +617,7 @@ public:
 
         // Reset system state
         mockFreeHeap = 200000;
+        mockMinFreeHeap = 180000;
         mockHeapSize = 300000;
         mockResetReason = 0;
         mockRestarted = false;
@@ -670,6 +675,7 @@ public:
     // System helpers
     void setFreeHeap(uint32_t heap) { mockFreeHeap = heap; }
     void setHeapSize(uint32_t size) { mockHeapSize = size; }
+    void setMinFreeHeap(uint32_t heap) { mockMinFreeHeap = heap; }
     void setResetReason(uint8_t reason) { mockResetReason = reason; }
     void setRestarted(bool restarted) { mockRestarted = restarted; }
     void setWdtReset(bool reset) { mockWdtReset = reset; }
@@ -776,6 +782,7 @@ private:
     
     // System state
     uint32_t mockFreeHeap = 200000;
+    uint32_t mockMinFreeHeap = 180000;
     uint32_t mockHeapSize = 300000;
     uint8_t mockResetReason = 0;
     uint32_t mockCpuFreqMHz = 240;

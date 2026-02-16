@@ -97,6 +97,8 @@ void HAL_ESP32::restart() { ESP.restart(); }
 
 uint32_t HAL_ESP32::getHeapSize() { return ESP.getHeapSize(); }
 
+uint32_t HAL_ESP32::getMinFreeHeap() { return ESP.getMinFreeHeap(); }
+
 const char *HAL_ESP32::getChipModel() { return ESP.getChipModel(); }
 
 uint8_t HAL_ESP32::getResetReason() {

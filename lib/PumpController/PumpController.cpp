@@ -306,18 +306,15 @@ void PumpController::handleAutoMode(unsigned long currentTime) { // NOSONAR - co
 }
 
 void PumpController::setPumpState(bool isOn) {
-    logger.logfDebug("Setting pump pin %d to %s", pumpPin, isOn ? "HIGH (ON)" : "LOW (OFF)");
-    
     digitalWrite(pumpPin, isOn ? HIGH : LOW);
-    
+
     if (status.is_active != isOn) {
         status.is_active = isOn;
         status.last_switch_time = millis();
-        
+
         if (isOn) {
             status.current_cycle_start = millis();
             logger.logInfo("Pump turned ON");
-            logger.logDebug("Pump turned ON - cycle started");
             // Clear pump off flow detection when pump turns on
             pump_off_flow_detected = false;
             status.pump_off_flow_detected = false;
@@ -325,8 +322,7 @@ void PumpController::setPumpState(bool isOn) {
             if (status.current_cycle_start > 0) {
                 status.current_cycle_duration = millis() - status.current_cycle_start;
             }
-            logger.logInfo("Pump turned OFF");
-            logger.logfDebug("Pump turned OFF - cycle duration: %lu ms", (unsigned long)status.current_cycle_duration);
+            logger.logfInfo("Pump turned OFF (cycle duration: %lu ms)", (unsigned long)status.current_cycle_duration);
             // Record when pump turned off for flow monitoring
             pump_turned_off_time = millis();
             pump_has_been_off = true;
