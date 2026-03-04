@@ -280,3 +280,13 @@ int Logger::getLogCount() const
 {
   return totalEntries;
 }
+
+const LogEntry& Logger::getLogEntryAt(int index) const
+{
+  return logBuffer[index];
+}
+
+int Logger::getStartIndex() const
+{
+  return (totalEntries < MAX_LOG_ENTRIES) ? 0 : currentIndex;
+}

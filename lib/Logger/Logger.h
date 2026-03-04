@@ -148,6 +148,16 @@ public:
    */
   int getLogCount() const;
 
+  /**
+   * @brief Get a log entry by raw buffer index (for chunked streaming)
+   */
+  const LogEntry& getLogEntryAt(int index) const;
+
+  /**
+   * @brief Get the start index for ordered iteration (oldest entry)
+   */
+  int getStartIndex() const;
+
   // ========================================================================
   // LOG LEVEL MANAGEMENT
   // ========================================================================

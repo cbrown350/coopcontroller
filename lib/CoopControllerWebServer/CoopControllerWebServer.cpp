@@ -839,20 +839,114 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   response->send(200, "text/plain", enabled ? "Light test mode enabled" : "Light test mode disabled");
               });
 
-    // Logs endpoint
+    // Logs endpoint (chunked streaming to avoid memory exhaustion)
     hal->webServerOn("/logs", HAL_WebRequestMethod::HTTP_GET,
               [](IWebRequest *request, IWebResponse *response)
               {
-                  String jsonResponse = logger.getLogsAsJson();
+                  size_t totalEntries = logger.getLogCount();
 
-                  // Check if JSON generation was successful
-                  if (jsonResponse.length() == 0) {
-                      // Return empty logs array if generation failed
-                      response->send(200, "application/json", "{\"logs\":[]}");
-                      return;
-                  }
+                  struct LogStreamState {
+                      size_t total;
+                      size_t current;
+                      String overflow;
+                      bool started;
+                      bool closedBracket;
+                      int startIndex;
+                  };
+                  auto state = std::make_shared<LogStreamState>();
+                  state->total = totalEntries;
+                  state->current = 0;
+                  state->started = false;
+                  state->closedBracket = false;
+                  state->startIndex = logger.getStartIndex();
 
-                  response->send(200, "application/json", jsonResponse.c_str());
+                  response->sendChunked(200, "application/json",
+                      [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                          if (state->closedBracket && state->overflow.length() == 0) return 0;
+
+                          size_t written = 0;
+
+                          // Flush overflow from previous call
+                          if (state->overflow.length() > 0) {
+                              size_t toWrite = std::min(static_cast<size_t>(state->overflow.length()), maxLen);
+                              memcpy(buffer, state->overflow.c_str(), toWrite);
+                              written += toWrite;
+                              if (toWrite < state->overflow.length()) {
+                                  state->overflow = state->overflow.substring(toWrite);
+                              } else {
+                                  state->overflow = "";
+                              }
+                              if (written >= maxLen) return written;
+                          }
+
+                          // Opening
+                          if (!state->started) {
+                              const char* prefix = "{\"logs\":[";
+                              size_t prefixLen = strlen(prefix);
+                              size_t toWrite = std::min(prefixLen, maxLen - written);
+                              memcpy(buffer + written, prefix, toWrite);
+                              written += toWrite;
+                              if (toWrite < prefixLen) {
+                                  state->overflow = String(prefix + toWrite);
+                              }
+                              state->started = true;
+                              if (written >= maxLen) return written;
+                          }
+
+                          // Write log entries one at a time
+                          while (state->current < state->total && written < maxLen) {
+                              int bufIdx = (state->startIndex + static_cast<int>(state->current)) % 150;
+                              const LogEntry& entry = logger.getLogEntryAt(bufIdx);
+
+                              String point;
+                              if (state->current > 0) point += ",";
+                              point += "{\"uuid\":\"";
+                              point += entry.uuid;
+                              point += "\",\"timestamp\":";
+                              point += String(entry.timestamp);
+                              point += ",\"message\":\"";
+                              // Escape quotes and backslashes in message
+                              for (size_t i = 0; entry.message[i] != '\0'; i++) {
+                                  char c = entry.message[i];
+                                  if (c == '"' || c == '\\') point += '\\';
+                                  point += c;
+                              }
+                              point += "\",\"level\":\"";
+                              point += logger.logLevelToString(entry.level);
+                              point += "\"}";
+
+                              state->current++;
+
+                              size_t available = maxLen - written;
+                              size_t toWrite = std::min(static_cast<size_t>(point.length()), available);
+                              memcpy(buffer + written, point.c_str(), toWrite);
+                              written += toWrite;
+
+                              if (toWrite < point.length()) {
+                                  state->overflow = point.substring(toWrite);
+                                  return written;
+                              }
+                          }
+
+                          // Closing
+                          if (state->current >= state->total && !state->closedBracket) {
+                              const char* suffix = "]}";
+                              size_t suffixLen = strlen(suffix);
+                              if (written + suffixLen <= maxLen) {
+                                  memcpy(buffer + written, suffix, suffixLen);
+                                  written += suffixLen;
+                                  state->closedBracket = true;
+                              } else {
+                                  size_t available = maxLen - written;
+                                  memcpy(buffer + written, suffix, available);
+                                  written += available;
+                                  state->overflow = String(suffix + available);
+                                  state->closedBracket = true;
+                              }
+                          }
+
+                          return written;
+                      });
               });
     
     // Sun times endpoint
