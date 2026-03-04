@@ -82,10 +82,10 @@ private:
 
     void addPoint(const DataPoint& point);
     DataPoint createPoint(float temperature_f, bool pump_active, float flow_rate,
-                          uint8_t light_brightness, const String& door_state,
-                          const String& door_position, const String& pump_trigger,
-                          const String& door_trigger, const String& light_trigger,
-                          const String& eventType);
+                          uint8_t light_brightness, const char* door_state,
+                          const char* door_position, const char* pump_trigger,
+                          const char* door_trigger, const char* light_trigger,
+                          const char* eventType);
 
 public:
     HistoricalDataManager();
@@ -112,9 +112,9 @@ public:
      * - Temperature changed by >=0.5F (with min interval)
      */
     void checkAndRecord(float temperature_f, bool pump_active, float flow_rate,
-                        uint8_t light_brightness, const String& door_state,
-                        const String& door_position, const String& pump_trigger,
-                        const String& door_trigger, const String& light_trigger);
+                        uint8_t light_brightness, const char* door_state,
+                        const char* door_position, const char* pump_trigger,
+                        const char* door_trigger, const char* light_trigger);
 
     String getDataAsJson() const;
     String getDataAsCsv() const;

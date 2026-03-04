@@ -30,9 +30,9 @@ enum class LogLevel
  */
 struct LogEntry
 {
-  String uuid;              ///< Unique identifier for this log entry
+  char uuid[40];            ///< Unique identifier for this log entry (UUID ~36 chars + null)
   unsigned long timestamp;  ///< Timestamp when log entry was created
-  String message;           ///< Log message content
+  char message[256];        ///< Log message content (truncated if longer)
   LogLevel level;           ///< Severity level of this log entry
 };
 

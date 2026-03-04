@@ -28,6 +28,7 @@ void HistoricalDataManager::begin(bool enableData, size_t bufferSize,
     flowMinIntervalSeconds = flowMinIntervalSec;
 
     buffer.clear();
+    buffer.shrink_to_fit();
     currentIndex = 0;
     firstUpdate = true;
     prevTemperature = NAN;
@@ -50,10 +51,10 @@ void HistoricalDataManager::addPoint(const DataPoint& point) {
 }
 
 DataPoint HistoricalDataManager::createPoint(float temperature_f, bool pump_active, float flow_rate,
-                                              uint8_t light_brightness, const String& door_state,
-                                              const String& door_position, const String& pump_trigger,
-                                              const String& door_trigger, const String& light_trigger,
-                                              const String& eventType) {
+                                              uint8_t light_brightness, const char* door_state,
+                                              const char* door_position, const char* pump_trigger,
+                                              const char* door_trigger, const char* light_trigger,
+                                              const char* eventType) {
     DataPoint point;
     unsigned long currentTime = millis() / 1000;
     time_t now = time(nullptr);
@@ -63,17 +64,17 @@ DataPoint HistoricalDataManager::createPoint(float temperature_f, bool pump_acti
     point.flow_rate = flow_rate;
     point.light_brightness = light_brightness;
 
-    strncpy(point.door_state, door_state.c_str(), sizeof(point.door_state) - 1);
+    strncpy(point.door_state, door_state, sizeof(point.door_state) - 1);
     point.door_state[sizeof(point.door_state) - 1] = '\0';
-    strncpy(point.door_position, door_position.c_str(), sizeof(point.door_position) - 1);
+    strncpy(point.door_position, door_position, sizeof(point.door_position) - 1);
     point.door_position[sizeof(point.door_position) - 1] = '\0';
-    strncpy(point.pump_trigger, pump_trigger.c_str(), sizeof(point.pump_trigger) - 1);
+    strncpy(point.pump_trigger, pump_trigger, sizeof(point.pump_trigger) - 1);
     point.pump_trigger[sizeof(point.pump_trigger) - 1] = '\0';
-    strncpy(point.door_trigger, door_trigger.c_str(), sizeof(point.door_trigger) - 1);
+    strncpy(point.door_trigger, door_trigger, sizeof(point.door_trigger) - 1);
     point.door_trigger[sizeof(point.door_trigger) - 1] = '\0';
-    strncpy(point.light_trigger, light_trigger.c_str(), sizeof(point.light_trigger) - 1);
+    strncpy(point.light_trigger, light_trigger, sizeof(point.light_trigger) - 1);
     point.light_trigger[sizeof(point.light_trigger) - 1] = '\0';
-    strncpy(point.event_type, eventType.c_str(), sizeof(point.event_type) - 1);
+    strncpy(point.event_type, eventType, sizeof(point.event_type) - 1);
     point.event_type[sizeof(point.event_type) - 1] = '\0';
 
     return point;
@@ -85,16 +86,16 @@ DataPoint HistoricalDataManager::createPoint(float temperature_f, bool pump_acti
     prevFlowRate = flow_rate; \
     prevPumpActive = pump_active; \
     prevLightBrightness = light_brightness; \
-    strncpy(prevDoorState, door_state.c_str(), sizeof(prevDoorState) - 1); \
+    strncpy(prevDoorState, door_state, sizeof(prevDoorState) - 1); \
     prevDoorState[sizeof(prevDoorState) - 1] = '\0'; \
-    strncpy(prevDoorPosition, door_position.c_str(), sizeof(prevDoorPosition) - 1); \
+    strncpy(prevDoorPosition, door_position, sizeof(prevDoorPosition) - 1); \
     prevDoorPosition[sizeof(prevDoorPosition) - 1] = '\0'; \
 } while(0)
 
 void HistoricalDataManager::checkAndRecord(float temperature_f, bool pump_active, float flow_rate,
-                                            uint8_t light_brightness, const String& door_state,
-                                            const String& door_position, const String& pump_trigger,
-                                            const String& door_trigger, const String& light_trigger) {
+                                            uint8_t light_brightness, const char* door_state,
+                                            const char* door_position, const char* pump_trigger,
+                                            const char* door_trigger, const char* light_trigger) {
     if (!enabled) return;
 
     unsigned long currentTime = millis() / 1000;
@@ -125,8 +126,8 @@ void HistoricalDataManager::checkAndRecord(float temperature_f, bool pump_active
     }
 
     // Check for door state/position change (immediate)
-    if (strcmp(prevDoorState, door_state.c_str()) != 0 ||
-        strcmp(prevDoorPosition, door_position.c_str()) != 0) {
+    if (strcmp(prevDoorState, door_state) != 0 ||
+        strcmp(prevDoorPosition, door_position) != 0) {
         DataPoint point = createPoint(temperature_f, pump_active, flow_rate, light_brightness,
                                        door_state, door_position, pump_trigger, door_trigger,
                                        light_trigger, "door");

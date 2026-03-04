@@ -26,7 +26,7 @@ void Logger::begin(IHAL* _hal)
   uuidGenerator.generate();
   currentLogLevel_ = stringToLogLevel(DEFAULT_LOGLEVEL);
   
-  logInfo(String("Initializing SysLog to send logs to ") + String(syslogServer) + String(":") + String(syslogPort));
+  logfInfo("Initializing SysLog to send logs to %s:%s", syslogServer ? syslogServer : "(null)", syslogPort ? syslogPort : "(null)");
   if (!(syslogServer == nullptr || strlen(syslogServer) == 0 || syslogPort == nullptr || strlen(syslogPort) == 0)) 
   {
     syslog = new SimpleSyslog(hostName, "CoopController", syslogServer, (uint16_t)atoi(syslogPort), 400); // NOSONAR, packet size 400 bytes
@@ -88,12 +88,13 @@ void Logger::logWithLevel(const String &message, LogLevel level) const
     // Generate UUID for this log entry
     uuidGenerator.generate();
     const char* uuidChars = uuidGenerator.toCharArray();
-    auto uuid = String(uuidChars);
 
-    // Store in circular buffer
-    logBuffer[currentIndex].uuid = uuid;
+    // Store in circular buffer (fixed char arrays - no heap allocation)
+    strncpy(logBuffer[currentIndex].uuid, uuidChars, sizeof(logBuffer[currentIndex].uuid) - 1);
+    logBuffer[currentIndex].uuid[sizeof(logBuffer[currentIndex].uuid) - 1] = '\0';
     logBuffer[currentIndex].timestamp = timestamp;
-    logBuffer[currentIndex].message = fullMessage;
+    strncpy(logBuffer[currentIndex].message, fullMessage.c_str(), sizeof(logBuffer[currentIndex].message) - 1);
+    logBuffer[currentIndex].message[sizeof(logBuffer[currentIndex].message) - 1] = '\0';
     logBuffer[currentIndex].level = level;
 
     // Update indices
@@ -224,7 +225,7 @@ String Logger::getLogsAsJson() const
     return R"({"error":"Logger not initialized","logs":[]})";
   }
 
-  logger.logDebug(String("Free heap before JSON log: ") + String(hal->getFreeHeap()) + " bytes");
+  logger.logfDebug("Free heap before JSON log: %u bytes", hal->getFreeHeap());
 
   JsonDocument jsonDoc;
   JsonArray logsArray = jsonDoc["logs"].to<JsonArray>();
@@ -258,7 +259,7 @@ String Logger::getLogsAsJson() const
     return R"({"error":"JSON serialization failed","logs":[]})";
   }
 
-  logger.logDebug(String("JSON log response entries: ") + String(totalEntries) + ", size: " + String(jsonResponse.length()) + " bytes, free heap: " + String(hal->getFreeHeap()) + " bytes");
+  logger.logfDebug("JSON log response entries: %d, size: %u bytes, free heap: %u bytes", totalEntries, jsonResponse.length(), hal->getFreeHeap());
   return jsonResponse;
 }
 
@@ -269,9 +270,9 @@ void Logger::clearLogs()
   // Clear the buffer
   for (int i = 0; i < MAX_LOG_ENTRIES; i++) // NOSONAR
   {
-    logBuffer[i].uuid = "";
+    logBuffer[i].uuid[0] = '\0';
     logBuffer[i].timestamp = 0;
-    logBuffer[i].message = "";
+    logBuffer[i].message[0] = '\0';
   }
 }
 

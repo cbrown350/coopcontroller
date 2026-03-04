@@ -34,7 +34,7 @@ enum class TriggerSource {
  * @param source The trigger source to convert
  * @return String name of the trigger source
  */
-inline String triggerSourceToString(TriggerSource source) {
+inline const char* triggerSourceToCStr(TriggerSource source) {
     switch (source) {
         case TriggerSource::UNKNOWN:            return "unknown";
         case TriggerSource::MANUAL_BUTTON:      return "button";
@@ -53,6 +53,10 @@ inline String triggerSourceToString(TriggerSource source) {
         case TriggerSource::TEST:               return "test";
         default:                                return "unknown";
     }
+}
+
+inline String triggerSourceToString(TriggerSource source) {
+    return String(triggerSourceToCStr(source));
 }
 
 #endif // TRIGGER_SOURCE_H

@@ -221,8 +221,8 @@ void setup() // NOSONAR - complexity ok
 
     // Initialize logging system
     logger.logInfo("ESP Coop Controller System starting up...");
-    logger.logInfo(String("Firmware version: ") + firmwareVersion);
-    logger.logInfo(String("Chip family: ") + chipFamily);
+    logger.logfInfo("Firmware version: %s", firmwareVersion);
+    logger.logfInfo("Chip family: %s", chipFamily);
 
     // Initialize coop controller components
     sensorManager.begin(TEMP_METER_PIN, TEMP_METER_2_PIN);
@@ -266,7 +266,7 @@ void setup() // NOSONAR - complexity ok
             logger.logError("System was reset by software PANIC/exception!");
             break;
         default:
-            logger.logWarning(String("System reset reason: ") + String(resetReason));
+            logger.logfWarning("System reset reason: %d", resetReason);
             break;
     }
 
@@ -275,9 +275,9 @@ void setup() // NOSONAR - complexity ok
     
     if (esp_err_t wdtResult = esp_task_wdt_init(watchdogTimeout, true); wdtResult == ESP_OK) { // timeout in seconds, panic on timeout
         esp_task_wdt_add(nullptr); // Add current task (loop) to WDT watch
-        logger.logInfo(String("Task Watchdog Timer initialized with ") + String(watchdogTimeout) + " second timeout");
+        logger.logfInfo("Task Watchdog Timer initialized with %d second timeout", watchdogTimeout);
     } else {
-        logger.logError(String("Failed to initialize Task Watchdog Timer: ") + String(esp_err_to_name(wdtResult)));
+        logger.logfError("Failed to initialize Task Watchdog Timer: %s", esp_err_to_name(wdtResult));
     }
 
     // Only sync NTP if connected to WiFi (not in AP mode)
@@ -342,7 +342,7 @@ void setup() // NOSONAR - complexity ok
         static unsigned long loopCount = 0;
         loopCount++;
         if (loopCount % 1000 == 0) {
-            logger.logVerbose(String("Watchdog fed at loop iteration ") + String(loopCount));
+            logger.logfVerbose("Watchdog fed at loop iteration %lu", loopCount);
         }
 
         // Check if restart is requested
@@ -373,11 +373,11 @@ void setup() // NOSONAR - complexity ok
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
-                doorController.getStateString(),
-                doorController.getPositionString(),
-                pumpController.getLastTriggerSourceString(),
-                doorController.getLastTriggerSourceString(),
-                lightController.getLastTriggerSourceString()
+                doorController.getStateCStr(),
+                doorController.getPositionCStr(),
+                pumpController.getLastTriggerSourceCStr(),
+                doorController.getLastTriggerSourceCStr(),
+                lightController.getLastTriggerSourceCStr()
             );
 
             // Log temperature readings periodically
@@ -385,36 +385,41 @@ void setup() // NOSONAR - complexity ok
             if (currentTime - lastTempLog >= 60000) // Log every minute
             {
                 lastTempLog = currentTime;
-                // Log temperature readings only if valid                
+                // Log temperature readings only if valid
                 if (float temp1 = sensorManager.getTemperature1F(); !isnan(temp1)) { // NOSONAR - complexity ok
-                    logger.logDebug(String("Sensor 1: ") + String(temp1, 1) + "°F");
+                    logger.logfDebug("Sensor 1: %.1f°F", temp1);
                 }
-                
+
                 if (float temp2 = sensorManager.getTemperature2F(); !isnan(temp2)) { // NOSONAR - complexity ok
-                    logger.logDebug(String("Sensor 2: ") + String(temp2, 1) + "°F");
+                    logger.logfDebug("Sensor 2: %.1f°F", temp2);
                 }
-                
+
                 // Check for sensor errors and trigger buzzer alerts
                 static unsigned long lastSensorErrorAlert = 0;
-                
+
                 // Detailed logging for sensor status debugging
                 bool hasWorkingTemperature = false;
                 bool hasWorkingWaterMeter = false;
                 bool sensor1Error = false;
                 bool sensor2Error = false;
-                
+
+                // Helper for sensor type name
+                auto sensorTypeName = [](SensorType t) -> const char* {
+                    return t == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" :
+                           t == SensorType::WATER_METER ? "WATER_METER" : "NONE";
+                };
+
                 // Check Sensor 1 status
-                logger.logDebug(String("Sensor 1 status - Type: ") + 
-                            (sensorManager.getSensor1Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : 
-                            sensorManager.getSensor1Type() == SensorType::WATER_METER ? "WATER_METER" : "NONE") + // NOSONAR - complexity ok
-                            ", Was detected: " + String(sensorManager.isSensor1Detected() ? "Yes" : "No") +
-                            ", Connected: " + String(sensorManager.isSensor1Connected() ? "Yes" : "No"));
-                
+                logger.logfDebug("Sensor 1 status - Type: %s, Was detected: %s, Connected: %s",
+                            sensorTypeName(sensorManager.getSensor1Type()),
+                            sensorManager.isSensor1Detected() ? "Yes" : "No",
+                            sensorManager.isSensor1Connected() ? "Yes" : "No");
+
                 if (sensorManager.getSensor1Type() == SensorType::DALLAS_TEMP) { // NOSONAR - complexity ok
                     float temp1 = sensorManager.getTemperature1F();
                     if (!isnan(temp1)) {
                         hasWorkingTemperature = true;
-                        logger.logDebug(String("Sensor 1 - Temperature: ") + String(temp1, 1) + "°F (Working)");
+                        logger.logfDebug("Sensor 1 - Temperature: %.1f°F (Working)", temp1);
                     } else {
                         sensor1Error = true;
                         logger.logDebug("Sensor 1 - Temperature: NaN (ERROR)");
@@ -423,26 +428,24 @@ void setup() // NOSONAR - complexity ok
                     bool activelyConnected = sensorManager.isActivelyConnected(sensorManager.getSensor1Data());
                     if (activelyConnected) {
                         hasWorkingWaterMeter = true;
-                        logger.logDebug(String("Sensor 1 - Water meter active (") + 
-                                    String(sensorManager.getFlowRate1(), 2) + " GPM) (Working)");
+                        logger.logfDebug("Sensor 1 - Water meter active (%.2f GPM) (Working)", sensorManager.getFlowRate1());
                     } else {
                         sensor1Error = true;
                         logger.logDebug("Sensor 1 - Water meter inactive (ERROR)");
                     }
                 }
-                
+
                 // Check Sensor 2 status
-                logger.logDebug(String("Sensor 2 status - Type: ") + 
-                            (sensorManager.getSensor2Type() == SensorType::DALLAS_TEMP ? "DALLAS_TEMP" : 
-                            sensorManager.getSensor2Type() == SensorType::WATER_METER ? "WATER_METER" : "NONE") + // NOSONAR - complexity ok
-                            ", Was detected: " + String(sensorManager.isSensor2Detected() ? "Yes" : "No") +
-                            ", Connected: " + String(sensorManager.isSensor2Connected() ? "Yes" : "No"));
-                
+                logger.logfDebug("Sensor 2 status - Type: %s, Was detected: %s, Connected: %s",
+                            sensorTypeName(sensorManager.getSensor2Type()),
+                            sensorManager.isSensor2Detected() ? "Yes" : "No",
+                            sensorManager.isSensor2Connected() ? "Yes" : "No");
+
                 if (sensorManager.getSensor2Type() == SensorType::DALLAS_TEMP) { // NOSONAR - complexity ok
                     float temp2 = sensorManager.getTemperature2F();
                     if (!isnan(temp2)) {
                         hasWorkingTemperature = true;
-                        logger.logDebug(String("Sensor 2 - Temperature: ") + String(temp2, 1) + "°F (Working)");
+                        logger.logfDebug("Sensor 2 - Temperature: %.1f°F (Working)", temp2);
                     } else {
                         sensor2Error = true;
                         logger.logDebug("Sensor 2 - Temperature: NaN (ERROR)");
@@ -451,22 +454,20 @@ void setup() // NOSONAR - complexity ok
                     bool activelyConnected = sensorManager.isActivelyConnected(sensorManager.getSensor2Data());
                     if (activelyConnected) {
                         hasWorkingWaterMeter = true;
-                        logger.logDebug(String("Sensor 2 - Water meter active (") + 
-                                    String(sensorManager.getFlowRate2(), 2) + " GPM) (Working)");
+                        logger.logfDebug("Sensor 2 - Water meter active (%.2f GPM) (Working)", sensorManager.getFlowRate2());
                     } else {
                         sensor2Error = true;
                         logger.logDebug("Sensor 2 - Water meter inactive (ERROR)");
                     }
                 }
-                
+
                 // Only trigger sensor error if we have no working temperature sensors AND no working water meters
                 bool sensorError = (!hasWorkingTemperature && !hasWorkingWaterMeter);
-                
-                logger.logDebug(String("Sensor error analysis - Sensor 1 Error: ") + String(sensor1Error ? "Yes" : "No") +
-                            ", Sensor 2 Error: " + String(sensor2Error ? "Yes" : "No") +
-                            ", Has Working Temperature: " + String(hasWorkingTemperature ? "Yes" : "No") +
-                            ", Has Working Water Meter: " + String(hasWorkingWaterMeter ? "Yes" : "No") +
-                            ", Overall Sensor Error: " + String(sensorError ? "Yes" : "No"));
+
+                logger.logfDebug("Sensor error analysis - Sensor 1 Error: %s, Sensor 2 Error: %s, Has Working Temperature: %s, Has Working Water Meter: %s, Overall Sensor Error: %s",
+                            sensor1Error ? "Yes" : "No", sensor2Error ? "Yes" : "No",
+                            hasWorkingTemperature ? "Yes" : "No", hasWorkingWaterMeter ? "Yes" : "No",
+                            sensorError ? "Yes" : "No");
                 
                 if (sensorError && (currentTime - lastSensorErrorAlert > 60000)) { // NOSONAR - complexity ok
                     logger.logWarning("Triggering SENSOR_ERROR alert - No working sensors detected");
@@ -490,11 +491,11 @@ void setup() // NOSONAR - complexity ok
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
-                doorController.getStateString(),
-                doorController.getPositionString(),
-                pumpController.getLastTriggerSourceString(),
-                doorController.getLastTriggerSourceString(),
-                lightController.getLastTriggerSourceString()
+                doorController.getStateCStr(),
+                doorController.getPositionCStr(),
+                pumpController.getLastTriggerSourceCStr(),
+                doorController.getLastTriggerSourceCStr(),
+                lightController.getLastTriggerSourceCStr()
             );
 
             // Update pump controller with current status
@@ -520,20 +521,20 @@ void setup() // NOSONAR - complexity ok
             lastSensorLog = currentTime;
 
             if (sensorManager.isSensor1Connected()) {
-                logger.logDebug(String("Sensor 1 (Pin ") + String(TEMP_METER_PIN) + String("): ") + String(sensorManager.getTemperature1F(), 1) + "°F " +
-                (sensorManager.getSensor1Type() == SensorType::DALLAS_TEMP ? "(Temperature)" : "(Water Meter)"));
+                logger.logfDebug("Sensor 1 (Pin %d): %.1f°F (%s)", TEMP_METER_PIN, sensorManager.getTemperature1F(),
+                    sensorManager.getSensor1Type() == SensorType::DALLAS_TEMP ? "Temperature" : "Water Meter");
             }
             if (sensorManager.isSensor2Connected()) {
                 if (sensorManager.getSensor2Type() == SensorType::DALLAS_TEMP) { // NOSONAR - nested ok
                     float temp2 = sensorManager.getTemperature2F();
                     if (!isnan(temp2)) {
-                        logger.logDebug(String("Sensor 2 (Pin ") + String(TEMP_METER_2_PIN) + String("): ") + String(temp2, 1) + String("°F (Temperature)"));
+                        logger.logfDebug("Sensor 2 (Pin %d): %.1f°F (Temperature)", TEMP_METER_2_PIN, temp2);
                     }
                 } else {
-                    logger.logDebug(String("Sensor 2 (Pin ") + String(TEMP_METER_2_PIN) + String("): ") + String(sensorManager.getFlowRate2(), 2) + String(" GPM, ") + String(sensorManager.getPulseCount2()) + String(" pulses (Water Meter)"));
+                    logger.logfDebug("Sensor 2 (Pin %d): %.2f GPM, %lu pulses (Water Meter)", TEMP_METER_2_PIN, sensorManager.getFlowRate2(), sensorManager.getPulseCount2());
                 }
             }
-            
+
             float currentTemp = sensorManager.getTemperature1F();
             // Try to get temperature from sensor 1 first, then sensor 2
             if (isnan(currentTemp)) {
@@ -542,11 +543,11 @@ void setup() // NOSONAR - complexity ok
 
             float threshold = settingsManager.getTempThresholdOnF();
             bool tempBelowThreshold = sensorManager.isTemperatureBelowThreshold();
-            if (!isnan(currentTemp) && (!tempBelowThreshold || tempBelowThreshold)) {
+            if (!isnan(currentTemp)) {
                 if (tempBelowThreshold) { // NOSONAR - nesting ok
-                    logger.logInfo(String("Temperature below threshold (") + String(currentTemp, 1) + String("°F < ") + String(threshold) + String("°F)"));
+                    logger.logfInfo("Temperature below threshold (%.1f°F < %.2f°F)", currentTemp, threshold);
                 } else {
-                    logger.logInfo(String("Temperature above threshold (") + String(currentTemp, 1) + String("°F >= ") + String(settingsManager.getTempThresholdOffF()) + String("°F)"));
+                    logger.logfInfo("Temperature above threshold (%.1f°F >= %.2f°F)", currentTemp, settingsManager.getTempThresholdOffF());
                 }
             } else {
                 logger.logWarning("No temperature sensor available for threshold comparison");
@@ -567,11 +568,11 @@ void setup() // NOSONAR - complexity ok
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
-                doorController.getStateString(),
-                doorController.getPositionString(),
-                pumpController.getLastTriggerSourceString(),
-                doorController.getLastTriggerSourceString(),
-                lightController.getLastTriggerSourceString()
+                doorController.getStateCStr(),
+                doorController.getPositionCStr(),
+                pumpController.getLastTriggerSourceCStr(),
+                doorController.getLastTriggerSourceCStr(),
+                lightController.getLastTriggerSourceCStr()
             );
 
             doorController.update();
@@ -588,11 +589,11 @@ void setup() // NOSONAR - complexity ok
                 pumpController.isPumpOn(),
                 sensorManager.getFlowRate1(),
                 lightController.getCurrentBrightness(),
-                doorController.getStateString(),
-                doorController.getPositionString(),
-                pumpController.getLastTriggerSourceString(),
-                doorController.getLastTriggerSourceString(),
-                lightController.getLastTriggerSourceString()
+                doorController.getStateCStr(),
+                doorController.getPositionCStr(),
+                pumpController.getLastTriggerSourceCStr(),
+                doorController.getLastTriggerSourceCStr(),
+                lightController.getLastTriggerSourceCStr()
             );
 
             lightController.update();

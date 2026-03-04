@@ -370,6 +370,7 @@ public:
      * @return String representation of current state
      */
     String getStateString() const;
+    const char* getStateCStr() const;
 
     /**
      * @brief Get position as human-readable string
@@ -377,6 +378,7 @@ public:
      * @return String representation of current position
      */
     String getPositionString() const;
+    const char* getPositionCStr() const;
 
     /**
      * @brief Get door operation progress percentage
@@ -401,6 +403,7 @@ public:
      * @return String representation of last trigger source
      */
     String getLastTriggerSourceString() const { return triggerSourceToString(lastTriggerSource_); }
+    const char* getLastTriggerSourceCStr() const { return triggerSourceToCStr(lastTriggerSource_); }
 
     // ========================================================================
     // LOCKOUT CONTROL

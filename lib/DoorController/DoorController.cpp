@@ -547,7 +547,7 @@ DoorPosition DoorController::getPosition() const {
     return currentPosition;
 }
 
-String DoorController::getStateString() const {
+const char* DoorController::getStateCStr() const {
     switch (currentState) {
         case DoorState::IDLE: return "IDLE";
         case DoorState::OPENING: return "OPENING";
@@ -559,7 +559,11 @@ String DoorController::getStateString() const {
     }
 }
 
-String DoorController::getPositionString() const {
+String DoorController::getStateString() const {
+    return String(getStateCStr());
+}
+
+const char* DoorController::getPositionCStr() const {
     switch (currentPosition) {
         case DoorPosition::OPEN: return "OPEN";
         case DoorPosition::CLOSED: return "CLOSED";
@@ -567,6 +571,10 @@ String DoorController::getPositionString() const {
         case DoorPosition::UNKNOWN: return "UNKNOWN";
         default: return "UNKNOWN";
     }
+}
+
+String DoorController::getPositionString() const {
+    return String(getPositionCStr());
 }
 
 int DoorController::getProgressPercentage() const {

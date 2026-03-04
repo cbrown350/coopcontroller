@@ -347,6 +347,7 @@ public:
      * @return String representation of last trigger source
      */
     String getLastTriggerSourceString() const { return triggerSourceToString(lastTriggerSource_); }
+    const char* getLastTriggerSourceCStr() const { return triggerSourceToCStr(lastTriggerSource_); }
 
     // ========================================================================
     // CONFIGURATION GETTERS/SETTERS
