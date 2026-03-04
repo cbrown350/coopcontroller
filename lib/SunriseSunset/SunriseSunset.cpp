@@ -20,8 +20,7 @@ void SunriseSunsetCalculator::begin(IHAL* hal, double lat, double lon, int utcOf
   longitude_ = lon;
   utcOffset_ = utcOffset;
   lastCalculation_ = 0; // Force calculation on first update
-  logger.logInfo(String("SunriseSunsetCalculator initialized: lat=") + String(lat, 4) +
-         String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
+  logger.logfInfo("SunriseSunsetCalculator initialized: lat=%.4f, lon=%.4f, UTC offset=%d", lat, lon, utcOffset);
 }
 
 void SunriseSunsetCalculator::setCoordinates(double lat, double lon, int utcOffset) {
@@ -29,8 +28,7 @@ void SunriseSunsetCalculator::setCoordinates(double lat, double lon, int utcOffs
   longitude_ = lon;
   utcOffset_ = utcOffset;
   lastCalculation_ = 0; // Force recalculation on next update()
-  logger.logInfo(String("SunriseSunsetCalculator coordinates updated: lat=") + String(lat, 4) +
-         String(", lon=") + String(lon, 4) + String(", UTC offset=") + String(utcOffset));
+  logger.logfInfo("SunriseSunsetCalculator coordinates updated: lat=%.4f, lon=%.4f, UTC offset=%d", lat, lon, utcOffset);
 }
 
 void SunriseSunsetCalculator::update() {
@@ -91,12 +89,10 @@ void SunriseSunsetCalculator::forceUpdate() {
   
   lastCalculation_ = time(nullptr);
   
-  logger.logInfo(String("Sunrise/sunset calculated for ") + String(timeinfo.tm_year + 1900) + 
-    String("-") + String(timeinfo.tm_mon + 1) + String("-") + String(timeinfo.tm_mday) + 
-    String(": Sunrise ") + getSunriseTime() + String(" (") + String(sunriseHour) + String(":") + 
-    String(sunriseMinute) + String(" local), Sunset ") + getSunsetTime() + String(" (") + 
-    String(sunsetHour) + String(":") + String(sunsetMinute) + String(" local) [UTC offset: ") + 
-    String(utcOffset_) + String("]"));
+  logger.logfInfo("Sunrise/sunset calculated for %d-%d-%d: Sunrise %s (%d:%d local), Sunset %s (%d:%d local) [UTC offset: %d]",
+    timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+    getSunriseTime().c_str(), sunriseHour, sunriseMinute,
+    getSunsetTime().c_str(), sunsetHour, sunsetMinute, utcOffset_);
 }
 
 int SunriseSunsetCalculator::getSunriseMinutes() const {

@@ -49,7 +49,7 @@ void Logger::reconfigureSyslog(const String& server, int port, const char* hostn
     syslogServerStr_ = server;
     syslogHostnameStr_ = hostname;
     syslog = new SimpleSyslog(syslogHostnameStr_.c_str(), "CoopController", syslogServerStr_.c_str(), (uint16_t)port, 400); // NOSONAR
-    logInfo(String("Syslog reconfigured: ") + server + ":" + String(port));
+    logfInfo("Syslog reconfigured: %s:%d", server.c_str(), port);
   } else {
     logInfo("Syslog disabled (no server configured)");
   }
@@ -125,17 +125,17 @@ LogLevel Logger::stringToLogLevel(const String &levelStr, unsigned int depth) co
     if (levelStr == "WARNING") return LogLevel::WARNING;
     if (levelStr == "ERROR") return LogLevel::ERROR;
     if(depth > 0) {
-        logWarning(String("Unknown log level string '") + levelStr + String("', defaulting to INFO"));
+        logfWarning("Unknown log level string '%s', defaulting to INFO", levelStr.c_str());
         return LogLevel::INFO; // prevent infinite recursion
     }
-    logWarning(String("Unknown log level string '") + levelStr + String("', attempting default ") + DEFAULT_LOGLEVEL);
+    logfWarning("Unknown log level string '%s', attempting default %s", levelStr.c_str(), DEFAULT_LOGLEVEL);
     return stringToLogLevel(DEFAULT_LOGLEVEL, depth+1); 
 }
 
 void Logger::setLogLevel(LogLevel level)
 {
   currentLogLevel_ = level;
-  logInfo(String("Log level set to ") + logLevelToString(level));
+  logfInfo("Log level set to %s", logLevelToString(level).c_str());
 }
 
 LogLevel Logger::getLogLevel() const

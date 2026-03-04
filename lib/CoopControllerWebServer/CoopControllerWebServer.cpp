@@ -320,7 +320,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       unsigned int interval = jsonObj["flow_calculation_interval_seconds"].as<unsigned int>();
                       settingsManager.setFlowCalculationIntervalSeconds(interval);
                       tempSensor.setFlowCalculationIntervalSeconds(interval);
-                      logger.logInfo(String("Flow calculation interval: ") + String(interval) + " seconds");
+                      logger.logfInfo("Flow calculation interval: %u seconds", interval);
                   }
 
                   // Handle history data settings

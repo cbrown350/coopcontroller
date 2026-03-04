@@ -74,7 +74,7 @@ void BuzzerController::begin(uint8_t pin) {
     // Load settings
     loadFromSettings();
 
-    logger.logInfo(String("Buzzer controller initialized on pin ") + String(_pin) + String(", type: ") + String(_buzzerType == BuzzerType::ACTIVE ? "Active" : "Passive") + String(", enabled: ") + String(_enabled ? "true" : "false"));
+    logger.logfInfo("Buzzer controller initialized on pin %d, type: %s, enabled: %s", _pin, _buzzerType == BuzzerType::ACTIVE ? "Active" : "Passive", _enabled ? "true" : "false");
 }
 
 // ============================================================================
@@ -183,7 +183,7 @@ void BuzzerController::setEnabled(bool enabled) {
             stopBeep();
         }
         
-        logger.logInfo(String("Buzzer ") + String(enabled ? "enabled" : "disabled"));
+        logger.logfInfo("Buzzer %s", enabled ? "enabled" : "disabled");
     }
 }
 
@@ -200,7 +200,7 @@ void BuzzerController::setBuzzerType(BuzzerType type) {
             stopBeep();
         }
         
-        logger.logInfo(String("Buzzer type set to: ") + String(type == BuzzerType::ACTIVE ? "Active" : "Passive"));
+        logger.logfInfo("Buzzer type set to: %s", type == BuzzerType::ACTIVE ? "Active" : "Passive");
     }
 }
 
@@ -356,5 +356,5 @@ bool BuzzerController::isSilenced() const {
 }
 
 void BuzzerController::logAlert(AlertType type, const char* action) const {
-    logger.logInfo(String("Buzzer alert: ") + getAlertTypeString(type) + String(" - ") + action);
+    logger.logfInfo("Buzzer alert: %s - %s", getAlertTypeString(type).c_str(), action);
 }
