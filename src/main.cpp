@@ -62,6 +62,7 @@
 #include "WifiController.h"
 #include "HistoricalDataManager.h"
 #include "UpdateManager.h"
+#include "CrashDiagnostics.h"
 
 
 /**
@@ -269,6 +270,11 @@ void setup() // NOSONAR - complexity ok
             logger.logfWarning("System reset reason: %d", resetReason);
             break;
     }
+
+    // Check for coredump from previous crash and log details
+    crashDiagnosticsCheck([](const char* msg) {
+        logger.logError(msg);
+    });
 
     // Initialize Task Watchdog Timer
     int watchdogTimeout = settingsManager.getWatchdogTimeoutSeconds();

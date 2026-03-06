@@ -78,12 +78,14 @@ void Logger::logWithLevel(const String &message, LogLevel level) const
     // Create level prefix
     String levelPrefix = "[" + String(logLevelToString(level)) + "] ";
     String fullMessage = levelPrefix + message;
-    
+    const char* msgCStr = fullMessage.c_str();
+    if (msgCStr == nullptr) msgCStr = "[LOG_ALLOC_FAIL]";
+
     // Print to serial with timestamp and level
-    hal->SerialPrintf("[%lu] %s\n", timestamp, fullMessage.c_str());
+    hal->SerialPrintf("[%lu] %s\n", timestamp, msgCStr);
 
     if (syslog != nullptr && hal->WiFiIsConnected())
-      syslog->printf(FAC_USER, PRI_DEBUG, const_cast<char*>("([%lu] %s)"), timestamp, fullMessage.c_str()); // NOSONAR
+      syslog->printf(FAC_USER, PRI_DEBUG, const_cast<char*>("([%lu] %s)"), timestamp, msgCStr); // NOSONAR
 
     // Generate UUID for this log entry
     uuidGenerator.generate();
@@ -93,7 +95,7 @@ void Logger::logWithLevel(const String &message, LogLevel level) const
     strncpy(logBuffer[currentIndex].uuid, uuidChars, sizeof(logBuffer[currentIndex].uuid) - 1);
     logBuffer[currentIndex].uuid[sizeof(logBuffer[currentIndex].uuid) - 1] = '\0';
     logBuffer[currentIndex].timestamp = timestamp;
-    strncpy(logBuffer[currentIndex].message, fullMessage.c_str(), sizeof(logBuffer[currentIndex].message) - 1);
+    strncpy(logBuffer[currentIndex].message, msgCStr, sizeof(logBuffer[currentIndex].message) - 1);
     logBuffer[currentIndex].message[sizeof(logBuffer[currentIndex].message) - 1] = '\0';
     logBuffer[currentIndex].level = level;
 

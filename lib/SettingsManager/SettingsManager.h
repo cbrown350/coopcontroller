@@ -147,7 +147,7 @@ struct user_settings // NOSONAR
     bool         history_enabled = true;             ///< Enable historical data collection
     unsigned int history_temp_min_interval_seconds = 60; ///< Min interval for temp recordings (default: 60s)
     unsigned int history_flow_min_interval_seconds = 10; ///< Min interval for flow recordings (default: 10s)
-    unsigned int history_buffer_size = 1440;         ///< Buffer size (default: 1440 data points)
+    unsigned int history_buffer_size = HISTORY_DEFAULT_BUFFER_SIZE;      ///< Buffer size (default: 200, max: 500)
 
     // ========================================================================
     // OTA UPDATE SETTINGS

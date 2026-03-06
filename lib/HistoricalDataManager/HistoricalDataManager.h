@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <vector>
+#include "config.h"
 
 /**
  * @brief Single data point in historical data
@@ -136,6 +137,7 @@ public:
     void clear();
     size_t getDataPointCount() const;
     size_t getBufferCapacity() const { return maxSize; }
+    void setBufferSize(size_t newSize);
     bool isEnabled() const { return enabled; }
     void setEnabled(bool enable) { enabled = enable; }
     unsigned int getTempMinInterval() const { return tempMinIntervalSeconds; }

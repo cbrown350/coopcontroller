@@ -1418,12 +1418,12 @@ function Settings() {
             <fieldset class="fieldset mt-4">
               <legend class="fieldset-legend">Buffer Size (data points)</legend>
               <Show when={loaded()}>
-                <input type="number" value={historyBufferSize()!} onInput={(e) => setHistoryBufferSize(parseInt(e.target.value))} placeholder="500" step="50" min="50" max="2000" class="input" />
+                <input type="number" value={historyBufferSize()!} onInput={(e) => setHistoryBufferSize(Math.min(500, Math.max(50, parseInt(e.target.value) || 50)))} placeholder="500" step="50" min="50" max="500" class="input" />
               </Show>
               <Show when={!loaded()}>
                 <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
               </Show>
-              <div class="fieldset-label">Maximum data points to store in RAM (50-2000, default: 500). Oldest data is overwritten when full. Pump, light, and door events are captured immediately on any change.</div>
+              <div class="fieldset-label">Maximum data points to store in RAM (50-500, default: 500). Oldest data is overwritten when full. Pump, light, and door events are captured immediately on any change.</div>
             </fieldset>
           </Show>
 

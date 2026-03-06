@@ -3,7 +3,7 @@
 #include <time.h>
 
 HistoricalDataManager::HistoricalDataManager()
-    : maxSize(1440)
+    : maxSize(HISTORY_DEFAULT_BUFFER_SIZE)
     , currentIndex(0)
     , enabled(true)
     , prevTemperature(NAN)
@@ -29,6 +29,9 @@ void HistoricalDataManager::begin(bool enableData, size_t bufferSize,
 
     buffer.clear();
     buffer.shrink_to_fit();
+    if (maxSize > HISTORY_MAX_BUFFER_SIZE) {
+        maxSize = HISTORY_MAX_BUFFER_SIZE;
+    }
     currentIndex = 0;
     firstUpdate = true;
     prevTemperature = NAN;
@@ -43,7 +46,12 @@ void HistoricalDataManager::begin(bool enableData, size_t bufferSize,
 
 void HistoricalDataManager::addPoint(const DataPoint& point) {
     if (buffer.size() < maxSize) {
-        buffer.push_back(point);
+        try {
+            buffer.push_back(point);
+        } catch (...) {
+            // Allocation failed — skip this data point rather than crash
+            return;
+        }
     } else {
         buffer[currentIndex] = point;
         currentIndex = (currentIndex + 1) % maxSize;
@@ -275,4 +283,26 @@ void HistoricalDataManager::clear() {
 
 size_t HistoricalDataManager::getDataPointCount() const {
     return buffer.size();
+}
+
+void HistoricalDataManager::setBufferSize(size_t newSize) {
+    if (newSize > HISTORY_MAX_BUFFER_SIZE) {
+        newSize = HISTORY_MAX_BUFFER_SIZE;
+    }
+    if (newSize == maxSize) return;
+
+    if (buffer.size() > newSize) {
+        // Keep the most recent entries
+        std::vector<DataPoint> newBuffer;
+        newBuffer.reserve(newSize);
+        size_t count = buffer.size();
+        size_t skip = count - newSize;
+        for (size_t i = skip; i < count; i++) {
+            size_t index = getOrderedIndex(i);
+            newBuffer.push_back(buffer[index]);
+        }
+        buffer = std::move(newBuffer);
+        currentIndex = 0; // Buffer is now linear and full
+    }
+    maxSize = newSize;
 }

@@ -57,6 +57,10 @@ static inline const char* const hostName __attribute__((unused)) = (strcmp(TOSTR
 static inline const char* const otaPasswd __attribute__((unused)) = (strcmp(TOSTRING(OTA_PASSWD), "") == 0 || strcmp(TOSTRING(OTA_PASSWD), "1") == 0) ? "" : TOSTRING(OTA_PASSWD);
 static inline const char* const apPasswd __attribute__((unused)) = (strcmp(TOSTRING(AP_PASSWD), "") == 0 || strcmp(TOSTRING(AP_PASSWD), "1") == 0) ? "" : TOSTRING(AP_PASSWD);
 
+// Historical data buffer limits (~112 bytes per entry)
+static constexpr size_t HISTORY_MAX_BUFFER_SIZE = 500;     // ~55KB max
+static constexpr size_t HISTORY_DEFAULT_BUFFER_SIZE = 200; // ~22KB default
+
 #define SENSOR_UPDATE_INTERVAL 5000    // NOSONAR, Update sensors every 5 seconds
 #define PUMP_UPDATE_INTERVAL 1000     // NOSONAR, Update pump controller every 1 second
 #define DOOR_UPDATE_INTERVAL 100      // NOSONAR, Update door controller every 100ms for faster response

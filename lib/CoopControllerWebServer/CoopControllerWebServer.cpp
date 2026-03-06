@@ -339,7 +339,9 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       historyManager.setFlowMinInterval(interval);
                   }
                   if (jsonObj["history_buffer_size"].is<int>()) {
-                      settingsManager.setHistoryBufferSize(jsonObj["history_buffer_size"].as<unsigned int>());
+                      unsigned int bufSize = jsonObj["history_buffer_size"].as<unsigned int>();
+                      settingsManager.setHistoryBufferSize(bufSize);
+                      historyManager.setBufferSize(bufSize);
                   }
 
                   // OTA update settings
