@@ -334,14 +334,18 @@ void setup() // NOSONAR - complexity ok
 
     // Register Telegram bot commands
     telegramBot.onCommand("/status", "Show system status", [&](const String&) -> String {
-        float temp = sensorManager.getTemperature1F();
-        if (isnan(temp)) temp = sensorManager.getTemperature2F();
         String msg = "🐔 *Coop Status*\n";
-        msg += "Temp: " + (isnan(temp) ? String("N/A") : String(temp, 1) + "°F") + "\n";
-        msg += "Door: " + String(doorController.getStateCStr()) + " (" + doorController.getPositionCStr() + ")\n";
-        msg += "Pump: " + String(pumpController.isPumpOn() ? "ON" : "OFF") + "\n";
-        msg += "Light: " + String(lightController.getCurrentBrightness()) + "%\n";
-        msg += "Heap: " + String(hal.getFreeHeap()) + " bytes free";
+        float temp1 = sensorManager.getTemperature1F();
+        float temp2 = sensorManager.getTemperature2F();
+        if (!isnan(temp1)) msg += "🌡️ Sensor 1: " + String(temp1, 1) + "°F\n";
+        if (!isnan(temp2)) msg += "🌡️ Sensor 2: " + String(temp2, 1) + "°F\n";
+        if (isnan(temp1) && isnan(temp2)) msg += "🌡️ Temp: N/A\n";
+        float waterFlow = sensorManager.getFlowRate1();
+        if (waterFlow > 0) msg += "💧 Flow: " + String(waterFlow, 2) + " GPM\n";
+        msg += "🚪 Door: " + String(doorController.getStateCStr()) + " (" + doorController.getPositionCStr() + ")\n";
+        msg += "💧 Pump: " + String(pumpController.isPumpOn() ? "ON" : "OFF") + "\n";
+        msg += "💡 Light: " + String(lightController.getCurrentBrightness()) + "%\n";
+        msg += "🧠 Heap: " + String(hal.getFreeHeap()) + " bytes free";
         return msg;
     });
 
