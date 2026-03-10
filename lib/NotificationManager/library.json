@@ -1,5 +1,8 @@
 {
     "name": "NotificationManager",
     "version": "1.0.0",
-    "description": "Email and Telegram notification manager for coop controller alerts"
+    "description": "Email and Telegram notification manager for coop controller alerts",
+    "dependencies": {
+        "bblanchon/ArduinoJson": "^7.4.2"
+    }
 }
