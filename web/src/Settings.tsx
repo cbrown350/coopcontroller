@@ -125,6 +125,7 @@ function Settings() {
   const [telegramBotToken, setTelegramBotToken] = createSignal('')
   const [telegramChatId, setTelegramChatId] = createSignal('')
   const [showTelegramToken, setShowTelegramToken] = createSignal(false)
+  const [telegramPollingInterval, setTelegramPollingInterval] = createSignal<number | null>(20)
   const [telegramTestLoading, setTelegramTestLoading] = createSignal(false)
   const [telegramTestResult, setTelegramTestResult] = createSignal<{success: boolean, message: string} | null>(null)
 
@@ -245,6 +246,7 @@ function Settings() {
       setTelegramEnabled(settings.telegram_enabled ?? false)
       setTelegramBotToken('') // Never load token back for security
       setTelegramChatId(settings.telegram_chat_id ?? '')
+      setTelegramPollingInterval(settings.telegram_polling_interval_seconds ?? 20)
       setEmailEnabled(settings.email_enabled ?? false)
       setEmailSmtpServer(settings.email_smtp_server ?? '')
       setEmailSmtpPort(settings.email_smtp_port ?? 587)
@@ -369,6 +371,7 @@ function Settings() {
         water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
         telegram_enabled: telegramEnabled() ?? false,
         telegram_chat_id: telegramChatId() ?? '',
+        telegram_polling_interval_seconds: telegramPollingInterval() ?? 20,
         email_enabled: emailEnabled() ?? false,
         email_smtp_server: emailSmtpServer() ?? '',
         email_smtp_port: emailSmtpPort() ?? 587,
@@ -1774,7 +1777,15 @@ function Settings() {
                     onInput={(e) => setTelegramChatId(e.target.value)}
                     placeholder="Enter chat ID"
                     class="input w-full" />
-                  <div class="fieldset-label">Your Telegram chat ID. Send /start to your bot, then forware the message to @userinfobot to find your ID.</div>
+                  <div class="fieldset-label">Your Telegram chat ID. Send /start to your bot, then forward the message to @userinfobot to find your ID.</div>
+                </fieldset>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Command Polling Interval (seconds)</legend>
+                  <input type="number" min="10" max="300" step="5"
+                    value={telegramPollingInterval() ?? 20}
+                    onInput={(e) => setTelegramPollingInterval(parseInt(e.target.value) || 20)}
+                    class="input w-full" />
+                  <div class="fieldset-label">How often to check for bot commands (10-300 seconds). Lower = faster response, higher = less network usage.</div>
                 </fieldset>
                 <div class="mt-2">
                   <button type="button" class="btn btn-accent btn-soft btn-sm"

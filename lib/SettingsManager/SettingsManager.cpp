@@ -831,6 +831,7 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.telegram_enabled = doc["telegram_enabled"] | defaultSettings.telegram_enabled;
     if (doc["telegram_bot_token"].is<const char*>()) settings.telegram_bot_token = doc["telegram_bot_token"].as<String>();
     if (doc["telegram_chat_id"].is<const char*>()) settings.telegram_chat_id = doc["telegram_chat_id"].as<String>();
+    settings.telegram_polling_interval_seconds = doc["telegram_polling_interval_seconds"] | defaultSettings.telegram_polling_interval_seconds;
 
     // Load notification settings - Email
     settings.email_enabled = doc["email_enabled"] | defaultSettings.email_enabled;
@@ -951,6 +952,7 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
         doc["telegram_bot_token"] = settings.telegram_bot_token;
     }
     doc["telegram_chat_id"] = settings.telegram_chat_id;
+    doc["telegram_polling_interval_seconds"] = settings.telegram_polling_interval_seconds;
 
     // Notification settings - Email
     doc["email_enabled"] = settings.email_enabled;
@@ -1036,11 +1038,15 @@ void SettingsManager::setManifestUrl(const String& url) {
 bool SettingsManager::getTelegramEnabled() const { return settings.telegram_enabled; }
 String SettingsManager::getTelegramBotToken() const { return settings.telegram_bot_token; }
 String SettingsManager::getTelegramChatId() const { return settings.telegram_chat_id; }
+unsigned int SettingsManager::getTelegramPollingIntervalSeconds() const { return settings.telegram_polling_interval_seconds; }
 
 // Telegram notification setters
 void SettingsManager::setTelegramEnabled(bool enabled) { settings.telegram_enabled = enabled; }
 void SettingsManager::setTelegramBotToken(const String& token) { settings.telegram_bot_token = token; }
 void SettingsManager::setTelegramChatId(const String& chatId) { settings.telegram_chat_id = chatId; }
+void SettingsManager::setTelegramPollingIntervalSeconds(unsigned int seconds) {
+    if (seconds >= 10 && seconds <= 300) settings.telegram_polling_interval_seconds = seconds;
+}
 
 // Email notification getters
 bool SettingsManager::getEmailEnabled() const { return settings.email_enabled; }

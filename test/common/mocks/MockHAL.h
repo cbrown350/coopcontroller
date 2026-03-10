@@ -753,6 +753,7 @@ public:
     String getLastHttpPostUrl() const { return lastHttpPostUrl; }
     String getLastHttpPostBody() const { return lastHttpPostBody; }
     void resetHttpPost() { lastHttpPostUrl = ""; lastHttpPostBody = ""; }
+    void resetHttpGet() { lastHttpGetUrl = ""; mockHttpGetResponse = ""; }
     void setSmtpResult(const String& result) { mockSmtpResult = result; }
     String getLastSmtpHost() const { return lastSmtpHost; }
     uint16_t getLastSmtpPort() const { return lastSmtpPort; }

@@ -63,6 +63,7 @@
 #include "HistoricalDataManager.h"
 #include "UpdateManager.h"
 #include "NotificationManager.h"
+#include "TelegramBot.h"
 #include "CrashDiagnostics.h"
 
 
@@ -208,6 +209,7 @@ void setup() // NOSONAR - complexity ok
     HistoricalDataManager historyManager;
     UpdateManager updateManager;
     NotificationManager notificationManager;
+    TelegramBot telegramBot;
 
     settingsManager.begin(&hal);
     settingsManager.load();
@@ -322,11 +324,57 @@ void setup() // NOSONAR - complexity ok
     webServer.setUpdateManager(&updateManager);
     logger.logInfo("Update manager initialized");
 
+    // Initialize Telegram bot
+    telegramBot.begin(&hal);
+    telegramBot.setEnabled(settingsManager.getTelegramEnabled());
+    telegramBot.setBotToken(settingsManager.getTelegramBotToken());
+    telegramBot.setChatId(settingsManager.getTelegramChatId());
+    telegramBot.setPollingEnabled(settingsManager.getTelegramEnabled());
+    telegramBot.setPollingIntervalMs(settingsManager.getTelegramPollingIntervalSeconds() * 1000UL);
+
+    // Register Telegram bot commands
+    telegramBot.onCommand("/status", "Show system status", [&](const String&) -> String {
+        float temp = sensorManager.getTemperature1F();
+        if (isnan(temp)) temp = sensorManager.getTemperature2F();
+        String msg = "🐔 *Coop Status*\n";
+        msg += "Temp: " + (isnan(temp) ? String("N/A") : String(temp, 1) + "°F") + "\n";
+        msg += "Door: " + String(doorController.getStateCStr()) + " (" + doorController.getPositionCStr() + ")\n";
+        msg += "Pump: " + String(pumpController.isPumpOn() ? "ON" : "OFF") + "\n";
+        msg += "Light: " + String(lightController.getCurrentBrightness()) + "%\n";
+        msg += "Heap: " + String(hal.getFreeHeap()) + " bytes free";
+        return msg;
+    });
+
+    telegramBot.onCommand("/door", "Control door (open/close/stop/auto)", [&](const String& args) -> String {
+        if (args == "open") { doorController.open(TriggerSource::API); return "🚪 Door opening..."; }
+        if (args == "close") { doorController.close(TriggerSource::API); return "🚪 Door closing..."; }
+        if (args == "stop") { doorController.stop(TriggerSource::API); return "🚪 Door stopped."; }
+        if (args == "auto") { doorController.setAutoMode(true, TriggerSource::API); return "🚪 Door set to AUTO."; }
+        return "Usage: /door open|close|stop|auto";
+    });
+
+    telegramBot.onCommand("/pump", "Control pump (on/off/auto)", [&](const String& args) -> String {
+        if (args == "on") { pumpController.turnOn(TriggerSource::API); return "💧 Pump turned ON."; }
+        if (args == "off") { pumpController.turnOff(TriggerSource::API); return "💧 Pump turned OFF."; }
+        if (args == "auto") { pumpController.setAutoMode(true, TriggerSource::API); return "💧 Pump set to AUTO."; }
+        return "Usage: /pump on|off|auto";
+    });
+
+    telegramBot.onCommand("/light", "Control light (on/off/auto)", [&](const String& args) -> String {
+        if (args == "on") { lightController.turnOn(TriggerSource::API); return "💡 Light turned ON."; }
+        if (args == "off") { lightController.turnOff(TriggerSource::API); return "💡 Light turned OFF."; }
+        if (args == "auto") { lightController.setAutoMode(true, TriggerSource::API); return "💡 Light set to AUTO."; }
+        return "Usage: /light on|off|auto";
+    });
+
+    telegramBot.onCommand("/buzzer", "Silence buzzer", [&](const String&) -> String {
+        buzzerController.silenceAlerts();
+        return "🔇 Buzzer silenced.";
+    });
+
     // Initialize notification manager
     notificationManager.begin(&hal);
-    notificationManager.setTelegramEnabled(settingsManager.getTelegramEnabled());
-    notificationManager.setTelegramBotToken(settingsManager.getTelegramBotToken());
-    notificationManager.setTelegramChatId(settingsManager.getTelegramChatId());
+    notificationManager.setTelegramBot(&telegramBot);
     notificationManager.setEmailEnabled(settingsManager.getEmailEnabled());
     notificationManager.setSmtpServer(settingsManager.getEmailSmtpServer());
     notificationManager.setSmtpPort(settingsManager.getEmailSmtpPort());
@@ -340,7 +388,8 @@ void setup() // NOSONAR - complexity ok
     notificationManager.setNotifyOnWifiDisconnect(settingsManager.getNotifyWifiDisconnect());
     notificationManager.setNotifyOnSystemError(settingsManager.getNotifySystemError());
     webServer.setNotificationManager(&notificationManager);
-    logger.logInfo("Notification manager initialized");
+    webServer.setTelegramBot(&telegramBot);
+    logger.logInfo("Notification manager and Telegram bot initialized");
 
     logger.logInfo("System initialization complete");
 
@@ -641,6 +690,9 @@ void setup() // NOSONAR - complexity ok
         // OTA update: check for deferred install requests every loop,
         // and periodic auto-update checks based on settings interval
         updateManager.update();
+
+        // Poll Telegram bot for incoming commands
+        telegramBot.update();
 
         delay(10);
         

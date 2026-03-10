@@ -15,6 +15,7 @@
 #include "HistoricalDataManager.h"
 #include "UpdateManager.h"
 #include "NotificationManager.h"
+#include "TelegramBot.h"
 
 /**
  * @brief Web server for chicken coop controller
@@ -40,6 +41,7 @@ class CoopControllerWebServer
         uint16_t port;      ///< HTTP server port number
         UpdateManager* updateManager_ = nullptr; ///< OTA update manager (optional)
         NotificationManager* notificationManager_ = nullptr; ///< Notification manager (optional)
+        TelegramBot* telegramBot_ = nullptr; ///< Telegram bot for command polling (optional)
 
         /**
          * @brief Check if HTTP request has valid authentication credentials
@@ -121,6 +123,12 @@ class CoopControllerWebServer
      * @param notificationManager Pointer to NotificationManager instance
      */
     void setNotificationManager(NotificationManager* notificationManager);
+
+    /**
+     * @brief Set TelegramBot for bot command and config endpoints
+     * @param telegramBot Pointer to TelegramBot instance
+     */
+    void setTelegramBot(TelegramBot* telegramBot) { telegramBot_ = telegramBot; }
 
     /**
      * @brief Process web server events (call in main loop)

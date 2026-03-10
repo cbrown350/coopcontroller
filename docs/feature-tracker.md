@@ -13,15 +13,15 @@ This document tracks in-progress and planned features. For completed features, s
 | Phase 3.5a (Sunrise/Sunset Integration) | 100% complete with accurate UTC to local time conversion |
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
 | Phase 3.5c (Desktop Unit Testing) | 100% complete - All 590 desktop unit tests passing, all 12 core components covered |
-| Phase 4 (Notifications) | In progress - Email & Telegram alerts implemented |
+| Phase 4 (Notifications) | In progress - Email & Telegram alerts + bot commands implemented |
 
-**Current Build:** RAM 29.8%, Flash 83.9%
+**Current Build:** RAM 29.8%, Flash 85.6%
 
 **Latest Build (2026-03-09):** Firmware and web UI builds successful
 
-**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API and HTTP-based email API integration.
+**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager, TelegramBot controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API, bot commands, and HTTP-based email API integration.
 
-**Test Coverage (March 2026):** 590/590 desktop tests passing (100% pass rate)
+**Test Coverage (March 2026):** 609/609 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
@@ -30,11 +30,12 @@ This document tracks in-progress and planned features. For completed features, s
 | DoorController | 68 |
 | LightController | 102 |
 | Logger | 11 |
-| NotificationManager | 14 |
+| NotificationManager | 18 |
 | PumpController | 83 |
 | SensorManager | 33 |
 | SettingsManager | 150 |
 | SunriseSunset | 36 |
+| TelegramBot | 19 |
 | UpdateManager | 71 |
 | WifiController | 1 |
 
@@ -106,6 +107,18 @@ All completed features have been moved to [feature-tracker-finished.md](feature-
 
 ## Recently Completed (Not Yet Moved to Finished)
 
+### Telegram Bot Commands (2026-03-10)
+- **Two-way Telegram control**: Receive and execute bot commands via Telegram chat
+- **Commands**: `/status`, `/door`, `/pump`, `/light`, `/buzzer`, `/help`
+- **Architecture**: Extracted `TelegramBot` class from `NotificationManager` into own library (`lib/TelegramBot/`)
+- **Polling**: Short polling via `getUpdates` API every 20s (configurable 10-300s), no persistent connections
+- **Security**: Only processes messages from configured `chat_id`, silently ignores all others
+- **Callback system**: Commands registered via `std::function` callbacks — TelegramBot stays decoupled from controllers
+- **Memory**: Zero persistent RAM overhead — uses transient HTTPS connections (same pattern as notifications)
+- **Tests**: 19 new TelegramBot tests + 18 updated NotificationManager tests (all passing)
+- **Docs**: Telegram Bot Commands section added to [api-reference.md](api-reference.md#telegram-bot-commands)
+- **Files**: `lib/TelegramBot/`, modified `lib/NotificationManager/`, `lib/CoopControllerWebServer/`, `src/main.cpp`
+
 ### Email & Telegram Notification Alerts (2026-03-09)
 - **Telegram**: Bot token & chat ID configuration, HTTPS POST to Telegram Bot API
 - **Email**: HTTP-based email API integration (smtp2go, Mailgun, etc.) — avoids heavy SMTP library
@@ -124,15 +137,15 @@ All completed features have been moved to [feature-tracker-finished.md](feature-
 
 Features organized by priority and implementation status.
 
-> **Flash Constraint Note:** Firmware is at 83.9% flash usage. Features requiring large external libraries (MQTT) may still be constrained by flash. Email uses HTTP-based API (not SMTP) and Telegram uses direct HTTPS POST to keep flash usage minimal.
+> **Flash Constraint Note:** Firmware is at 85.6% flash usage. Features requiring large external libraries (MQTT) may still be constrained by flash. Email uses HTTP-based API (not SMTP) and Telegram uses direct HTTPS POST with short polling to keep flash usage minimal.
 
 ### High Priority - Monitoring & Notifications (Partially Complete)
 
 #### Email Notifications - DONE (basic alerts via HTTP email API)
 - Remaining: Daily status/forecast reports, configurable notification times, API failure alerts
 
-#### Telegram Integration - DONE (basic alert notifications)
-- Remaining: Bot commands for controls, status queries, daily forecast, approval commands
+#### Telegram Integration - DONE (alerts + bot commands)
+- Remaining: Daily forecast, approval commands for AI door decisions
 
 ### Medium Priority - Door Automation
 

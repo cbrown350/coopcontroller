@@ -359,15 +359,25 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   // Handle notification settings - Telegram
                   if (jsonObj["telegram_enabled"].is<bool>()) {
                       settingsManager.setTelegramEnabled(jsonObj["telegram_enabled"].as<bool>());
-                      if (notificationManager_) notificationManager_->setTelegramEnabled(jsonObj["telegram_enabled"].as<bool>());
+                      if (telegramBot_) {
+                          telegramBot_->setEnabled(jsonObj["telegram_enabled"].as<bool>());
+                          telegramBot_->setPollingEnabled(jsonObj["telegram_enabled"].as<bool>());
+                      }
                   }
                   if (jsonObj["telegram_bot_token"].is<String>()) {
                       settingsManager.setTelegramBotToken(jsonObj["telegram_bot_token"].as<String>());
-                      if (notificationManager_) notificationManager_->setTelegramBotToken(jsonObj["telegram_bot_token"].as<String>());
+                      if (telegramBot_) telegramBot_->setBotToken(jsonObj["telegram_bot_token"].as<String>());
                   }
                   if (jsonObj["telegram_chat_id"].is<String>()) {
                       settingsManager.setTelegramChatId(jsonObj["telegram_chat_id"].as<String>());
-                      if (notificationManager_) notificationManager_->setTelegramChatId(jsonObj["telegram_chat_id"].as<String>());
+                      if (telegramBot_) telegramBot_->setChatId(jsonObj["telegram_chat_id"].as<String>());
+                  }
+                  if (jsonObj["telegram_polling_interval_seconds"].is<int>()) {
+                      unsigned int seconds = jsonObj["telegram_polling_interval_seconds"].as<unsigned int>();
+                      settingsManager.setTelegramPollingIntervalSeconds(seconds);
+                      if (telegramBot_ && seconds >= 10 && seconds <= 300) {
+                          telegramBot_->setPollingIntervalMs(seconds * 1000UL);
+                      }
                   }
 
                   // Handle notification settings - Email

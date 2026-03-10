@@ -476,3 +476,42 @@ When `api_auth_enabled` is true in settings:
 - **401 Response:** Includes `WWW-Authenticate: Basic realm="Coop Controller"` header
 
 For emulator API endpoints, see [docs/hardware-emulator.md](hardware-emulator.md#api-documentation).
+
+---
+
+## Telegram Bot Commands
+
+When Telegram is enabled and configured with a bot token and chat ID, the controller polls for incoming commands every 20 seconds (configurable). Commands are only accepted from the configured chat ID.
+
+### Setup
+
+1. Create a Telegram bot via [@BotFather](https://t.me/BotFather) and copy the bot token
+2. Get your chat ID by messaging [@userinfobot](https://t.me/userinfobot)
+3. Configure via the web UI Settings page or POST to `/update_settings`:
+   ```json
+   {
+     "telegram_enabled": true,
+     "telegram_bot_token": "123456:ABC-DEF...",
+     "telegram_chat_id": "987654321"
+   }
+   ```
+4. Send `/help` to your bot to verify it's working
+
+### Available Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/status` | Show current system status (temp, door, pump, light, heap) | `/status` |
+| `/door open\|close\|stop\|auto` | Control the coop door | `/door open` |
+| `/pump on\|off\|auto` | Control the water pump | `/pump auto` |
+| `/light on\|off\|auto` | Control the coop light | `/light on` |
+| `/buzzer` | Silence active buzzer alerts | `/buzzer` |
+| `/help` | List all available commands | `/help` |
+
+### Notes
+
+- **Security:** Only messages from the configured `telegram_chat_id` are processed. All other messages are silently ignored.
+- **Polling interval:** Default 20 seconds. Configurable via `telegram_polling_interval_seconds` setting (10-300 seconds).
+- **Memory:** Uses short polling (`timeout=0`) with transient HTTPS connections — no persistent RAM overhead beyond the existing notification system.
+- **Bot name suffix:** Commands like `/status@MyCoopBot` are handled correctly (the `@botname` suffix is stripped automatically).
+- **Notifications:** Alert notifications (pump errors, sensor failures, door faults, etc.) are sent to the same chat as configured for bot commands.

@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include "IHAL.h"
 #include "BuzzerController.h"
+#include "TelegramBot.h"
 
 /**
  * @brief Notification channel types
@@ -83,13 +84,8 @@ public:
      */
     void toJson(JsonObject& json) const;
 
-    // Telegram configuration
-    void setTelegramEnabled(bool enabled) { telegram_enabled_ = enabled; }
-    bool getTelegramEnabled() const { return telegram_enabled_; }
-    void setTelegramBotToken(const String& token) { telegram_bot_token_ = token; }
-    String getTelegramBotToken() const { return telegram_bot_token_; }
-    void setTelegramChatId(const String& chatId) { telegram_chat_id_ = chatId; }
-    String getTelegramChatId() const { return telegram_chat_id_; }
+    // Telegram bot integration
+    void setTelegramBot(TelegramBot* bot) { telegramBot_ = bot; }
 
     // Email configuration
     void setEmailEnabled(bool enabled) { email_enabled_ = enabled; }
@@ -127,11 +123,7 @@ public:
 
 private:
     IHAL* hal_ = nullptr;
-
-    // Telegram settings
-    bool telegram_enabled_ = false;
-    String telegram_bot_token_;
-    String telegram_chat_id_;
+    TelegramBot* telegramBot_ = nullptr;
 
     // Email settings
     bool email_enabled_ = false;
@@ -168,11 +160,6 @@ private:
      * @brief Check rate limit for alert type
      */
     bool isRateLimited(AlertType alertType) const;
-
-    /**
-     * @brief Send a Telegram message
-     */
-    NotificationResult sendTelegram(const String& message);
 
     /**
      * @brief Send an email via SMTP relay API

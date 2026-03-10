@@ -165,6 +165,7 @@ struct user_settings // NOSONAR
     bool   telegram_enabled = false;               ///< Enable Telegram notifications
     String telegram_bot_token = "";                ///< Telegram Bot API token
     String telegram_chat_id = "";                  ///< Telegram chat ID for notifications
+    unsigned int telegram_polling_interval_seconds = 20; ///< Bot command polling interval (10-300s)
 
     // Email
     bool     email_enabled = false;                ///< Enable email notifications
@@ -436,11 +437,13 @@ class SettingsManager // NOSONAR
     bool   getTelegramEnabled() const;
     String getTelegramBotToken() const;
     String getTelegramChatId() const;
+    unsigned int getTelegramPollingIntervalSeconds() const;
 
     // Telegram notification setters
     void setTelegramEnabled(bool enabled);
     void setTelegramBotToken(const String& token);
     void setTelegramChatId(const String& chatId);
+    void setTelegramPollingIntervalSeconds(unsigned int seconds);
 
     // Email notification getters
     bool     getEmailEnabled() const;

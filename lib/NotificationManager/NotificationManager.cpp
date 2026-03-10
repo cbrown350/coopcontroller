@@ -32,8 +32,8 @@ void NotificationManager::notify(AlertType alertType, const String& message) {
 
     bool anySent = false;
 
-    if (telegram_enabled_ && telegram_bot_token_.length() > 0 && telegram_chat_id_.length() > 0) {
-        NotificationResult result = sendTelegram(formattedMessage);
+    if (telegramBot_ && telegramBot_->getEnabled() && telegramBot_->isConfigured()) {
+        TelegramSendResult result = telegramBot_->sendMessage(formattedMessage);
         if (result.success) {
             anySent = true;
             total_sent_++;
@@ -72,10 +72,14 @@ NotificationResult NotificationManager::sendTest(NotificationChannel channel) {
     }
 
     if (channel == NotificationChannel::TELEGRAM) {
-        if (telegram_bot_token_.length() == 0 || telegram_chat_id_.length() == 0) {
+        if (!telegramBot_ || !telegramBot_->isConfigured()) {
             return {false, "Telegram bot token or chat ID not configured"};
         }
-        return sendTelegram("🐔 *Coop Controller Test*\nThis is a test notification from your chicken coop controller!");
+        bool wasEnabled = telegramBot_->getEnabled();
+        telegramBot_->setEnabled(true); // Temporarily enable for test
+        TelegramSendResult tResult = telegramBot_->sendMessage("🐔 *Coop Controller Test*\nThis is a test notification from your chicken coop controller!");
+        telegramBot_->setEnabled(wasEnabled);
+        return {tResult.success, tResult.error_message};
     } else if (channel == NotificationChannel::EMAIL) {
         if (smtp_server_.length() == 0 || email_to_.length() == 0) {
             return {false, "SMTP server or recipient not configured"};
@@ -93,8 +97,8 @@ void NotificationManager::sendDailyReport(const String& statusJson) {
 
     String message = "🐔 *Daily Coop Status Report*\n" + statusJson;
 
-    if (telegram_enabled_ && telegram_bot_token_.length() > 0 && telegram_chat_id_.length() > 0) {
-        sendTelegram(message);
+    if (telegramBot_ && telegramBot_->getEnabled() && telegramBot_->isConfigured()) {
+        telegramBot_->sendMessage(message);
     }
 
     if (email_enabled_ && smtp_server_.length() > 0 && email_to_.length() > 0) {
@@ -103,8 +107,12 @@ void NotificationManager::sendDailyReport(const String& statusJson) {
 }
 
 void NotificationManager::toJson(JsonObject& json) const {
-    json["telegram_enabled"] = telegram_enabled_;
-    json["telegram_configured"] = (telegram_bot_token_.length() > 0 && telegram_chat_id_.length() > 0);
+    if (telegramBot_) {
+        telegramBot_->toJson(json);
+    } else {
+        json["telegram_enabled"] = false;
+        json["telegram_configured"] = false;
+    }
     json["email_enabled"] = email_enabled_;
     json["email_configured"] = (smtp_server_.length() > 0 && email_to_.length() > 0);
     json["total_sent"] = total_sent_;
@@ -133,39 +141,6 @@ bool NotificationManager::isRateLimited(AlertType alertType) const {
     if (idx >= 8) return true;
     unsigned long lastTime = last_notification_times_[idx];
     return (lastTime > 0 && (hal_->millis() - lastTime) < MIN_NOTIFICATION_INTERVAL_MS);
-}
-
-NotificationResult NotificationManager::sendTelegram(const String& message) {
-    // Build Telegram Bot API URL
-    String url = "https://api.telegram.org/bot" + telegram_bot_token_ + "/sendMessage";
-
-    // Build JSON payload
-    JsonDocument doc;
-    doc["chat_id"] = telegram_chat_id_;
-    doc["text"] = message;
-    doc["parse_mode"] = "Markdown";
-
-    String payload;
-    serializeJson(doc, payload);
-
-    String response = hal_->httpPost(url, payload, 10000);
-    if (response.length() == 0) {
-        return {false, "No response from Telegram API"};
-    }
-
-    // Parse response to check for success
-    JsonDocument respDoc;
-    if (deserializeJson(respDoc, response) == DeserializationError::Ok) {
-        if (respDoc["ok"].as<bool>()) {
-            logger.logInfo("Telegram notification sent successfully");
-            return {true, ""};
-        } else {
-            String desc = respDoc["description"].as<String>();
-            return {false, desc};
-        }
-    }
-
-    return {true, ""}; // Assume success if we got a response
 }
 
 NotificationResult NotificationManager::sendEmail(const String& subject, const String& body) {

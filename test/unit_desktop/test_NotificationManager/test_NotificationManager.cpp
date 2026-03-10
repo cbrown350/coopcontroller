@@ -5,6 +5,7 @@
 #include "MockHAL.h"
 #include "Logger.h"
 #include "NotificationManager.h"
+#include "TelegramBot.h"
 
 using namespace fakeit;
 
@@ -12,6 +13,7 @@ class NotificationManagerTest : public ::testing::Test {
 protected:
     MockHAL* mockHal;
     NotificationManager notifier;
+    TelegramBot telegramBot;
 
     void SetUp() override {
         mockHal = new MockHAL();
@@ -30,7 +32,9 @@ protected:
         Logger::getInstance().clearLogs();
         Logger::getInstance().setLogLevel(LogLevel::VERBOSE);
 
+        telegramBot.begin(mockHal);
         notifier.begin(mockHal);
+        notifier.setTelegramBot(&telegramBot);
     }
 
     void TearDown() override {
@@ -39,9 +43,9 @@ protected:
     }
 
     void configureTelegram() {
-        notifier.setTelegramEnabled(true);
-        notifier.setTelegramBotToken("123456:ABC-DEF");
-        notifier.setTelegramChatId("987654321");
+        telegramBot.setEnabled(true);
+        telegramBot.setBotToken("123456:ABC-DEF");
+        telegramBot.setChatId("987654321");
     }
 
     void configureEmail() {
@@ -60,7 +64,7 @@ protected:
 // ============================================================================
 
 TEST_F(NotificationManagerTest, DefaultState_NothingEnabled) {
-    EXPECT_FALSE(notifier.getTelegramEnabled());
+    EXPECT_FALSE(telegramBot.getEnabled());
     EXPECT_FALSE(notifier.getEmailEnabled());
     EXPECT_EQ(notifier.getTotalSent(), 0u);
     EXPECT_EQ(notifier.getTotalFailed(), 0u);
@@ -89,9 +93,9 @@ TEST_F(NotificationManagerTest, Telegram_NotifyWhenConfigured) {
 }
 
 TEST_F(NotificationManagerTest, Telegram_NoNotifyWhenDisabled) {
-    notifier.setTelegramEnabled(false);
-    notifier.setTelegramBotToken("token");
-    notifier.setTelegramChatId("chatid");
+    telegramBot.setEnabled(false);
+    telegramBot.setBotToken("token");
+    telegramBot.setChatId("chatid");
     mockHal->setWiFiConnected(true);
 
     notifier.notify(AlertType::PUMP_ERROR, "Test");
@@ -110,8 +114,8 @@ TEST_F(NotificationManagerTest, Telegram_NoNotifyWhenWifiDisconnected) {
 }
 
 TEST_F(NotificationManagerTest, Telegram_NoNotifyWithoutToken) {
-    notifier.setTelegramEnabled(true);
-    notifier.setTelegramChatId("123");
+    telegramBot.setEnabled(true);
+    telegramBot.setChatId("123");
     // No bot token set
     mockHal->setWiFiConnected(true);
 
@@ -289,6 +293,7 @@ TEST_F(NotificationManagerTest, ToJson_ContainsAllFields) {
 
     EXPECT_TRUE(json["telegram_enabled"].as<bool>());
     EXPECT_TRUE(json["telegram_configured"].as<bool>());
+    EXPECT_TRUE(json.containsKey("telegram_polling_enabled"));
     EXPECT_TRUE(json["email_enabled"].as<bool>());
     EXPECT_TRUE(json["email_configured"].as<bool>());
     EXPECT_EQ(json["total_sent"].as<unsigned int>(), 0u);
