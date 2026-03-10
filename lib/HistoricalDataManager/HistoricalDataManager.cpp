@@ -49,7 +49,12 @@ void HistoricalDataManager::addPoint(const DataPoint& point) {
         try {
             buffer.push_back(point);
         } catch (...) {
-            // Allocation failed — skip this data point rather than crash
+            // Allocation failed — cap maxSize so we switch to circular
+            // overwrite mode instead of silently dropping all future points
+            maxSize = buffer.size();
+            if (maxSize == 0) return;
+            buffer[currentIndex] = point;
+            currentIndex = (currentIndex + 1) % maxSize;
             return;
         }
     } else {
