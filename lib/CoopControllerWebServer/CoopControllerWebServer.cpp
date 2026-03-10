@@ -12,6 +12,7 @@
 #include "SunriseSunset.h"
 #include "WifiController.h"
 #include "TriggerSource.h"
+#include "NotificationManager.h"
 
 #include <stdint.h>
 #include <memory>
@@ -353,6 +354,72 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   }
                   if (jsonObj["manifest_url"].is<String>()) {
                       settingsManager.setManifestUrl(jsonObj["manifest_url"].as<String>());
+                  }
+
+                  // Handle notification settings - Telegram
+                  if (jsonObj["telegram_enabled"].is<bool>()) {
+                      settingsManager.setTelegramEnabled(jsonObj["telegram_enabled"].as<bool>());
+                      if (notificationManager_) notificationManager_->setTelegramEnabled(jsonObj["telegram_enabled"].as<bool>());
+                  }
+                  if (jsonObj["telegram_bot_token"].is<String>()) {
+                      settingsManager.setTelegramBotToken(jsonObj["telegram_bot_token"].as<String>());
+                      if (notificationManager_) notificationManager_->setTelegramBotToken(jsonObj["telegram_bot_token"].as<String>());
+                  }
+                  if (jsonObj["telegram_chat_id"].is<String>()) {
+                      settingsManager.setTelegramChatId(jsonObj["telegram_chat_id"].as<String>());
+                      if (notificationManager_) notificationManager_->setTelegramChatId(jsonObj["telegram_chat_id"].as<String>());
+                  }
+
+                  // Handle notification settings - Email
+                  if (jsonObj["email_enabled"].is<bool>()) {
+                      settingsManager.setEmailEnabled(jsonObj["email_enabled"].as<bool>());
+                      if (notificationManager_) notificationManager_->setEmailEnabled(jsonObj["email_enabled"].as<bool>());
+                  }
+                  if (jsonObj["email_smtp_server"].is<String>()) {
+                      settingsManager.setEmailSmtpServer(jsonObj["email_smtp_server"].as<String>());
+                      if (notificationManager_) notificationManager_->setSmtpServer(jsonObj["email_smtp_server"].as<String>());
+                  }
+                  if (jsonObj["email_smtp_port"].is<int>()) {
+                      settingsManager.setEmailSmtpPort(jsonObj["email_smtp_port"].as<uint16_t>());
+                      if (notificationManager_) notificationManager_->setSmtpPort(jsonObj["email_smtp_port"].as<uint16_t>());
+                  }
+                  if (jsonObj["email_smtp_username"].is<String>()) {
+                      settingsManager.setEmailSmtpUsername(jsonObj["email_smtp_username"].as<String>());
+                      if (notificationManager_) notificationManager_->setSmtpUsername(jsonObj["email_smtp_username"].as<String>());
+                  }
+                  if (jsonObj["email_smtp_password"].is<String>()) {
+                      settingsManager.setEmailSmtpPassword(jsonObj["email_smtp_password"].as<String>());
+                      if (notificationManager_) notificationManager_->setSmtpPassword(jsonObj["email_smtp_password"].as<String>());
+                  }
+                  if (jsonObj["email_from"].is<String>()) {
+                      settingsManager.setEmailFrom(jsonObj["email_from"].as<String>());
+                      if (notificationManager_) notificationManager_->setEmailFrom(jsonObj["email_from"].as<String>());
+                  }
+                  if (jsonObj["email_to"].is<String>()) {
+                      settingsManager.setEmailTo(jsonObj["email_to"].as<String>());
+                      if (notificationManager_) notificationManager_->setEmailTo(jsonObj["email_to"].as<String>());
+                  }
+
+                  // Handle notification preferences
+                  if (jsonObj["notify_pump_error"].is<bool>()) {
+                      settingsManager.setNotifyPumpError(jsonObj["notify_pump_error"].as<bool>());
+                      if (notificationManager_) notificationManager_->setNotifyOnPumpError(jsonObj["notify_pump_error"].as<bool>());
+                  }
+                  if (jsonObj["notify_sensor_error"].is<bool>()) {
+                      settingsManager.setNotifySensorError(jsonObj["notify_sensor_error"].as<bool>());
+                      if (notificationManager_) notificationManager_->setNotifyOnSensorError(jsonObj["notify_sensor_error"].as<bool>());
+                  }
+                  if (jsonObj["notify_door_fault"].is<bool>()) {
+                      settingsManager.setNotifyDoorFault(jsonObj["notify_door_fault"].as<bool>());
+                      if (notificationManager_) notificationManager_->setNotifyOnDoorFault(jsonObj["notify_door_fault"].as<bool>());
+                  }
+                  if (jsonObj["notify_wifi_disconnect"].is<bool>()) {
+                      settingsManager.setNotifyWifiDisconnect(jsonObj["notify_wifi_disconnect"].as<bool>());
+                      if (notificationManager_) notificationManager_->setNotifyOnWifiDisconnect(jsonObj["notify_wifi_disconnect"].as<bool>());
+                  }
+                  if (jsonObj["notify_system_error"].is<bool>()) {
+                      settingsManager.setNotifySystemError(jsonObj["notify_system_error"].as<bool>());
+                      if (notificationManager_) notificationManager_->setNotifyOnSystemError(jsonObj["notify_system_error"].as<bool>());
                   }
 
                   // Note: 'enabled' is not sent from UI, so not handling it here to avoid defaults triggering changes
@@ -1655,6 +1722,69 @@ String CoopControllerWebServer::base64Decode(const String& input) {
     }
 
     return output;
+}
+
+void CoopControllerWebServer::setNotificationManager(NotificationManager* notificationManager) {
+    notificationManager_ = notificationManager;
+
+    if (!notificationManager_ || !hal) return;
+
+    // Test Telegram notification endpoint
+    hal->webServerOn("/notifications/test/telegram", HAL_WebRequestMethod::HTTP_POST,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!isAuthenticated(request)) {
+                sendAuthRequired(response);
+                return;
+            }
+            if (!notificationManager_) {
+                response->send(500, "application/json", R"({"success":false,"error":"NotificationManager not initialized"})");
+                return;
+            }
+            NotificationResult result = notificationManager_->sendTest(NotificationChannel::TELEGRAM);
+            JsonDocument doc;
+            doc["success"] = result.success;
+            if (!result.success) doc["error"] = result.error_message;
+            String output;
+            serializeJson(doc, output);
+            response->send(result.success ? 200 : 400, "application/json", output.c_str());
+        });
+
+    // Test Email notification endpoint
+    hal->webServerOn("/notifications/test/email", HAL_WebRequestMethod::HTTP_POST,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!isAuthenticated(request)) {
+                sendAuthRequired(response);
+                return;
+            }
+            if (!notificationManager_) {
+                response->send(500, "application/json", R"({"success":false,"error":"NotificationManager not initialized"})");
+                return;
+            }
+            NotificationResult result = notificationManager_->sendTest(NotificationChannel::EMAIL);
+            JsonDocument doc;
+            doc["success"] = result.success;
+            if (!result.success) doc["error"] = result.error_message;
+            String output;
+            serializeJson(doc, output);
+            response->send(result.success ? 200 : 400, "application/json", output.c_str());
+        });
+
+    // Notification status endpoint
+    hal->webServerOn("/notifications/status", HAL_WebRequestMethod::HTTP_GET,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!notificationManager_) {
+                response->send(500, "application/json", R"({"error":"NotificationManager not initialized"})");
+                return;
+            }
+            JsonDocument doc;
+            JsonObject obj = doc.to<JsonObject>();
+            notificationManager_->toJson(obj);
+            String output;
+            serializeJson(doc, output);
+            response->send(200, "application/json", output.c_str());
+        });
+
+    logger.logInfo("Notification endpoints registered");
 }
 
 bool CoopControllerWebServer::isAuthenticated(void* request) {

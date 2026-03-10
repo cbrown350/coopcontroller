@@ -12,15 +12,16 @@ This document tracks in-progress and planned features. For completed features, s
 | Phase 3.5 (Critical Refactoring) | 100% complete - HAL refactoring complete, all ESP32-specific functions abstracted |
 | Phase 3.5a (Sunrise/Sunset Integration) | 100% complete with accurate UTC to local time conversion |
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
-| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 576 desktop unit tests passing, all 11 core components covered |
+| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 590 desktop unit tests passing, all 12 core components covered |
+| Phase 4 (Notifications) | In progress - Email & Telegram alerts implemented |
 
-**Current Build:** RAM 17.6% (57,704 bytes), Flash 83.4% (1,474,941 bytes)
+**Current Build:** RAM 29.8%, Flash 83.9%
 
-**Latest Build (2026-02-13):** Firmware and web UI builds successful
+**Latest Build (2026-03-09):** Firmware and web UI builds successful
 
-**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification.
+**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API and HTTP-based email API integration.
 
-**Test Coverage (February 2026):** 576/576 desktop tests passing (100% pass rate)
+**Test Coverage (March 2026):** 590/590 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
@@ -29,6 +30,7 @@ This document tracks in-progress and planned features. For completed features, s
 | DoorController | 68 |
 | LightController | 102 |
 | Logger | 11 |
+| NotificationManager | 14 |
 | PumpController | 83 |
 | SensorManager | 33 |
 | SettingsManager | 150 |
@@ -36,7 +38,7 @@ This document tracks in-progress and planned features. For completed features, s
 | UpdateManager | 71 |
 | WifiController | 1 |
 
-- **Embedded Unit Tests:** 1/1 passing - Logger singleton pattern test
+- **Embedded Unit Tests:** 1/1 passing - Logger singleton pattern test; HAL httpPost test created (requires device)
 - **Test Infrastructure:** Complete mocking framework with MockHAL, MockSensorManager, MockBuzzerController
 
 ---
@@ -102,33 +104,35 @@ All completed features have been moved to [feature-tracker-finished.md](feature-
 
 *No features currently in progress.*
 
+## Recently Completed (Not Yet Moved to Finished)
+
+### Email & Telegram Notification Alerts (2026-03-09)
+- **Telegram**: Bot token & chat ID configuration, HTTPS POST to Telegram Bot API
+- **Email**: HTTP-based email API integration (smtp2go, Mailgun, etc.) — avoids heavy SMTP library
+- **Alert preferences**: Per-alert-type toggles (pump error, sensor error, door fault, WiFi disconnect, system error)
+- **Rate limiting**: 60-second per-alert-type cooldown prevents notification flooding
+- **HAL addition**: `httpPost()` method added to IHAL/HAL_ESP32 using WiFiClientSecure raw sockets
+- **Web UI**: Full settings UI with Telegram/Email cards, test buttons, alert preference checkboxes
+- **Settings**: 17 new fields persisted via SettingsManager with NVS backup
+- **Web Server**: 3 new endpoints (`/notifications/test/telegram`, `/notifications/test/email`, `/notifications/status`)
+- **Tests**: 14 desktop unit tests covering all notification scenarios
+- **Files**: `lib/NotificationManager/`, IHAL.h, HAL_ESP32, SettingsManager, CoopControllerWebServer, main.cpp, web/src/Settings.tsx
+
 ---
 
 ## Planned Features
 
 Features organized by priority and implementation status.
 
-> **Flash Constraint Note:** Firmware is at 83.4% flash usage (294,531 bytes remaining of 1,769,472 bytes). OTA Update System is mostly complete. Features requiring large external libraries (SMTP, MQTT, Telegram) may still be constrained by flash but are no longer critically blocked.
+> **Flash Constraint Note:** Firmware is at 83.9% flash usage. Features requiring large external libraries (MQTT) may still be constrained by flash. Email uses HTTP-based API (not SMTP) and Telegram uses direct HTTPS POST to keep flash usage minimal.
 
-### High Priority - Monitoring & Notifications (Blocked by Flash)
+### High Priority - Monitoring & Notifications (Partially Complete)
 
-#### Email Notifications
-- SMTP server/port, TLS and credentials configuration in web UI settings
-- "From" email address configuration
-- Notify on pump/water flow faults
-- Notify on temperature sensor failures
-- Notify on API failures (OpenWeather, OpenAI)
-- Daily status and forecast reports
-- Configurable notification times
-- Requires SMTP/TLS library (~20-40KB flash)
+#### Email Notifications - DONE (basic alerts via HTTP email API)
+- Remaining: Daily status/forecast reports, configurable notification times, API failure alerts
 
-#### Telegram Integration
-- Bot commands for basic controls (pump on/off, door open/close, get status)
-- Status queries (door position, light state, temperature)
-- Alert notifications for critical events
-- Daily forecast and automation plan
-- Approval/confirmation commands for AI door recommendations
-- Requires HTTP client library for Telegram API (~15-30KB flash)
+#### Telegram Integration - DONE (basic alert notifications)
+- Remaining: Bot commands for controls, status queries, daily forecast, approval commands
 
 ### Medium Priority - Door Automation
 

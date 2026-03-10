@@ -120,6 +120,33 @@ function Settings() {
   const [autoUpdateEnabled, setAutoUpdateEnabled] = createSignal<boolean | null>(null)
   const [updateCheckIntervalHours, setUpdateCheckIntervalHours] = createSignal<number | null>(null)
 
+  // Notification settings - Telegram
+  const [telegramEnabled, setTelegramEnabled] = createSignal<boolean | null>(null)
+  const [telegramBotToken, setTelegramBotToken] = createSignal('')
+  const [telegramChatId, setTelegramChatId] = createSignal('')
+  const [showTelegramToken, setShowTelegramToken] = createSignal(false)
+  const [telegramTestLoading, setTelegramTestLoading] = createSignal(false)
+  const [telegramTestResult, setTelegramTestResult] = createSignal<{success: boolean, message: string} | null>(null)
+
+  // Notification settings - Email
+  const [emailEnabled, setEmailEnabled] = createSignal<boolean | null>(null)
+  const [emailSmtpServer, setEmailSmtpServer] = createSignal('')
+  const [emailSmtpPort, setEmailSmtpPort] = createSignal<number | null>(587)
+  const [emailSmtpUsername, setEmailSmtpUsername] = createSignal('')
+  const [emailSmtpPassword, setEmailSmtpPassword] = createSignal('')
+  const [showEmailPassword, setShowEmailPassword] = createSignal(false)
+  const [emailFrom, setEmailFrom] = createSignal('')
+  const [emailTo, setEmailTo] = createSignal('')
+  const [emailTestLoading, setEmailTestLoading] = createSignal(false)
+  const [emailTestResult, setEmailTestResult] = createSignal<{success: boolean, message: string} | null>(null)
+
+  // Notification preferences
+  const [notifyPumpError, setNotifyPumpError] = createSignal<boolean | null>(true)
+  const [notifySensorError, setNotifySensorError] = createSignal<boolean | null>(true)
+  const [notifyDoorFault, setNotifyDoorFault] = createSignal<boolean | null>(true)
+  const [notifyWifiDisconnect, setNotifyWifiDisconnect] = createSignal<boolean | null>(false)
+  const [notifySystemError, setNotifySystemError] = createSignal<boolean | null>(true)
+
   // Unsaved changes tracking
   const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false)
 
@@ -213,6 +240,23 @@ function Settings() {
       // Load OTA update settings
       setAutoUpdateEnabled(settings.auto_update_enabled ?? false)
       setUpdateCheckIntervalHours(settings.update_check_interval_hours ?? 24)
+
+      // Load notification settings
+      setTelegramEnabled(settings.telegram_enabled ?? false)
+      setTelegramBotToken('') // Never load token back for security
+      setTelegramChatId(settings.telegram_chat_id ?? '')
+      setEmailEnabled(settings.email_enabled ?? false)
+      setEmailSmtpServer(settings.email_smtp_server ?? '')
+      setEmailSmtpPort(settings.email_smtp_port ?? 587)
+      setEmailSmtpUsername(settings.email_smtp_username ?? '')
+      setEmailSmtpPassword('') // Never load password back
+      setEmailFrom(settings.email_from ?? '')
+      setEmailTo(settings.email_to ?? '')
+      setNotifyPumpError(settings.notify_pump_error ?? true)
+      setNotifySensorError(settings.notify_sensor_error ?? true)
+      setNotifyDoorFault(settings.notify_door_fault ?? true)
+      setNotifyWifiDisconnect(settings.notify_wifi_disconnect ?? false)
+      setNotifySystemError(settings.notify_system_error ?? true)
 
       setLoaded(true)
       setError('')
@@ -322,7 +366,20 @@ function Settings() {
         auto_update_enabled: autoUpdateEnabled() ?? false,
         update_check_interval_hours: updateCheckIntervalHours() ?? 24,
         water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
-        water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300
+        water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
+        telegram_enabled: telegramEnabled() ?? false,
+        telegram_chat_id: telegramChatId() ?? '',
+        email_enabled: emailEnabled() ?? false,
+        email_smtp_server: emailSmtpServer() ?? '',
+        email_smtp_port: emailSmtpPort() ?? 587,
+        email_smtp_username: emailSmtpUsername() ?? '',
+        email_from: emailFrom() ?? '',
+        email_to: emailTo() ?? '',
+        notify_pump_error: notifyPumpError() ?? true,
+        notify_sensor_error: notifySensorError() ?? true,
+        notify_door_fault: notifyDoorFault() ?? true,
+        notify_wifi_disconnect: notifyWifiDisconnect() ?? false,
+        notify_system_error: notifySystemError() ?? true
       }
 
       // Handle WiFi password: either set new password, clear it, or don't change it
@@ -335,6 +392,16 @@ function Settings() {
       // Handle API password: only include if provided (non-empty)
       if (apiPassword().length > 0) {
         settingsPayload['api_password'] = apiPassword()
+      }
+
+      // Handle Telegram bot token: only include if provided (non-empty)
+      if (telegramBotToken().length > 0) {
+        settingsPayload['telegram_bot_token'] = telegramBotToken()
+      }
+
+      // Handle email SMTP password: only include if provided (non-empty)
+      if (emailSmtpPassword().length > 0) {
+        settingsPayload['email_smtp_password'] = emailSmtpPassword()
       }
 
       // Cache credentials for authenticated requests if auth is enabled
@@ -492,6 +559,42 @@ function Settings() {
       }
     } catch (error) {
       console.error('Failed to fetch sunrise/sunset data:', error)
+    }
+  }
+
+  const handleTestTelegram = async () => {
+    setTelegramTestLoading(true)
+    setTelegramTestResult(null)
+    try {
+      const response = await authenticatedFetch('/notifications/test/telegram', { method: 'POST' })
+      const data = await response.json()
+      setTelegramTestResult({
+        success: data.success,
+        message: data.success ? 'Test message sent!' : (data.error || 'Failed to send')
+      })
+    } catch (err: any) {
+      setTelegramTestResult({ success: false, message: err.message || 'Request failed' })
+    } finally {
+      setTelegramTestLoading(false)
+      setTimeout(() => setTelegramTestResult(null), 5000)
+    }
+  }
+
+  const handleTestEmail = async () => {
+    setEmailTestLoading(true)
+    setEmailTestResult(null)
+    try {
+      const response = await authenticatedFetch('/notifications/test/email', { method: 'POST' })
+      const data = await response.json()
+      setEmailTestResult({
+        success: data.success,
+        message: data.success ? 'Test email sent!' : (data.error || 'Failed to send')
+      })
+    } catch (err: any) {
+      setEmailTestResult({ success: false, message: err.message || 'Request failed' })
+    } finally {
+      setEmailTestLoading(false)
+      setTimeout(() => setEmailTestResult(null), 5000)
     }
   }
 
@@ -1626,6 +1729,189 @@ function Settings() {
                       'Restore Settings'
                     )}
                   </button>
+                </div>
+              </div>
+            </div>
+          </Show>
+
+          {/* Notifications Section */}
+          <h2 class="text-lg font-bold mb-4 mt-10">Notifications</h2>
+
+          {/* Telegram */}
+          <div class="card bg-base-200 card-sm shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">Telegram Notifications</h2>
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Enable Telegram</legend>
+                <label class="label cursor-pointer justify-start gap-2">
+                  <span class="label-text">Enable Telegram Notifications</span>
+                  <Show when={loaded()}>
+                    <input type="checkbox" class="toggle toggle-accent"
+                      checked={telegramEnabled() ?? false}
+                      onChange={(e) => setTelegramEnabled(e.currentTarget.checked)} />
+                  </Show>
+                </label>
+              </fieldset>
+              <Show when={telegramEnabled()}>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Bot Token</legend>
+                  <div class="join w-full">
+                    <input type={showTelegramToken() ? 'text' : 'password'}
+                      value={telegramBotToken()}
+                      onInput={(e) => setTelegramBotToken(e.target.value)}
+                      placeholder="Enter bot token (from @BotFather)"
+                      class="input join-item w-full" />
+                    <button type="button" class="btn join-item"
+                      onClick={() => setShowTelegramToken(!showTelegramToken())}>
+                      {showTelegramToken() ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <div class="fieldset-label">Get a bot token from @BotFather on Telegram. Leave blank to keep existing token.</div>
+                </fieldset>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Chat ID</legend>
+                  <input type="text" value={telegramChatId()}
+                    onInput={(e) => setTelegramChatId(e.target.value)}
+                    placeholder="Enter chat ID"
+                    class="input w-full" />
+                  <div class="fieldset-label">Your Telegram chat ID. Send /start to your bot, then forware the message to @userinfobot to find your ID.</div>
+                </fieldset>
+                <div class="mt-2">
+                  <button type="button" class="btn btn-accent btn-soft btn-sm"
+                    onClick={handleTestTelegram}
+                    disabled={telegramTestLoading()}>
+                    {telegramTestLoading() ? (
+                      <><span class="loading loading-spinner loading-xs"></span> Testing...</>
+                    ) : 'Send Test Message'}
+                  </button>
+                  <Show when={telegramTestResult()}>
+                    <span class={`ml-2 text-sm ${telegramTestResult()!.success ? 'text-success' : 'text-error'}`}>
+                      {telegramTestResult()!.message}
+                    </span>
+                  </Show>
+                </div>
+              </Show>
+            </div>
+          </div>
+
+          {/* Email */}
+          <div class="card bg-base-200 card-sm shadow-sm mt-4">
+            <div class="card-body">
+              <h2 class="card-title">Email Notifications</h2>
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Enable Email</legend>
+                <label class="label cursor-pointer justify-start gap-2">
+                  <span class="label-text">Enable Email Notifications</span>
+                  <Show when={loaded()}>
+                    <input type="checkbox" class="toggle toggle-accent"
+                      checked={emailEnabled() ?? false}
+                      onChange={(e) => setEmailEnabled(e.currentTarget.checked)} />
+                  </Show>
+                </label>
+              </fieldset>
+              <Show when={emailEnabled()}>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">SMTP Server</legend>
+                  <input type="text" value={emailSmtpServer()}
+                    onInput={(e) => setEmailSmtpServer(e.target.value)}
+                    placeholder="in-v3.mailjet.com"
+                    class="input w-full" />
+                  <div class="fieldset-label">SMTP server hostname (e.g., in-v3.mailjet.com, smtp.gmail.com). Port 587 uses STARTTLS, port 465 uses direct TLS.</div>
+                </fieldset>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <fieldset class="fieldset">
+                    <legend class="fieldset-legend">SMTP Username</legend>
+                    <input type="text" value={emailSmtpUsername()}
+                      onInput={(e) => setEmailSmtpUsername(e.target.value)}
+                      placeholder="your-smtp-username"
+                      class="input w-full" />
+                  </fieldset>
+                  <fieldset class="fieldset">
+                    <legend class="fieldset-legend">SMTP Password</legend>
+                    <div class="join w-full">
+                      <input type={showEmailPassword() ? 'text' : 'password'}
+                        value={emailSmtpPassword()}
+                        onInput={(e) => setEmailSmtpPassword(e.target.value)}
+                        placeholder="Leave blank to keep existing"
+                        class="input join-item w-full" />
+                      <button type="button" class="btn join-item"
+                        onClick={() => setShowEmailPassword(!showEmailPassword())}>
+                        {showEmailPassword() ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                  </fieldset>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <fieldset class="fieldset">
+                    <legend class="fieldset-legend">From Email</legend>
+                    <input type="email" value={emailFrom()}
+                      onInput={(e) => setEmailFrom(e.target.value)}
+                      placeholder="coop@yourdomain.com"
+                      class="input w-full" />
+                  </fieldset>
+                  <fieldset class="fieldset">
+                    <legend class="fieldset-legend">To Email</legend>
+                    <input type="email" value={emailTo()}
+                      onInput={(e) => setEmailTo(e.target.value)}
+                      placeholder="you@email.com"
+                      class="input w-full" />
+                  </fieldset>
+                </div>
+                <div class="mt-2">
+                  <button type="button" class="btn btn-accent btn-soft btn-sm"
+                    onClick={handleTestEmail}
+                    disabled={emailTestLoading()}>
+                    {emailTestLoading() ? (
+                      <><span class="loading loading-spinner loading-xs"></span> Testing...</>
+                    ) : 'Send Test Email'}
+                  </button>
+                  <Show when={emailTestResult()}>
+                    <span class={`ml-2 text-sm ${emailTestResult()!.success ? 'text-success' : 'text-error'}`}>
+                      {emailTestResult()!.message}
+                    </span>
+                  </Show>
+                </div>
+              </Show>
+            </div>
+          </div>
+
+          {/* Notification Preferences */}
+          <Show when={telegramEnabled() || emailEnabled()}>
+            <div class="card bg-base-200 card-sm shadow-sm mt-4">
+              <div class="card-body">
+                <h2 class="card-title">Alert Preferences</h2>
+                <div class="fieldset-label mb-2">Choose which alerts trigger notifications</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <label class="label cursor-pointer justify-start gap-2">
+                    <input type="checkbox" class="checkbox checkbox-accent checkbox-sm"
+                      checked={notifyPumpError() ?? true}
+                      onChange={(e) => setNotifyPumpError(e.currentTarget.checked)} />
+                    <span class="label-text">Pump / Flow Errors</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-2">
+                    <input type="checkbox" class="checkbox checkbox-accent checkbox-sm"
+                      checked={notifySensorError() ?? true}
+                      onChange={(e) => setNotifySensorError(e.currentTarget.checked)} />
+                    <span class="label-text">Sensor Failures</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-2">
+                    <input type="checkbox" class="checkbox checkbox-accent checkbox-sm"
+                      checked={notifyDoorFault() ?? true}
+                      onChange={(e) => setNotifyDoorFault(e.currentTarget.checked)} />
+                    <span class="label-text">Door Faults</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-2">
+                    <input type="checkbox" class="checkbox checkbox-accent checkbox-sm"
+                      checked={notifyWifiDisconnect() ?? false}
+                      onChange={(e) => setNotifyWifiDisconnect(e.currentTarget.checked)} />
+                    <span class="label-text">WiFi Disconnections</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-2">
+                    <input type="checkbox" class="checkbox checkbox-accent checkbox-sm"
+                      checked={notifySystemError() ?? true}
+                      onChange={(e) => setNotifySystemError(e.currentTarget.checked)} />
+                    <span class="label-text">System Errors (low memory, etc.)</span>
+                  </label>
                 </div>
               </div>
             </div>

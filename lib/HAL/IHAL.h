@@ -679,6 +679,42 @@ public:
                              unsigned long timeout_ms = 60000) = 0;
 
   /**
+   * @brief Perform HTTP POST request with JSON body and return response body
+   *
+   * Sends HTTP POST request with Content-Type: application/json.
+   * For API calls (Telegram Bot API, etc).
+   *
+   * @param url Full URL to request
+   * @param jsonBody JSON body as string
+   * @param timeout_ms Request timeout in milliseconds
+   * @return Response body as string, empty string on failure
+   */
+  virtual String httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms = 10000) = 0;
+
+  /**
+   * @brief Send email via SMTP with STARTTLS
+   *
+   * Connects to an SMTP server, performs STARTTLS upgrade, authenticates,
+   * and sends an email message.
+   *
+   * @param host SMTP server hostname
+   * @param port SMTP server port (typically 587 for STARTTLS)
+   * @param username SMTP username for authentication
+   * @param password SMTP password for authentication
+   * @param from Sender email address
+   * @param to Recipient email address
+   * @param subject Email subject line
+   * @param body Email body text
+   * @param timeout_ms Connection timeout in milliseconds
+   * @return Empty string on success, error message on failure
+   */
+  virtual String smtpSend(const String& host, uint16_t port,
+                           const String& username, const String& password,
+                           const String& from, const String& to,
+                           const String& subject, const String& body,
+                           unsigned long timeout_ms = 15000) = 0;
+
+  /**
    * @brief Verify SHA256 checksum
    *
    * Verifies that the provided data matches the expected SHA256 hash.

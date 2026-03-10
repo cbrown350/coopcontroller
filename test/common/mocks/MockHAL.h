@@ -541,6 +541,28 @@ public:
         return true;
     }
 
+    String httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms = 10000) override {
+        (void)timeout_ms;
+        lastHttpPostUrl = url;
+        lastHttpPostBody = jsonBody;
+        return mockHttpPostResponse;
+    }
+
+    String smtpSend(const String& host, uint16_t port,
+                     const String& username, const String& password,
+                     const String& from, const String& to,
+                     const String& subject, const String& body,
+                     unsigned long timeout_ms = 15000) override {
+        (void)timeout_ms;
+        lastSmtpHost = host;
+        lastSmtpPort = port;
+        lastSmtpFrom = from;
+        lastSmtpTo = to;
+        lastSmtpSubject = subject;
+        lastSmtpBody = body;
+        return mockSmtpResult;
+    }
+
     bool sha256Verify(const uint8_t *data, size_t data_length,
                       const String& expected_hash) override {
         (void)data; (void)data_length; (void)expected_hash;
@@ -634,6 +656,16 @@ public:
         lastHttpGetStreamUrl = "";
         mockStreamData = nullptr;
         mockStreamDataSize = 0;
+        mockHttpPostResponse = "";
+        lastHttpPostUrl = "";
+        lastHttpPostBody = "";
+        mockSmtpResult = "";
+        lastSmtpHost = "";
+        lastSmtpPort = 0;
+        lastSmtpFrom = "";
+        lastSmtpTo = "";
+        lastSmtpSubject = "";
+        lastSmtpBody = "";
 
         // Reset OTA state
         otaBeginCalled = false;
@@ -717,6 +749,17 @@ public:
     void setSha256VerifyResult(bool result) { mockSha256VerifyResult = result; }
     String getLastHttpGetUrl() const { return lastHttpGetUrl; }
     String getLastHttpGetStreamUrl() const { return lastHttpGetStreamUrl; }
+    void setHttpPostResponse(const String& response) { mockHttpPostResponse = response; }
+    String getLastHttpPostUrl() const { return lastHttpPostUrl; }
+    String getLastHttpPostBody() const { return lastHttpPostBody; }
+    void resetHttpPost() { lastHttpPostUrl = ""; lastHttpPostBody = ""; }
+    void setSmtpResult(const String& result) { mockSmtpResult = result; }
+    String getLastSmtpHost() const { return lastSmtpHost; }
+    uint16_t getLastSmtpPort() const { return lastSmtpPort; }
+    String getLastSmtpFrom() const { return lastSmtpFrom; }
+    String getLastSmtpTo() const { return lastSmtpTo; }
+    String getLastSmtpSubject() const { return lastSmtpSubject; }
+    String getLastSmtpBody() const { return lastSmtpBody; }
 
     // OTA helpers
     void setOtaBeginResult(bool result) { mockOtaBeginResult = result; }
@@ -808,6 +851,16 @@ private:
     String lastHttpGetStreamUrl = "";
     const uint8_t* mockStreamData = nullptr;
     size_t mockStreamDataSize = 0;
+    String mockHttpPostResponse = "";
+    String lastHttpPostUrl = "";
+    String lastHttpPostBody = "";
+    String mockSmtpResult = "";
+    String lastSmtpHost = "";
+    uint16_t lastSmtpPort = 0;
+    String lastSmtpFrom = "";
+    String lastSmtpTo = "";
+    String lastSmtpSubject = "";
+    String lastSmtpBody = "";
 
     // OTA state
     bool otaBeginCalled = false;

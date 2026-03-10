@@ -62,6 +62,7 @@
 #include "WifiController.h"
 #include "HistoricalDataManager.h"
 #include "UpdateManager.h"
+#include "NotificationManager.h"
 #include "CrashDiagnostics.h"
 
 
@@ -206,6 +207,7 @@ void setup() // NOSONAR - complexity ok
     WifiController wifiController;
     HistoricalDataManager historyManager;
     UpdateManager updateManager;
+    NotificationManager notificationManager;
 
     settingsManager.begin(&hal);
     settingsManager.load();
@@ -319,6 +321,26 @@ void setup() // NOSONAR - complexity ok
     updateManager.begin(&hal, settingsManager.getManifestUrl());
     webServer.setUpdateManager(&updateManager);
     logger.logInfo("Update manager initialized");
+
+    // Initialize notification manager
+    notificationManager.begin(&hal);
+    notificationManager.setTelegramEnabled(settingsManager.getTelegramEnabled());
+    notificationManager.setTelegramBotToken(settingsManager.getTelegramBotToken());
+    notificationManager.setTelegramChatId(settingsManager.getTelegramChatId());
+    notificationManager.setEmailEnabled(settingsManager.getEmailEnabled());
+    notificationManager.setSmtpServer(settingsManager.getEmailSmtpServer());
+    notificationManager.setSmtpPort(settingsManager.getEmailSmtpPort());
+    notificationManager.setSmtpUsername(settingsManager.getEmailSmtpUsername());
+    notificationManager.setSmtpPassword(settingsManager.getEmailSmtpPassword());
+    notificationManager.setEmailFrom(settingsManager.getEmailFrom());
+    notificationManager.setEmailTo(settingsManager.getEmailTo());
+    notificationManager.setNotifyOnPumpError(settingsManager.getNotifyPumpError());
+    notificationManager.setNotifyOnSensorError(settingsManager.getNotifySensorError());
+    notificationManager.setNotifyOnDoorFault(settingsManager.getNotifyDoorFault());
+    notificationManager.setNotifyOnWifiDisconnect(settingsManager.getNotifyWifiDisconnect());
+    notificationManager.setNotifyOnSystemError(settingsManager.getNotifySystemError());
+    webServer.setNotificationManager(&notificationManager);
+    logger.logInfo("Notification manager initialized");
 
     logger.logInfo("System initialization complete");
 
@@ -478,6 +500,7 @@ void setup() // NOSONAR - complexity ok
                 if (sensorError && (currentTime - lastSensorErrorAlert > 60000)) { // NOSONAR - complexity ok
                     logger.logWarning("Triggering SENSOR_ERROR alert - No working sensors detected");
                     buzzerController.triggerAlert(AlertType::SENSOR_ERROR);
+                    notificationManager.notify(AlertType::SENSOR_ERROR, "No working sensors detected. Check sensor connections.");
                     lastSensorErrorAlert = currentTime;
                 } else if (!sensorError) {
                     // Clear sensor error alert when we have at least one working sensor
@@ -513,6 +536,7 @@ void setup() // NOSONAR - complexity ok
                 if (currentTime - lastPumpErrorAlert > 60000) { // NOSONAR - nested ok, Only alert once per minute
                     logger.logWarning("Pump flow error detected - triggering buzzer alert");
                     buzzerController.triggerAlert(AlertType::PUMP_ERROR);
+                    notificationManager.notify(AlertType::PUMP_ERROR, "Pump flow error detected. Check water supply and pump connections.");
                     lastPumpErrorAlert = currentTime;
                 }
             } else {
@@ -634,6 +658,7 @@ void setup() // NOSONAR - complexity ok
                 static unsigned long lastLowMemoryAlert = 0;
                 if (currentTime - lastLowMemoryAlert > 60000) { // NOSONAR - declaration clearer above, Only alert once per minute
                     buzzerController.triggerAlert(AlertType::LOW_MEMORY);
+                    notificationManager.notify(AlertType::LOW_MEMORY, "System memory critically low (>80% used). Consider restarting.");
                     lastLowMemoryAlert = currentTime;
                 }
             }

@@ -826,6 +826,27 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.auto_update_enabled = doc["auto_update_enabled"] | defaultSettings.auto_update_enabled;
     settings.update_check_interval_hours = doc["update_check_interval_hours"] | defaultSettings.update_check_interval_hours;
     if (doc["manifest_url"].is<const char*>()) settings.manifest_url = doc["manifest_url"].as<String>();
+
+    // Load notification settings - Telegram
+    settings.telegram_enabled = doc["telegram_enabled"] | defaultSettings.telegram_enabled;
+    if (doc["telegram_bot_token"].is<const char*>()) settings.telegram_bot_token = doc["telegram_bot_token"].as<String>();
+    if (doc["telegram_chat_id"].is<const char*>()) settings.telegram_chat_id = doc["telegram_chat_id"].as<String>();
+
+    // Load notification settings - Email
+    settings.email_enabled = doc["email_enabled"] | defaultSettings.email_enabled;
+    if (doc["email_smtp_server"].is<const char*>()) settings.email_smtp_server = doc["email_smtp_server"].as<String>();
+    settings.email_smtp_port = doc["email_smtp_port"] | defaultSettings.email_smtp_port;
+    if (doc["email_smtp_username"].is<const char*>()) settings.email_smtp_username = doc["email_smtp_username"].as<String>();
+    if (doc["email_smtp_password"].is<const char*>()) settings.email_smtp_password = doc["email_smtp_password"].as<String>();
+    if (doc["email_from"].is<const char*>()) settings.email_from = doc["email_from"].as<String>();
+    if (doc["email_to"].is<const char*>()) settings.email_to = doc["email_to"].as<String>();
+
+    // Load notification preferences
+    settings.notify_pump_error = doc["notify_pump_error"] | defaultSettings.notify_pump_error;
+    settings.notify_sensor_error = doc["notify_sensor_error"] | defaultSettings.notify_sensor_error;
+    settings.notify_door_fault = doc["notify_door_fault"] | defaultSettings.notify_door_fault;
+    settings.notify_wifi_disconnect = doc["notify_wifi_disconnect"] | defaultSettings.notify_wifi_disconnect;
+    settings.notify_system_error = doc["notify_system_error"] | defaultSettings.notify_system_error;
 }
 
 JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
@@ -924,6 +945,31 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["update_check_interval_hours"] = settings.update_check_interval_hours;
     doc["manifest_url"] = settings.manifest_url;
 
+    // Notification settings - Telegram
+    doc["telegram_enabled"] = settings.telegram_enabled;
+    if (includePassword && settings.telegram_bot_token.length() != 0) {
+        doc["telegram_bot_token"] = settings.telegram_bot_token;
+    }
+    doc["telegram_chat_id"] = settings.telegram_chat_id;
+
+    // Notification settings - Email
+    doc["email_enabled"] = settings.email_enabled;
+    doc["email_smtp_server"] = settings.email_smtp_server;
+    doc["email_smtp_port"] = settings.email_smtp_port;
+    doc["email_smtp_username"] = settings.email_smtp_username;
+    if (includePassword && settings.email_smtp_password.length() != 0) {
+        doc["email_smtp_password"] = settings.email_smtp_password;
+    }
+    doc["email_from"] = settings.email_from;
+    doc["email_to"] = settings.email_to;
+
+    // Notification preferences
+    doc["notify_pump_error"] = settings.notify_pump_error;
+    doc["notify_sensor_error"] = settings.notify_sensor_error;
+    doc["notify_door_fault"] = settings.notify_door_fault;
+    doc["notify_wifi_disconnect"] = settings.notify_wifi_disconnect;
+    doc["notify_system_error"] = settings.notify_system_error;
+
     return doc;
 }
 
@@ -985,3 +1031,45 @@ void SettingsManager::setUpdateCheckIntervalHours(unsigned int hours) {
 void SettingsManager::setManifestUrl(const String& url) {
     settings.manifest_url = url;
 }
+
+// Telegram notification getters
+bool SettingsManager::getTelegramEnabled() const { return settings.telegram_enabled; }
+String SettingsManager::getTelegramBotToken() const { return settings.telegram_bot_token; }
+String SettingsManager::getTelegramChatId() const { return settings.telegram_chat_id; }
+
+// Telegram notification setters
+void SettingsManager::setTelegramEnabled(bool enabled) { settings.telegram_enabled = enabled; }
+void SettingsManager::setTelegramBotToken(const String& token) { settings.telegram_bot_token = token; }
+void SettingsManager::setTelegramChatId(const String& chatId) { settings.telegram_chat_id = chatId; }
+
+// Email notification getters
+bool SettingsManager::getEmailEnabled() const { return settings.email_enabled; }
+String SettingsManager::getEmailSmtpServer() const { return settings.email_smtp_server; }
+uint16_t SettingsManager::getEmailSmtpPort() const { return settings.email_smtp_port; }
+String SettingsManager::getEmailSmtpUsername() const { return settings.email_smtp_username; }
+String SettingsManager::getEmailSmtpPassword() const { return settings.email_smtp_password; }
+String SettingsManager::getEmailFrom() const { return settings.email_from; }
+String SettingsManager::getEmailTo() const { return settings.email_to; }
+
+// Email notification setters
+void SettingsManager::setEmailEnabled(bool enabled) { settings.email_enabled = enabled; }
+void SettingsManager::setEmailSmtpServer(const String& server) { settings.email_smtp_server = server; }
+void SettingsManager::setEmailSmtpPort(uint16_t port) { settings.email_smtp_port = constrain(port, 1, 65535); }
+void SettingsManager::setEmailSmtpUsername(const String& username) { settings.email_smtp_username = username; }
+void SettingsManager::setEmailSmtpPassword(const String& password) { settings.email_smtp_password = password; }
+void SettingsManager::setEmailFrom(const String& from) { settings.email_from = from; }
+void SettingsManager::setEmailTo(const String& to) { settings.email_to = to; }
+
+// Notification preference getters
+bool SettingsManager::getNotifyPumpError() const { return settings.notify_pump_error; }
+bool SettingsManager::getNotifySensorError() const { return settings.notify_sensor_error; }
+bool SettingsManager::getNotifyDoorFault() const { return settings.notify_door_fault; }
+bool SettingsManager::getNotifyWifiDisconnect() const { return settings.notify_wifi_disconnect; }
+bool SettingsManager::getNotifySystemError() const { return settings.notify_system_error; }
+
+// Notification preference setters
+void SettingsManager::setNotifyPumpError(bool enabled) { settings.notify_pump_error = enabled; }
+void SettingsManager::setNotifySensorError(bool enabled) { settings.notify_sensor_error = enabled; }
+void SettingsManager::setNotifyDoorFault(bool enabled) { settings.notify_door_fault = enabled; }
+void SettingsManager::setNotifyWifiDisconnect(bool enabled) { settings.notify_wifi_disconnect = enabled; }
+void SettingsManager::setNotifySystemError(bool enabled) { settings.notify_system_error = enabled; }

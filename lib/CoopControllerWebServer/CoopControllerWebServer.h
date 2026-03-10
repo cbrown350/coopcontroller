@@ -14,6 +14,7 @@
 #include "SettingsManager.h"
 #include "HistoricalDataManager.h"
 #include "UpdateManager.h"
+#include "NotificationManager.h"
 
 /**
  * @brief Web server for chicken coop controller
@@ -38,6 +39,7 @@ class CoopControllerWebServer
         IHAL* hal;          ///< Hardware abstraction layer interface
         uint16_t port;      ///< HTTP server port number
         UpdateManager* updateManager_ = nullptr; ///< OTA update manager (optional)
+        NotificationManager* notificationManager_ = nullptr; ///< Notification manager (optional)
 
         /**
          * @brief Check if HTTP request has valid authentication credentials
@@ -113,6 +115,12 @@ class CoopControllerWebServer
      * @param updateManager Pointer to UpdateManager instance
      */
     void setUpdateManager(UpdateManager* updateManager);
+
+    /**
+     * @brief Set NotificationManager for notification endpoints
+     * @param notificationManager Pointer to NotificationManager instance
+     */
+    void setNotificationManager(NotificationManager* notificationManager);
 
     /**
      * @brief Process web server events (call in main loop)

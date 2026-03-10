@@ -1,0 +1,5 @@
+{
+    "name": "NotificationManager",
+    "version": "1.0.0",
+    "description": "Email and Telegram notification manager for coop controller alerts"
+}

@@ -881,6 +881,443 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
   return false; // Too many redirects
 }
 
+String HAL_ESP32::httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms) {
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  String host = url;
+  String path = "/";
+
+  int slashIndex = url.indexOf("://");
+  if (slashIndex != -1) {
+    host = url.substring(slashIndex + 3);
+  }
+
+  int pathIndex = host.indexOf("/");
+  if (pathIndex != -1) {
+    path = host.substring(pathIndex);
+    host = host.substring(0, pathIndex);
+  }
+
+  int port = 443;
+  if (url.startsWith("http://")) {
+    port = 80;
+  }
+
+  int portIndex = host.indexOf(":");
+  if (portIndex != -1) {
+    port = host.substring(portIndex + 1).toInt();
+    host = host.substring(0, portIndex);
+  }
+
+  unsigned long startTime = ::millis();
+  if (!client.connect(host.c_str(), port)) {
+    return "";
+  }
+
+  String request = "POST " + path + " HTTP/1.1\r\n";
+  request += "Host: " + host + "\r\n";
+  request += "Content-Type: application/json\r\n";
+  request += "Content-Length: " + String(jsonBody.length()) + "\r\n";
+  request += "Connection: close\r\n";
+  request += "\r\n";
+  request += jsonBody;
+
+  client.print(request);
+
+  // Read status line
+  String statusLine = "";
+  while (client.connected()) {
+    if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
+    if (client.available()) {
+      statusLine = client.readStringUntil('\n');
+      break;
+    }
+    delay(10);
+  }
+
+  int statusCode = 0;
+  int spaceIdx = statusLine.indexOf(' ');
+  if (spaceIdx > 0) {
+    statusCode = statusLine.substring(spaceIdx + 1).toInt();
+  }
+
+  // Read headers
+  bool headerDone = false;
+  unsigned long lastActivity = ::millis();
+  while (client.connected() && !headerDone) {
+    if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
+    if (client.available()) {
+      String line = client.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) {
+        headerDone = true;
+      }
+      lastActivity = ::millis();
+    } else {
+      delay(10);
+    }
+  }
+
+  if (statusCode < 200 || statusCode >= 300) {
+    client.stop();
+    return "";
+  }
+
+  // Read body
+  String response = "";
+  while (client.connected() || client.available()) {
+    if (::millis() - startTime > timeout_ms) break;
+    if (client.available()) {
+      String line = client.readStringUntil('\n');
+      response += line;
+      lastActivity = ::millis();
+    } else {
+      if (::millis() - lastActivity > 1000) break;
+      delay(10);
+    }
+  }
+
+  client.stop();
+  return response;
+}
+
+// ========================================================================
+// SMTP EMAIL FUNCTIONS
+// ========================================================================
+
+#include "mbedtls/ssl.h"
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+
+static String base64Encode(const String& input) {
+    static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    String out;
+    int len = input.length();
+    const uint8_t* data = (const uint8_t*)input.c_str();
+    out.reserve((len + 2) / 3 * 4);
+    for (int i = 0; i < len; i += 3) {
+        uint32_t a = data[i];
+        uint32_t b = (i + 1 < len) ? data[i + 1] : 0;
+        uint32_t c = (i + 2 < len) ? data[i + 2] : 0;
+        uint32_t triple = (a << 16) | (b << 8) | c;
+        int remaining = len - i; // 1, 2, or 3+
+        out += b64[(triple >> 18) & 0x3F];
+        out += b64[(triple >> 12) & 0x3F];
+        out += (remaining < 2) ? '=' : b64[(triple >> 6) & 0x3F];
+        out += (remaining < 3) ? '=' : b64[triple & 0x3F];
+    }
+    return out;
+}
+
+// Helper: read SMTP response from a generic send/recv interface
+// Returns the full response string; checks for "XXX " end-of-response pattern
+typedef std::function<int(uint8_t* buf, size_t len)> SmtpRecvFn;
+typedef std::function<int(const uint8_t* buf, size_t len)> SmtpSendFn;
+
+static String smtpRecvResponse(SmtpRecvFn recv, unsigned long timeout_ms, unsigned long startTime) {
+    String response = "";
+    char buf[256];
+    while (::millis() - startTime < timeout_ms) {
+        int n = recv((uint8_t*)buf, sizeof(buf) - 1);
+        if (n > 0) {
+            buf[n] = '\0';
+            response += buf;
+            // Check if last line has "XXX " pattern (end of multi-line response)
+            int lastNewline = response.lastIndexOf('\n', response.length() - 2);
+            String lastLine = (lastNewline >= 0) ? response.substring(lastNewline + 1) : response;
+            if (lastLine.length() >= 4 && lastLine.charAt(3) == ' ') break;
+        } else if (n == 0) {
+            break; // Connection closed
+        } else {
+            delay(10); // MBEDTLS_ERR_SSL_WANT_READ or similar
+        }
+    }
+    return response;
+}
+
+static bool smtpCheckResponse(const String& response, const char* expectedCode) {
+    return response.startsWith(expectedCode);
+}
+
+static int smtpSendLine(SmtpSendFn send, const String& line) {
+    String data = line + "\r\n";
+    return send((const uint8_t*)data.c_str(), data.length());
+}
+
+String HAL_ESP32::smtpSend(const String& host, uint16_t port,
+                            const String& username, const String& password,
+                            const String& from, const String& to,
+                            const String& subject, const String& body,
+                            unsigned long timeout_ms) {
+    unsigned long startTime = ::millis();
+    bool useDirectTLS = (port == 465);
+
+    if (useDirectTLS) {
+        // Port 465: Direct TLS (SMTPS) - use WiFiClientSecure directly
+        WiFiClientSecure client;
+        client.setInsecure();
+        if (!client.connect(host.c_str(), port, timeout_ms)) {
+            return "Connection failed to " + host + ":" + String(port);
+        }
+
+        auto recv = [&](uint8_t* buf, size_t len) -> int {
+            unsigned long wait_start = ::millis();
+            while (!client.available() && client.connected() && ::millis() - wait_start < 5000) delay(10);
+            if (!client.available()) return -1;
+            return client.read(buf, len);
+        };
+        auto send = [&](const uint8_t* buf, size_t len) -> int {
+            return client.write(buf, len);
+        };
+
+        // SMTP conversation over TLS
+        String resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "220")) { client.stop(); return "Bad greeting: " + resp; }
+
+        smtpSendLine(send, "EHLO coop-controller");
+        resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) { client.stop(); return "EHLO failed: " + resp; }
+
+        smtpSendLine(send, "AUTH LOGIN");
+        resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "334")) { client.stop(); return "AUTH LOGIN failed: " + resp; }
+
+        smtpSendLine(send, base64Encode(username));
+        resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "334")) { client.stop(); return "Username rejected: " + resp; }
+
+        smtpSendLine(send, base64Encode(password));
+        resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "235")) { client.stop(); return "Auth failed: " + resp; }
+
+        smtpSendLine(send, "MAIL FROM:<" + from + ">");
+        resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) { client.stop(); return "MAIL FROM rejected: " + resp; }
+
+        smtpSendLine(send, "RCPT TO:<" + to + ">");
+        resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) { client.stop(); return "RCPT TO rejected: " + resp; }
+
+        smtpSendLine(send, "DATA");
+        resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "354")) { client.stop(); return "DATA rejected: " + resp; }
+
+        smtpSendLine(send, "From: " + from);
+        smtpSendLine(send, "To: " + to);
+        smtpSendLine(send, "Subject: " + subject);
+        smtpSendLine(send, "MIME-Version: 1.0");
+        smtpSendLine(send, "Content-Type: text/plain; charset=UTF-8");
+        smtpSendLine(send, "");
+        smtpSendLine(send, body);
+        smtpSendLine(send, ".");
+
+        resp = smtpRecvResponse(recv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) { client.stop(); return "Send failed: " + resp; }
+
+        smtpSendLine(send, "QUIT");
+        client.stop();
+        return "";
+
+    } else {
+        // Port 587 (or other): STARTTLS - plain connect then TLS upgrade via mbedtls
+        WiFiClient plainClient;
+        if (!plainClient.connect(host.c_str(), port, timeout_ms)) {
+            return "Connection failed to " + host + ":" + String(port);
+        }
+        int sockfd = plainClient.fd();
+
+        // Plain-text recv/send using raw socket via WiFiClient
+        auto plainRecv = [&](uint8_t* buf, size_t len) -> int {
+            unsigned long wait_start = ::millis();
+            while (!plainClient.available() && plainClient.connected() && ::millis() - wait_start < 5000) delay(10);
+            if (!plainClient.available()) return -1;
+            return plainClient.read(buf, len);
+        };
+        auto plainSend = [&](const uint8_t* buf, size_t len) -> int {
+            return plainClient.write(buf, len);
+        };
+
+        // Read greeting
+        String resp = smtpRecvResponse(plainRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "220")) { plainClient.stop(); return "Bad greeting: " + resp; }
+
+        // EHLO
+        smtpSendLine(plainSend, "EHLO coop-controller");
+        resp = smtpRecvResponse(plainRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) { plainClient.stop(); return "EHLO failed: " + resp; }
+
+        // STARTTLS
+        smtpSendLine(plainSend, "STARTTLS");
+        resp = smtpRecvResponse(plainRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "220")) { plainClient.stop(); return "STARTTLS failed: " + resp; }
+
+        // TLS upgrade using mbedtls on existing socket
+        mbedtls_ssl_context ssl;
+        mbedtls_ssl_config conf;
+        mbedtls_entropy_context entropy;
+        mbedtls_ctr_drbg_context ctr_drbg;
+
+        mbedtls_ssl_init(&ssl);
+        mbedtls_ssl_config_init(&conf);
+        mbedtls_entropy_init(&entropy);
+        mbedtls_ctr_drbg_init(&ctr_drbg);
+
+        int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0);
+        if (ret != 0) {
+            plainClient.stop();
+            mbedtls_ssl_free(&ssl);
+            mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy);
+            mbedtls_ctr_drbg_free(&ctr_drbg);
+            return "TLS seed failed";
+        }
+
+        mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT,
+                                     MBEDTLS_SSL_TRANSPORT_STREAM,
+                                     MBEDTLS_SSL_PRESET_DEFAULT);
+        mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE); // Skip cert verification
+        mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+
+        mbedtls_ssl_setup(&ssl, &conf);
+        mbedtls_ssl_set_hostname(&ssl, host.c_str());
+        mbedtls_ssl_set_bio(&ssl, &sockfd, mbedtls_net_send, mbedtls_net_recv, NULL);
+
+        // Perform TLS handshake on existing socket
+        while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
+            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+                char errbuf[128];
+                mbedtls_strerror(ret, errbuf, sizeof(errbuf));
+                String err = "TLS handshake failed: " + String(errbuf);
+                mbedtls_ssl_free(&ssl);
+                mbedtls_ssl_config_free(&conf);
+                mbedtls_entropy_free(&entropy);
+                mbedtls_ctr_drbg_free(&ctr_drbg);
+                plainClient.stop();
+                return err;
+            }
+            if (::millis() - startTime > timeout_ms) {
+                mbedtls_ssl_free(&ssl);
+                mbedtls_ssl_config_free(&conf);
+                mbedtls_entropy_free(&entropy);
+                mbedtls_ctr_drbg_free(&ctr_drbg);
+                plainClient.stop();
+                return "TLS handshake timeout";
+            }
+        }
+
+        // TLS send/recv via mbedtls
+        auto tlsRecv = [&](uint8_t* buf, size_t len) -> int {
+            int n = mbedtls_ssl_read(&ssl, buf, len);
+            return n;
+        };
+        auto tlsSend = [&](const uint8_t* buf, size_t len) -> int {
+            return mbedtls_ssl_write(&ssl, buf, len);
+        };
+
+        // EHLO again after TLS
+        smtpSendLine(tlsSend, "EHLO coop-controller");
+        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) {
+            mbedtls_ssl_close_notify(&ssl);
+            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
+            plainClient.stop();
+            return "EHLO after TLS failed: " + resp;
+        }
+
+        // AUTH LOGIN
+        smtpSendLine(tlsSend, "AUTH LOGIN");
+        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "334")) {
+            mbedtls_ssl_close_notify(&ssl);
+            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
+            plainClient.stop();
+            return "AUTH LOGIN failed: " + resp;
+        }
+
+        smtpSendLine(tlsSend, base64Encode(username));
+        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "334")) {
+            mbedtls_ssl_close_notify(&ssl);
+            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
+            plainClient.stop();
+            return "Username rejected: " + resp;
+        }
+
+        smtpSendLine(tlsSend, base64Encode(password));
+        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "235")) {
+            mbedtls_ssl_close_notify(&ssl);
+            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
+            plainClient.stop();
+            return "Auth failed: " + resp;
+        }
+
+        // MAIL FROM / RCPT TO / DATA / message
+        smtpSendLine(tlsSend, "MAIL FROM:<" + from + ">");
+        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) {
+            mbedtls_ssl_close_notify(&ssl);
+            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
+            plainClient.stop();
+            return "MAIL FROM rejected: " + resp;
+        }
+
+        smtpSendLine(tlsSend, "RCPT TO:<" + to + ">");
+        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) {
+            mbedtls_ssl_close_notify(&ssl);
+            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
+            plainClient.stop();
+            return "RCPT TO rejected: " + resp;
+        }
+
+        smtpSendLine(tlsSend, "DATA");
+        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "354")) {
+            mbedtls_ssl_close_notify(&ssl);
+            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
+            plainClient.stop();
+            return "DATA rejected: " + resp;
+        }
+
+        smtpSendLine(tlsSend, "From: " + from);
+        smtpSendLine(tlsSend, "To: " + to);
+        smtpSendLine(tlsSend, "Subject: " + subject);
+        smtpSendLine(tlsSend, "MIME-Version: 1.0");
+        smtpSendLine(tlsSend, "Content-Type: text/plain; charset=UTF-8");
+        smtpSendLine(tlsSend, "");
+        smtpSendLine(tlsSend, body);
+        smtpSendLine(tlsSend, ".");
+
+        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
+        if (!smtpCheckResponse(resp, "250")) {
+            mbedtls_ssl_close_notify(&ssl);
+            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
+            plainClient.stop();
+            return "Send failed: " + resp;
+        }
+
+        smtpSendLine(tlsSend, "QUIT");
+        mbedtls_ssl_close_notify(&ssl);
+        mbedtls_ssl_free(&ssl);
+        mbedtls_ssl_config_free(&conf);
+        mbedtls_entropy_free(&entropy);
+        mbedtls_ctr_drbg_free(&ctr_drbg);
+        plainClient.stop();
+        return "";
+    }
+}
+
 // ========================================================================
 // OTA UPDATE FUNCTIONS
 // ========================================================================

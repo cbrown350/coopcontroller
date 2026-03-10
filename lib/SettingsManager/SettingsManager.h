@@ -156,6 +156,31 @@ struct user_settings // NOSONAR
     bool         auto_update_enabled = false;        ///< Enable automatic update checks
     unsigned int update_check_interval_hours = 24;   ///< Check interval in hours (1-168)
     String       manifest_url = "";                  ///< URL to version_manifest.json
+
+    // ========================================================================
+    // NOTIFICATION SETTINGS
+    // ========================================================================
+
+    // Telegram
+    bool   telegram_enabled = false;               ///< Enable Telegram notifications
+    String telegram_bot_token = "";                ///< Telegram Bot API token
+    String telegram_chat_id = "";                  ///< Telegram chat ID for notifications
+
+    // Email
+    bool     email_enabled = false;                ///< Enable email notifications
+    String   email_smtp_server = "";               ///< SMTP server URL or HTTP email API endpoint
+    uint16_t email_smtp_port = 587;                ///< SMTP port (default: 587 for TLS)
+    String   email_smtp_username = "";             ///< SMTP username / API key
+    String   email_smtp_password = "";             ///< SMTP password / API secret
+    String   email_from = "";                      ///< From email address
+    String   email_to = "";                        ///< Recipient email address
+
+    // Notification preferences (which alerts trigger notifications)
+    bool   notify_pump_error = true;               ///< Notify on pump/flow errors
+    bool   notify_sensor_error = true;             ///< Notify on sensor failures
+    bool   notify_door_fault = true;               ///< Notify on door faults
+    bool   notify_wifi_disconnect = false;         ///< Notify on WiFi disconnect
+    bool   notify_system_error = true;             ///< Notify on system errors
 };
 
 /**
@@ -406,6 +431,48 @@ class SettingsManager // NOSONAR
     void setAutoUpdateEnabled(bool enabled);
     void setUpdateCheckIntervalHours(unsigned int hours);
     void setManifestUrl(const String& url);
+
+    // Telegram notification getters
+    bool   getTelegramEnabled() const;
+    String getTelegramBotToken() const;
+    String getTelegramChatId() const;
+
+    // Telegram notification setters
+    void setTelegramEnabled(bool enabled);
+    void setTelegramBotToken(const String& token);
+    void setTelegramChatId(const String& chatId);
+
+    // Email notification getters
+    bool     getEmailEnabled() const;
+    String   getEmailSmtpServer() const;
+    uint16_t getEmailSmtpPort() const;
+    String   getEmailSmtpUsername() const;
+    String   getEmailSmtpPassword() const;
+    String   getEmailFrom() const;
+    String   getEmailTo() const;
+
+    // Email notification setters
+    void setEmailEnabled(bool enabled);
+    void setEmailSmtpServer(const String& server);
+    void setEmailSmtpPort(uint16_t port);
+    void setEmailSmtpUsername(const String& username);
+    void setEmailSmtpPassword(const String& password);
+    void setEmailFrom(const String& from);
+    void setEmailTo(const String& to);
+
+    // Notification preference getters
+    bool getNotifyPumpError() const;
+    bool getNotifySensorError() const;
+    bool getNotifyDoorFault() const;
+    bool getNotifyWifiDisconnect() const;
+    bool getNotifySystemError() const;
+
+    // Notification preference setters
+    void setNotifyPumpError(bool enabled);
+    void setNotifySensorError(bool enabled);
+    void setNotifyDoorFault(bool enabled);
+    void setNotifyWifiDisconnect(bool enabled);
+    void setNotifySystemError(bool enabled);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);

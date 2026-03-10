@@ -179,6 +179,12 @@ public:
   String httpGet(const String& url, unsigned long timeout_ms = 10000) override;
   bool httpGetStream(const String& url, HttpDataCallback on_data,
                      unsigned long timeout_ms = 60000) override;
+  String httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms = 10000) override;
+  String smtpSend(const String& host, uint16_t port,
+                   const String& username, const String& password,
+                   const String& from, const String& to,
+                   const String& subject, const String& body,
+                   unsigned long timeout_ms = 15000) override;
   bool sha256Verify(const uint8_t *data, size_t data_length,
                     const String& expected_hash) override;
 
