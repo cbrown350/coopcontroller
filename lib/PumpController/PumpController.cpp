@@ -47,6 +47,7 @@ void PumpController::begin(SensorManager* primarySensor, SensorManager* flowSens
     pump_has_been_off = true; // Pump starts in OFF state
     pump_off_flow_detected = false;
     status.pump_off_flow_detected = false;
+    pump_off_pulse_count_at_start = 0;
 
     // Initialize scheduled maintenance cycle tracking
     lastCompletedCycleTime_ = millis();
@@ -318,6 +319,7 @@ void PumpController::setPumpState(bool isOn) {
             // Clear pump off flow detection when pump turns on
             pump_off_flow_detected = false;
             status.pump_off_flow_detected = false;
+            pump_off_pulse_count_at_start = 0;
         } else {
             if (status.current_cycle_start > 0) {
                 status.current_cycle_duration = millis() - status.current_cycle_start;
@@ -326,6 +328,7 @@ void PumpController::setPumpState(bool isOn) {
             // Record when pump turned off for flow monitoring
             pump_turned_off_time = millis();
             pump_has_been_off = true;
+            pump_off_pulse_count_at_start = 0;
             // Update last completed cycle time for scheduled maintenance tracking
             lastCompletedCycleTime_ = millis();
         }
@@ -533,25 +536,30 @@ void PumpController::checkPumpOffFlow(unsigned long currentTime) {
         return; // Still in grace period
     }
     
-    // Check for flow from flow sensor
+    // Check for flow from flow sensor using pulse count threshold
     if (flowSensor_) {
-        float flowRate = 0.0f;
-        
-        // Check sensor 1 flow rate
+        // Get current total pulse count across all water meter sensors
+        unsigned long currentPulses = 0;
         if (flowSensor_->getSensor1Type() == SensorType::WATER_METER) {
-            flowRate = flowSensor_->getFlowRate1();
+            currentPulses += flowSensor_->getPulseCount1();
         }
-        
-        // Check sensor 2 flow rate if sensor 1 is not a water meter
-        if (flowSensor_->getSensor2Type() == SensorType::WATER_METER && flowRate == 0.0f) {
-            flowRate = flowSensor_->getFlowRate2();
+        if (flowSensor_->getSensor2Type() == SensorType::WATER_METER) {
+            currentPulses += flowSensor_->getPulseCount2();
         }
-        
-        // If flow detected and not already flagged
-        if (flowRate > 0.0f && !pump_off_flow_detected) {
+
+        // On first check after grace period, record baseline pulse count
+        if (pump_off_pulse_count_at_start == 0) {
+            pump_off_pulse_count_at_start = currentPulses;
+            return;
+        }
+
+        // Check if accumulated pulses exceed threshold
+        unsigned long pulseDelta = currentPulses - pump_off_pulse_count_at_start;
+        unsigned int threshold = settingsManager.getPumpOffFlowPulseThreshold();
+        if (pulseDelta >= threshold && !pump_off_flow_detected) {
             pump_off_flow_detected = true;
             status.pump_off_flow_detected = true;
-            logger.logWarning("WARNING: Water flow detected while pump is OFF - Possible stuck relay or valve leak");
+            logger.logfWarning("Leak detected: %lu pulses while pump OFF (threshold: %u)", pulseDelta, threshold);
         }
     }
 }

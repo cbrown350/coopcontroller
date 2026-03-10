@@ -44,6 +44,7 @@ function Settings() {
   // Pump off flow monitoring
   const [pumpOffFlowMonitoringEnabled, setPumpOffFlowMonitoringEnabled] = createSignal<boolean | null>(null)
   const [pumpOffFlowGracePeriodSeconds, setPumpOffFlowGracePeriodSeconds] = createSignal<number | null>(null)
+  const [pumpOffFlowPulseThreshold, setPumpOffFlowPulseThreshold] = createSignal<number | null>(5)
 
   // Pump minimum daily cycles
   const [pumpMinDailyCyclesEnabled, setPumpMinDailyCyclesEnabled] = createSignal<boolean | null>(null)
@@ -182,6 +183,7 @@ function Settings() {
       setWaterMeterPerPulseCalculationEnabled(settings.water_meter_per_pulse_calculation_enabled ?? false)
       setPumpOffFlowMonitoringEnabled(settings.pump_off_flow_monitoring_enabled ?? false)
       setPumpOffFlowGracePeriodSeconds(settings.pump_off_flow_grace_period_seconds ?? 30)
+      setPumpOffFlowPulseThreshold(settings.pump_off_flow_pulse_threshold ?? 5)
       setPumpMinDailyCyclesEnabled(settings.pump_min_daily_cycles_enabled ?? false)
       setPumpMinDailyCycles(settings.pump_min_daily_cycles ?? 3)
       setPumpMinCycleRunSeconds(settings.pump_min_cycle_run_seconds ?? 120)
@@ -336,6 +338,7 @@ function Settings() {
         water_meter_per_pulse_calculation_enabled: waterMeterPerPulseCalculationEnabled() ?? false,
         pump_off_flow_monitoring_enabled: pumpOffFlowMonitoringEnabled() ?? false,
         pump_off_flow_grace_period_seconds: pumpOffFlowGracePeriodSeconds() ?? 30,
+        pump_off_flow_pulse_threshold: pumpOffFlowPulseThreshold() ?? 5,
         pump_min_daily_cycles_enabled: pumpMinDailyCyclesEnabled() ?? false,
         pump_min_daily_cycles: pumpMinDailyCycles() ?? 3,
         pump_min_cycle_run_seconds: pumpMinCycleRunSeconds() ?? 120,
@@ -854,6 +857,21 @@ function Settings() {
               <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
             </Show>
             <div class="fieldset-label">Grace period after pump turns off before monitoring starts (default: 30 seconds)</div>
+          </fieldset>
+
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Leak Detection Pulse Threshold</legend>
+            <Show when={loaded()}>
+              <input type="number" id="pump_off_flow_pulse_threshold" value={pumpOffFlowPulseThreshold()!} onInput={(e) => setPumpOffFlowPulseThreshold(parseInt(e.target.value))} placeholder="5" step="1" min="1" max="100" class="input" />
+            </Show>
+            <Show when={!loaded()}>
+              <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+            </Show>
+            <label class="label">
+              <span class="label-text-alt">
+                Minimum water meter pulses to trigger a leak alert. Higher values avoid false alarms from normal dripping or settling.
+              </span>
+            </label>
           </fieldset>
 
           <fieldset class="fieldset mt-4">

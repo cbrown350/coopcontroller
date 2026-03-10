@@ -242,6 +242,10 @@ int SettingsManager::getPumpOffFlowGracePeriodSeconds() const {
     return settings.pump_off_flow_grace_period_seconds;
 }
 
+unsigned int SettingsManager::getPumpOffFlowPulseThreshold() const {
+    return settings.pump_off_flow_pulse_threshold;
+}
+
 // Pump minimum daily cycles getters
 bool SettingsManager::getPumpMinDailyCyclesEnabled() const {
     return settings.pump_min_daily_cycles_enabled;
@@ -456,6 +460,10 @@ void SettingsManager::setPumpOffFlowMonitoringEnabled(bool enabled) {
 
 void SettingsManager::setPumpOffFlowGracePeriodSeconds(int seconds) {
     settings.pump_off_flow_grace_period_seconds = seconds;
+}
+
+void SettingsManager::setPumpOffFlowPulseThreshold(unsigned int threshold) {
+    settings.pump_off_flow_pulse_threshold = threshold;
 }
 
 // Pump minimum daily cycles setters
@@ -759,6 +767,7 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.water_meter_per_pulse_calculation_enabled = doc["water_meter_per_pulse_calculation_enabled"] | defaultSettings.water_meter_per_pulse_calculation_enabled;
     settings.pump_off_flow_monitoring_enabled = doc["pump_off_flow_monitoring_enabled"] | defaultSettings.pump_off_flow_monitoring_enabled;
     settings.pump_off_flow_grace_period_seconds = doc["pump_off_flow_grace_period_seconds"] | defaultSettings.pump_off_flow_grace_period_seconds;
+    settings.pump_off_flow_pulse_threshold = doc["pump_off_flow_pulse_threshold"] | defaultSettings.pump_off_flow_pulse_threshold;
 
     // Load pump minimum daily cycles settings
     settings.pump_min_daily_cycles_enabled = doc["pump_min_daily_cycles_enabled"] | defaultSettings.pump_min_daily_cycles_enabled;
@@ -884,6 +893,7 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["water_meter_per_pulse_calculation_enabled"] = settings.water_meter_per_pulse_calculation_enabled;
     doc["pump_off_flow_monitoring_enabled"] = settings.pump_off_flow_monitoring_enabled;
     doc["pump_off_flow_grace_period_seconds"] = settings.pump_off_flow_grace_period_seconds;
+    doc["pump_off_flow_pulse_threshold"] = settings.pump_off_flow_pulse_threshold;
 
     // Pump minimum daily cycles settings
     doc["pump_min_daily_cycles_enabled"] = settings.pump_min_daily_cycles_enabled;

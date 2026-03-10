@@ -12,16 +12,16 @@ This document tracks in-progress and planned features. For completed features, s
 | Phase 3.5 (Critical Refactoring) | 100% complete - HAL refactoring complete, all ESP32-specific functions abstracted |
 | Phase 3.5a (Sunrise/Sunset Integration) | 100% complete with accurate UTC to local time conversion |
 | Phase 3.5b (Light Control with Web UI) | 100% complete |
-| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 590 desktop unit tests passing, all 12 core components covered |
+| Phase 3.5c (Desktop Unit Testing) | 100% complete - All 613 desktop unit tests passing, all 13 core components covered |
 | Phase 4 (Notifications) | In progress - Email & Telegram alerts + bot commands implemented |
 
 **Current Build:** RAM 29.8%, Flash 85.6%
 
-**Latest Build (2026-03-09):** Firmware and web UI builds successful
+**Latest Build (2026-03-10):** Firmware and web UI builds successful
 
-**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager, TelegramBot controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API, bot commands, and HTTP-based email API integration.
+**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager, TelegramBot controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API, bot commands, and HTTP-based email API integration. CSV history export with Excel-compatible timestamps. Pulse-count-based leak detection for improved accuracy.
 
-**Test Coverage (March 2026):** 609/609 desktop tests passing (100% pass rate)
+**Test Coverage (March 2026):** 613/613 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
@@ -31,7 +31,7 @@ This document tracks in-progress and planned features. For completed features, s
 | LightController | 102 |
 | Logger | 11 |
 | NotificationManager | 18 |
-| PumpController | 83 |
+| PumpController | 84 |
 | SensorManager | 33 |
 | SettingsManager | 150 |
 | SunriseSunset | 36 |
@@ -46,7 +46,7 @@ This document tracks in-progress and planned features. For completed features, s
 
 ## Completed Features
 
-**Total: 43 completed features**
+**Total: 46 completed features**
 
 All completed features have been moved to [feature-tracker-finished.md](feature-tracker-finished.md) for better navigation and reduced file size.
 
@@ -106,6 +106,26 @@ All completed features have been moved to [feature-tracker-finished.md](feature-
 *No features currently in progress.*
 
 ## Recently Completed (Not Yet Moved to Finished)
+
+### CSV History Export Excel-Compatible Timestamps (2026-03-10)
+- **Change**: CSV export `timestamp` column renamed to `datetime`, now outputs `YYYY-MM-DD HH:MM:SS` format instead of raw epoch
+- **Benefit**: Excel/Google Sheets automatically recognize the date/time format without manual conversion
+- **Fallback**: If timestamp is invalid (0 or null tm), falls back to raw epoch number
+- **Files**: `lib/CoopControllerWebServer/CoopControllerWebServer.cpp`
+
+### Pulse-Count Leak Detection Threshold (2026-03-10)
+- **Change**: Pump OFF flow monitoring now uses accumulated pulse count delta instead of instantaneous flow rate
+- **New setting**: `pump_off_flow_pulse_threshold` (default: 5 pulses) — minimum pulse count to trigger leak alert
+- **Benefit**: Avoids false alarms from occasional drips or sensor noise; only alerts on sustained water flow
+- **Web UI**: New "Leak Detection Pulse Threshold" input in Settings (1-100 range)
+- **Architecture**: Records baseline pulse count after grace period, then compares delta against threshold
+- **Tests**: All 84 PumpController tests updated and passing
+- **Files**: `lib/PumpController/`, `lib/SettingsManager/`, `lib/CoopControllerWebServer/`, `web/src/Settings.tsx`, `web/src/types.ts`
+
+### Complete Example Settings File (2026-03-10)
+- **Change**: `data/user_settings.example.json` updated with all 50+ settings entries
+- **Includes**: All notification, Telegram, email, pump, door, light, WiFi, history, update, and API settings
+- **Files**: `data/user_settings.example.json`
 
 ### Telegram Bot Commands (2026-03-10)
 - **Two-way Telegram control**: Receive and execute bot commands via Telegram chat

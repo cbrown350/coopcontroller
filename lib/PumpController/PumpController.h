@@ -98,6 +98,7 @@ private:
     unsigned long pump_turned_off_time;      ///< Timestamp when pump last turned off
     bool pump_has_been_off;                  ///< Has pump been off yet (handles time=0 case)
     bool pump_off_flow_detected;             ///< Flow detected when pump should be off
+    unsigned long pump_off_pulse_count_at_start;  ///< Pulse count when grace period started
 
     // Scheduled maintenance cycles
     unsigned long lastCompletedCycleTime_;   ///< When last pump cycle completed (any type)

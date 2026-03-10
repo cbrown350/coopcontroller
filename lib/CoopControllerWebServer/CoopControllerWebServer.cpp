@@ -261,6 +261,13 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       logger.logInfo(graceMsg.c_str());
                   }
 
+                  if (jsonObj["pump_off_flow_pulse_threshold"].is<int>()) {
+                      unsigned int threshold = jsonObj["pump_off_flow_pulse_threshold"].as<unsigned int>();
+                      settingsManager.setPumpOffFlowPulseThreshold(threshold);
+                      String threshMsg = "Pump OFF flow pulse threshold: " + String(threshold);
+                      logger.logInfo(threshMsg.c_str());
+                  }
+
                   if (jsonObj["pump_min_daily_cycles_enabled"].is<bool>()) {
                       bool enabled = jsonObj["pump_min_daily_cycles_enabled"].as<bool>();
                       settingsManager.setPumpMinDailyCyclesEnabled(enabled);
@@ -519,6 +526,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   system["water_flow_error_timeout_seconds"] = settingsManager.getWaterFlowErrorTimeoutSeconds();
                   system["pump_off_flow_monitoring_enabled"] = settingsManager.getPumpOffFlowMonitoringEnabled();
                   system["pump_off_flow_grace_period_seconds"] = settingsManager.getPumpOffFlowGracePeriodSeconds();
+                  system["pump_off_flow_pulse_threshold"] = settingsManager.getPumpOffFlowPulseThreshold();
                   system["pump_min_daily_cycles_enabled"] = settingsManager.getPumpMinDailyCyclesEnabled();
                   system["pump_min_daily_cycles"] = settingsManager.getPumpMinDailyCycles();
                   system["pump_min_cycle_run_seconds"] = settingsManager.getPumpMinCycleRunSeconds();
@@ -1597,7 +1605,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                           // CSV header
                           if (!state->headerSent) {
-                              String hdr = "timestamp,temperature_f,pump_active,flow_rate,light_brightness,door_state,door_position,pump_trigger,door_trigger,light_trigger,event_type\n";
+                              String hdr = "datetime,temperature_f,pump_active,flow_rate,light_brightness,door_state,door_position,pump_trigger,door_trigger,light_trigger,event_type\n";
                               state->headerSent = true;
                               size_t available = maxLen - written;
                               size_t toWrite = std::min(static_cast<size_t>(hdr.length()), available);
@@ -1614,7 +1622,15 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                               size_t bufIdx = state->mgr->getOrderedIndex(state->current);
                               const DataPoint& dp = state->mgr->getDataPointAt(bufIdx);
 
-                              String row = String((unsigned long)dp.timestamp) + ",";
+                              char timeBuf[20]; // "YYYY-MM-DD HH:MM:SS"
+                              time_t ts = dp.timestamp;
+                              struct tm* tm_info = localtime(&ts);
+                              if (tm_info && ts > 0) {
+                                  strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", tm_info);
+                              } else {
+                                  snprintf(timeBuf, sizeof(timeBuf), "%lu", (unsigned long)ts);
+                              }
+                              String row = String(timeBuf) + ",";
                               if (isnan(dp.temperature_f)) {
                                   row += ",";
                               } else {

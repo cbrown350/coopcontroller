@@ -54,6 +54,10 @@ public:
     mockSensorData.last_pulse_time.store(time);
   }
 
+  void setPulseCount(unsigned long count) {
+    mockSensorData.pulse_count.store(count);
+  }
+
   // Override public methods to return mock values
   float getTemperature1F() const {
     // Match real SensorManager behavior - only return temp if it's a Dallas temp sensor
@@ -72,6 +76,8 @@ public:
   bool isSensor1Detected() const { return mockSensorData.was_detected; }
 
   float getFlowRate1() const { return mockSensorData.flow_rate; }
+
+  unsigned long getPulseCount1() const { return mockSensorData.pulse_count.load(); }
 
   SensorType getSensor1Type() const { return mockSensorData.type; }
 
@@ -145,6 +151,8 @@ protected:
   void setTemperature(float temp_f) { primarySensor->setTemperature(temp_f); }
 
   void setFlowRate(float gpm) { flowSensor->setFlowRate(gpm); }
+
+  void setPulseCount(unsigned long count) { flowSensor->setPulseCount(count); }
 
   void setFlowDisconnected() { flowSensor->setDisconnected(); }
 
@@ -465,16 +473,18 @@ TEST_F(PumpControllerTest, FlowErrorRetryAfterDelay) {
 TEST_F(PumpControllerTest, PumpOffFlowDetectedAfterGracePeriod) {
   setTemperature(40.0f); // Above threshold, pump off
   pumpController.setAutoMode(true);
+  setFlowRate(0.0f); // Set as WATER_METER type
+  setPulseCount(10);
   pumpController.update();
 
   EXPECT_FALSE(pumpController.isPumpOn());
 
   // Wait for grace period (default 30 seconds)
   advanceTime(31000);
-  pumpController.update();
+  pumpController.update(); // Records baseline pulse count (10)
 
-  // Simulate flow while pump is off
-  setFlowRate(1.5f);
+  // Simulate flow while pump is off - add pulses exceeding threshold (default 5)
+  setPulseCount(16); // 16 - 10 = 6 >= threshold of 5
   pumpController.update();
 
   EXPECT_TRUE(pumpController.getPumpOffFlowDetected());
@@ -495,11 +505,14 @@ TEST_F(PumpControllerTest, PumpOffFlowNotDetectedDuringGracePeriod) {
 TEST_F(PumpControllerTest, PumpOffFlowDetectionClearsOnPumpOn) {
   setTemperature(40.0f);
   pumpController.setAutoMode(true);
+  setFlowRate(0.0f); // Set as WATER_METER type
+  setPulseCount(10);
   pumpController.update();
 
-  // Wait for grace period and detect flow
+  // Wait for grace period and detect flow via pulse count
   advanceTime(31000);
-  setFlowRate(1.5f);
+  pumpController.update(); // Records baseline (10)
+  setPulseCount(20); // delta = 10 >= threshold
   pumpController.update();
 
   EXPECT_TRUE(pumpController.getPumpOffFlowDetected());
@@ -515,10 +528,13 @@ TEST_F(PumpControllerTest, PumpOffFlowDetectionClearsOnPumpOn) {
 
 TEST_F(PumpControllerTest, ClearPumpOffFlowDetectionResetsFlag) {
   setTemperature(40.0f);
+  setFlowRate(0.0f); // Set as WATER_METER type
+  setPulseCount(10);
   pumpController.update();
 
   advanceTime(31000);
-  setFlowRate(1.5f);
+  pumpController.update(); // Records baseline (10)
+  setPulseCount(20); // delta = 10 >= threshold
   pumpController.update();
 
   EXPECT_TRUE(pumpController.getPumpOffFlowDetected());
@@ -1082,12 +1098,15 @@ TEST_F(PumpControllerTest, FlowErrorWithManualRecovery) {
 
 TEST_F(PumpControllerTest, PumpOffFlowWithManualClear) {
   setTemperature(40.0f);
+  setFlowRate(0.0f); // Set as WATER_METER type
+  setPulseCount(10);
   pumpController.update();
 
   EXPECT_FALSE(pumpController.isPumpOn());
 
   advanceTime(31000);
-  setFlowRate(1.5f);
+  pumpController.update(); // Records baseline (10)
+  setPulseCount(20); // delta = 10 >= threshold
   pumpController.update();
 
   EXPECT_TRUE(pumpController.getPumpOffFlowDetected());
@@ -1467,9 +1486,9 @@ TEST_F(ScheduledCyclesTest, GracePeriodRespectedAfterScheduledCycleEnds) {
   EXPECT_FALSE(pumpController.isPumpOn());
   EXPECT_FALSE(pumpController.isScheduledCycleActive());
 
-  // Simulate residual flow immediately after pump stops
-  // (water still flowing through pipes)
-  setFlowRate(1.5f);
+  // Simulate residual flow immediately after pump stops via pulse counts
+  setFlowRate(0.0f); // Set as WATER_METER type
+  setPulseCount(100);
   advanceTime(100); // Very short time after pump stops
   pumpController.update();
 
@@ -1478,17 +1497,20 @@ TEST_F(ScheduledCyclesTest, GracePeriodRespectedAfterScheduledCycleEnds) {
 
   // Advance time within grace period with continued flow
   advanceTime(15000); // 15.1s elapsed since pump stopped
-  setFlowRate(1.5f);
+  setPulseCount(102); // small increase, still in grace period
   pumpController.update();
 
   // Still in grace period (< 30s)
   EXPECT_FALSE(pumpController.getPumpOffFlowDetected());
 
-  // Now advance past grace period with flow
+  // Now advance past grace period
   advanceTime(16000); // Total: 31.1s since pump stopped
-  setFlowRate(1.5f);
+  pumpController.update(); // Records baseline pulse count
+
+  // Add pulses exceeding threshold
+  setPulseCount(110); // delta will exceed threshold of 5
   pumpController.update();
 
-  // Now flow should be detected (past grace period)
+  // Now flow should be detected (past grace period + pulses exceed threshold)
   EXPECT_TRUE(pumpController.getPumpOffFlowDetected());
 }

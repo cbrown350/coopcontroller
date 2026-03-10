@@ -110,6 +110,7 @@ struct user_settings // NOSONAR
 
     bool   pump_off_flow_monitoring_enabled = false; ///< Enable pump OFF flow monitoring
     int    pump_off_flow_grace_period_seconds = 30;  ///< Grace period after pump turns off
+    unsigned int pump_off_flow_pulse_threshold = 5;   ///< Min pulses to trigger leak alert (avoids false alarms)
 
     // ========================================================================
     // PUMP MINIMUM DAILY CYCLES
@@ -281,6 +282,8 @@ class SettingsManager // NOSONAR
     // Pump off flow monitoring getters
     bool   getPumpOffFlowMonitoringEnabled() const;
     int    getPumpOffFlowGracePeriodSeconds() const;
+    unsigned int getPumpOffFlowPulseThreshold() const;
+    void setPumpOffFlowPulseThreshold(unsigned int threshold);
 
     // Pump minimum daily cycles getters
     bool         getPumpMinDailyCyclesEnabled() const;
