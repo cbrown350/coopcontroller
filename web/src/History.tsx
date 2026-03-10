@@ -50,7 +50,7 @@ function History() {
   let initialAutoRefresh = false
   if (typeof window !== 'undefined') {
     try {
-      initialAutoRefresh = sessionStorage.getItem('historyAutoRefresh') === 'true'
+      initialAutoRefresh = localStorage.getItem('historyAutoRefresh') === 'true'
     } catch {
       // Ignore storage errors (private mode, quota, etc.)
     }
@@ -454,7 +454,7 @@ function History() {
   createEffect(() => {
     if (typeof window === 'undefined') return
     try {
-      sessionStorage.setItem(autoRefreshStorageKey, String(autoRefresh()))
+      localStorage.setItem(autoRefreshStorageKey, String(autoRefresh()))
     } catch {
       // Ignore storage errors (private mode, quota, etc.)
     }

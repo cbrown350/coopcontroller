@@ -1017,7 +1017,6 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   if (days > 0) formatted += String(days) + "d ";
                   if (hours > 0 || days > 0) formatted += String(hours) + "h ";
                   if (minutes > 0 || hours > 0 || days > 0) formatted += String(minutes) + "m ";
-                  if (uptimeSeconds > 0 || hours > 0 || minutes > 0 || days > 0) formatted += String(uptimeSeconds) + "s ";
                   formatted += String(uptimeSeconds) + "s";
                   
                   jsonDoc["uptime_formatted"] = formatted;
