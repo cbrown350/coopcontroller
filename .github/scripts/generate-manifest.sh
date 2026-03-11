@@ -27,6 +27,8 @@ FIRMWARE_CHECKSUM=$(get_checksum ".pio/build/esp32-release/firmware.bin")
 LITTLEFS_CHECKSUM=$(get_checksum ".pio/build/esp32-release/littlefs.bin")
 MERGED_CHECKSUM=$(get_checksum ".pio/build/esp32-release/firmware_merged.bin")
 
+REPO="${GITHUB_REPOSITORY:-cbrown350/coopcontroller}"
+
 # Generate manifest JSON
 cat > "$OUTPUT_FILE" << EOF
 {
@@ -50,7 +52,7 @@ cat > "$OUTPUT_FILE" << EOF
     "type": "application/octet-stream",
     "description": "Complete merged binary (upload at 0x0, includes bootloader)"
   },
-  "changelog_url": "https://github.com/cbrown350/coopcontroller/releases/tag/${VERSION}"
+  "changelog_url": "https://github.com/${REPO}/releases/tag/${VERSION}"
 }
 EOF
 

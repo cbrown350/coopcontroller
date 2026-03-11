@@ -38,7 +38,7 @@ def get_file_size(file_path):
 
 def get_github_repo():
     """Get GitHub repository from environment or default."""
-    return os.getenv("GITHUB_REPOSITORY", "cbrown350/coopcontroller")
+    return os.getenv("GITHUB_REPO", "cbrown350/coopcontroller")
 
 
 def generate_manifest(version, firmware_path, filesystem_path, merged_path=None):
