@@ -1,4 +1,5 @@
 #include "MQTTManager.h"
+#include "config.h"
 #include "Logger.h"
 #include <math.h>
 
@@ -263,7 +264,7 @@ String MQTTManager::getBaseTopic() const {
 }
 
 String MQTTManager::getDiscoveryTopic(const String& component, const String& objectId) const {
-    return "homeassistant/" + component + "/" + config_.device_id + "_" + objectId + "/config";
+    return "homeassistant/" + component + "/" + config_.device_id + "/" + objectId + "/config";
 }
 
 // ============================================================================
@@ -275,7 +276,7 @@ void MQTTManager::addDeviceInfo(JsonObject& doc) const {
     JsonArray identifiers = device["identifiers"].to<JsonArray>();
     identifiers.add(config_.device_id);
     device["name"] = config_.device_name;
-    device["manufacturer"] = "DIY";
+    device["manufacturer"] = githubRepo;
     device["model"] = "Coop Controller";
     device["sw_version"] = config_.fw_version;
     device["configuration_url"] = "http://" + config_.hostname + ".local";
@@ -285,7 +286,7 @@ void MQTTManager::addOriginInfo(JsonObject& doc) const {
     JsonObject origin = doc["origin"].to<JsonObject>();
     origin["name"] = "Coop Controller";
     origin["sw_version"] = config_.fw_version;
-    origin["support_url"] = "https://github.com/cbrown350/coopcontroller";
+    origin["support_url"] = "https://github.com/" + String(githubRepo) + "/issues";
 }
 
 // ============================================================================
