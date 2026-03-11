@@ -14,7 +14,7 @@
 | **Build (web)** | `cd web && npm run build` |
 | **Run tests** | `pio test` |
 | **Current build** | RAM 17.6% (57,704 bytes), Flash 83.4% (1,474,941 bytes) |
-| **Tests** | 576/576 passing (11 components) |
+| **Tests** | 626/626 passing (14 components) |
 | **Web access** | `http://coopcontroller.local` |
 
 ---
@@ -84,6 +84,8 @@ All ESP32-specific functions use the HAL abstraction (`IHAL.h`). New hardware in
 - **SunriseSunset** - Location-based calculations with timezone support
 
 ### Recent Completions
+- Home Assistant MQTT Integration (25 entities with auto-discovery: sensors, switches, light, buttons, numbers; PubSubClient; LWT availability; command handling; web UI settings)
+- Telegram/Email Test with Unsaved Settings (test buttons use current form values before saving)
 - SHA256 OTA Verification (incremental SHA256 checksum verification during streaming downloads, aborts on mismatch)
 - Configurable Device Hostname (user-editable setting in web UI, stored in SettingsManager, used for mDNS/WiFi AP/syslog/ArduinoOTA, device restart required, defaults: "CoopController" or "CoopHWEmulator")
 - OTA Update System Complete (full OTA: manifest check, streaming firmware/filesystem download, ESP32 Update.h flash, NVS settings backup, redirect handling, REST API endpoints, web UI with progress, force reinstall option, 71 tests)

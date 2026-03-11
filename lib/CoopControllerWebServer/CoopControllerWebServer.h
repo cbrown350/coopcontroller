@@ -16,6 +16,7 @@
 #include "UpdateManager.h"
 #include "NotificationManager.h"
 #include "TelegramBot.h"
+#include "MQTTManager.h"
 
 /**
  * @brief Web server for chicken coop controller
@@ -42,6 +43,7 @@ class CoopControllerWebServer
         UpdateManager* updateManager_ = nullptr; ///< OTA update manager (optional)
         NotificationManager* notificationManager_ = nullptr; ///< Notification manager (optional)
         TelegramBot* telegramBot_ = nullptr; ///< Telegram bot for command polling (optional)
+        MQTTManager* mqttManager_ = nullptr; ///< MQTT manager for Home Assistant (optional)
 
         /**
          * @brief Check if HTTP request has valid authentication credentials
@@ -129,6 +131,12 @@ class CoopControllerWebServer
      * @param telegramBot Pointer to TelegramBot instance
      */
     void setTelegramBot(TelegramBot* telegramBot) { telegramBot_ = telegramBot; }
+
+    /**
+     * @brief Set MQTTManager for MQTT/Home Assistant endpoints
+     * @param mqttManager Pointer to MQTTManager instance
+     */
+    void setMQTTManager(MQTTManager* mqttManager) { mqttManager_ = mqttManager; }
 
     /**
      * @brief Process web server events (call in main loop)

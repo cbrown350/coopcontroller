@@ -95,5 +95,11 @@
   "notify_sensor_error": true,
   "notify_door_fault": true,
   "notify_wifi_disconnect": false,
-  "notify_system_error": true
+  "notify_system_error": true,
+
+  "mqtt_enabled": false,
+  "mqtt_server": "",
+  "mqtt_port": 1883,
+  "mqtt_username": "",
+  "mqtt_password": ""
 }

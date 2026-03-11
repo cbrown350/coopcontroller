@@ -479,6 +479,67 @@ For emulator API endpoints, see [docs/hardware-emulator.md](hardware-emulator.md
 
 ---
 
+## MQTT / Home Assistant
+
+### GET `/mqtt/status`
+
+Get MQTT connection status. **Public.**
+
+**Response:**
+
+```json
+{
+  "enabled": true,
+  "connected": true,
+  "server": "192.168.1.100",
+  "port": 1883,
+  "device_id": "aabbccddeeff",
+  "messages_published": 42,
+  "messages_failed": 0,
+  "reconnect_count": 1,
+  "last_error": ""
+}
+```
+
+### MQTT Topics
+
+When MQTT is enabled, the controller publishes to these topics:
+
+| Topic | Description |
+|-------|-------------|
+| `coop_controller/{device_id}/state` | All sensor/controller state as JSON |
+| `coop_controller/{device_id}/light/state` | Light state (JSON: `{"state":"ON","brightness":75}`) |
+| `coop_controller/{device_id}/availability` | Online/offline (LWT) |
+| `homeassistant/.../.../config` | Auto-discovery configs (25 entities) |
+
+### MQTT Entities (Home Assistant Auto-Discovery)
+
+| Type | Entity | Description |
+|------|--------|-------------|
+| sensor | sensor_1_temperature_f | Temperature sensor 1 (°F) |
+| sensor | sensor_2_temperature_f | Temperature sensor 2 (°F) |
+| sensor | water_flow_rate | Water flow rate (GPM) |
+| sensor | water_total_gallons | Total water usage (gal) |
+| sensor | wifi_rssi | WiFi signal strength (dBm) |
+| sensor | free_heap | Free heap memory (diagnostic) |
+| sensor | uptime | System uptime (diagnostic) |
+| binary_sensor | sensor_1_connected | Sensor 1 connectivity |
+| binary_sensor | sensor_2_connected | Sensor 2 connectivity |
+| binary_sensor | pump_running | Pump running state |
+| binary_sensor | door_open | Door open state |
+| binary_sensor | door_closed | Door closed state |
+| binary_sensor | water_flow_error | Water flow error |
+| switch | pump_auto_mode | Pump auto mode toggle |
+| switch | light_auto_mode | Light auto mode toggle |
+| switch | door_auto_mode | Door auto mode toggle |
+| light | coop_light | Coop light with brightness |
+| button | pump_on / pump_off | Manual pump control |
+| button | door_open_cmd / door_close_cmd / door_stop | Manual door control |
+| number | temp_threshold_on / temp_threshold_off | Temperature thresholds |
+| number | light_brightness | Light brightness setting |
+
+---
+
 ## Telegram Bot Commands
 
 When Telegram is enabled and configured with a bot token and chat ID, the controller polls for incoming commands every 20 seconds (configurable). Commands are only accepted from the configured chat ID.

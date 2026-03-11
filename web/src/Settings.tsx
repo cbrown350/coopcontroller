@@ -145,6 +145,13 @@ function Settings() {
   const [emailTestLoading, setEmailTestLoading] = createSignal(false)
   const [emailTestResult, setEmailTestResult] = createSignal<{success: boolean, message: string} | null>(null)
 
+  // Notification settings - MQTT
+  const [mqttEnabled, setMqttEnabled] = createSignal<boolean | null>(null)
+  const [mqttServer, setMqttServer] = createSignal('')
+  const [mqttPort, setMqttPort] = createSignal<number | null>(1883)
+  const [mqttUsername, setMqttUsername] = createSignal('')
+  const [mqttPassword, setMqttPassword] = createSignal('')
+
   // Notification preferences
   const [notifyPumpError, setNotifyPumpError] = createSignal<boolean | null>(true)
   const [notifySensorError, setNotifySensorError] = createSignal<boolean | null>(true)
@@ -290,6 +297,11 @@ function Settings() {
       setEmailSmtpPassword('') // Never load password back
       setEmailFrom(settings.email_from ?? '')
       setEmailTo(settings.email_to ?? '')
+      setMqttEnabled(settings.mqtt_enabled ?? false)
+      setMqttServer(settings.mqtt_server ?? '')
+      setMqttPort(settings.mqtt_port ?? 1883)
+      setMqttUsername(settings.mqtt_username ?? '')
+      setMqttPassword('') // Never pre-fill password from server
       setNotifyPumpError(settings.notify_pump_error ?? true)
       setNotifySensorError(settings.notify_sensor_error ?? true)
       setNotifyDoorFault(settings.notify_door_fault ?? true)
@@ -415,6 +427,10 @@ function Settings() {
         email_smtp_username: emailSmtpUsername() ?? '',
         email_from: emailFrom() ?? '',
         email_to: emailTo() ?? '',
+        mqtt_enabled: mqttEnabled() ?? false,
+        mqtt_server: mqttServer() ?? '',
+        mqtt_port: mqttPort() ?? 1883,
+        mqtt_username: mqttUsername() ?? '',
         notify_pump_error: notifyPumpError() ?? true,
         notify_sensor_error: notifySensorError() ?? true,
         notify_door_fault: notifyDoorFault() ?? true,
@@ -442,6 +458,11 @@ function Settings() {
       // Handle email SMTP password: only include if provided (non-empty)
       if (emailSmtpPassword().length > 0) {
         settingsPayload['email_smtp_password'] = emailSmtpPassword()
+      }
+
+      // Handle MQTT password: only include if provided (non-empty)
+      if (mqttPassword().length > 0) {
+        settingsPayload['mqtt_password'] = mqttPassword()
       }
 
       // Cache credentials for authenticated requests if auth is enabled
@@ -606,7 +627,15 @@ function Settings() {
     setTelegramTestLoading(true)
     setTelegramTestResult(null)
     try {
-      const response = await authenticatedFetch('/notifications/test/telegram', { method: 'POST' })
+      // Send current form values so testing works before saving
+      const body: Record<string, string> = {}
+      if (telegramBotToken()) body.telegram_bot_token = telegramBotToken()
+      if (telegramChatId()) body.telegram_chat_id = telegramChatId()
+      const response = await authenticatedFetch('/notifications/test/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
       const data = await response.json()
       setTelegramTestResult({
         success: data.success,
@@ -624,7 +653,19 @@ function Settings() {
     setEmailTestLoading(true)
     setEmailTestResult(null)
     try {
-      const response = await authenticatedFetch('/notifications/test/email', { method: 'POST' })
+      // Send current form values so testing works before saving
+      const body: Record<string, any> = {}
+      if (emailSmtpServer()) body.email_smtp_server = emailSmtpServer()
+      if (emailSmtpPort()) body.email_smtp_port = emailSmtpPort()
+      if (emailSmtpUsername()) body.email_smtp_username = emailSmtpUsername()
+      if (emailSmtpPassword()) body.email_smtp_password = emailSmtpPassword()
+      if (emailFrom()) body.email_from = emailFrom()
+      if (emailTo()) body.email_to = emailTo()
+      const response = await authenticatedFetch('/notifications/test/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
       const data = await response.json()
       setEmailTestResult({
         success: data.success,
@@ -1805,8 +1846,57 @@ function Settings() {
           {/* Notifications Section */}
           <h2 class="text-lg font-bold mb-4 mt-10">Notifications</h2>
 
-          {/* Telegram */}
+          {/* MQTT */}
           <div class="card bg-base-200 card-sm shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">MQTT (Home Assistant)</h2>
+              <div class="fieldset-label">Connect to Home Assistant via MQTT for real-time monitoring and control.</div>
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Enable MQTT</legend>
+                <label class="label cursor-pointer justify-start gap-2">
+                  <span class="label-text">Enable MQTT</span>
+                  <Show when={loaded()}>
+                    <input type="checkbox" class="toggle toggle-accent"
+                      checked={mqttEnabled() ?? false}
+                      onChange={(e) => setMqttEnabled(e.currentTarget.checked)} />
+                  </Show>
+                </label>
+              </fieldset>
+              <Show when={mqttEnabled()}>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Server</legend>
+                  <input type="text" value={mqttServer()}
+                    onInput={(e) => setMqttServer(e.target.value)}
+                    placeholder="e.g., 192.168.1.100"
+                    class="input w-full" />
+                </fieldset>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Port</legend>
+                  <input type="number" min="1" max="65535"
+                    value={mqttPort() ?? 1883}
+                    onInput={(e) => setMqttPort(parseInt(e.target.value) || 1883)}
+                    class="input w-full" />
+                </fieldset>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Username</legend>
+                  <input type="text" value={mqttUsername()}
+                    onInput={(e) => setMqttUsername(e.target.value)}
+                    placeholder="optional"
+                    class="input w-full" />
+                </fieldset>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Password</legend>
+                  <input type="password" value={mqttPassword()}
+                    onInput={(e) => setMqttPassword(e.target.value)}
+                    placeholder="Leave blank to keep current"
+                    class="input w-full" />
+                </fieldset>
+              </Show>
+            </div>
+          </div>
+
+          {/* Telegram */}
+          <div class="card bg-base-200 card-sm shadow-sm mt-4">
             <div class="card-body">
               <h2 class="card-title">Telegram Notifications</h2>
               <fieldset class="fieldset">

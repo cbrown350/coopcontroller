@@ -64,6 +64,7 @@
 #include "UpdateManager.h"
 #include "NotificationManager.h"
 #include "TelegramBot.h"
+#include "MQTTManager.h"
 #include "CrashDiagnostics.h"
 
 
@@ -210,6 +211,7 @@ void setup() // NOSONAR - complexity ok
     UpdateManager updateManager;
     NotificationManager notificationManager;
     TelegramBot telegramBot;
+    MQTTManager mqttManager;
 
     settingsManager.begin(&hal);
     settingsManager.load();
@@ -425,6 +427,83 @@ void setup() // NOSONAR - complexity ok
     webServer.setNotificationManager(&notificationManager);
     webServer.setTelegramBot(&telegramBot);
     logger.logInfo("Notification manager and Telegram bot initialized");
+
+    // Initialize MQTT manager for Home Assistant integration
+    {
+        MQTTConfig mqttConfig;
+        mqttConfig.server = settingsManager.getMqttServer();
+        mqttConfig.port = settingsManager.getMqttPort();
+        mqttConfig.username = settingsManager.getMqttUsername();
+        mqttConfig.password = settingsManager.getMqttPassword();
+        // Use MAC address (without colons) as device_id for uniqueness
+        String mac = hal.wifiGetMacAddress();
+        mac.replace(":", "");
+        mac.toLowerCase();
+        mqttConfig.device_id = mac;
+        mqttConfig.device_name = settingsManager.getHostname();
+        mqttConfig.fw_version = firmwareVersion;
+        mqttManager.begin(mqttConfig);
+        mqttManager.setEnabled(settingsManager.getMqttEnabled());
+
+        // Register MQTT command handler
+        mqttManager.onCommand([&](const String& entityId, const String& payload) {
+            logger.logfDebug("MQTT command: %s = %s", entityId.c_str(), payload.c_str());
+
+            // Switch commands (ON/OFF)
+            if (entityId == "pump_auto_mode") {
+                pumpController.setAutoMode(payload == "ON", TriggerSource::API);
+            } else if (entityId == "light_auto_mode") {
+                lightController.setAutoMode(payload == "ON", TriggerSource::API);
+            } else if (entityId == "door_auto_mode") {
+                doorController.setAutoMode(payload == "ON", TriggerSource::API);
+            }
+            // Button commands (PRESS)
+            else if (entityId == "pump_on") {
+                pumpController.turnOn(TriggerSource::API);
+            } else if (entityId == "pump_off") {
+                pumpController.turnOff(TriggerSource::API);
+            } else if (entityId == "door_open_cmd") {
+                doorController.open(TriggerSource::API);
+            } else if (entityId == "door_close_cmd") {
+                doorController.close(TriggerSource::API);
+            } else if (entityId == "door_stop") {
+                doorController.stop(TriggerSource::API);
+            }
+            // Light JSON command
+            else if (entityId == "light") {
+                JsonDocument cmdDoc;
+                if (deserializeJson(cmdDoc, payload) == DeserializationError::Ok) {
+                    if (cmdDoc["state"] == "ON") {
+                        if (cmdDoc["brightness"].is<int>()) {
+                            int brightness = cmdDoc["brightness"].as<int>();
+                            lightController.setBrightness(brightness, TriggerSource::API);
+                        }
+                        lightController.turnOn(TriggerSource::API);
+                    } else if (cmdDoc["state"] == "OFF") {
+                        lightController.turnOff(TriggerSource::API);
+                    }
+                }
+            }
+            // Number commands (numeric values)
+            else if (entityId == "temp_threshold_on") {
+                float val = payload.toFloat();
+                settingsManager.setTempThresholdOnF(val);
+                settingsManager.save();
+            } else if (entityId == "temp_threshold_off") {
+                float val = payload.toFloat();
+                settingsManager.setTempThresholdOffF(val);
+                settingsManager.save();
+            } else if (entityId == "light_brightness") {
+                int val = payload.toInt();
+                settingsManager.setLightBrightnessPercent(val);
+                lightController.setBrightness(val, TriggerSource::API);
+                settingsManager.save();
+            }
+        });
+
+        webServer.setMQTTManager(&mqttManager);
+        logger.logInfo("MQTT manager initialized");
+    }
 
     logger.logInfo("System initialization complete");
 
@@ -728,6 +807,36 @@ void setup() // NOSONAR - complexity ok
 
         // Poll Telegram bot for incoming commands
         telegramBot.update();
+
+        // Update MQTT manager (connection, message processing, state publishing)
+        mqttManager.update();
+
+        // Publish MQTT state periodically (every sensor update cycle)
+        if (mqttManager.isConnected() && currentTime - lastSensorUpdate < SENSOR_UPDATE_INTERVAL + 100) {
+            MQTTStateData mqttState;
+            mqttState.sensor1_temp_f = sensorManager.getTemperature1F();
+            mqttState.sensor2_temp_f = sensorManager.getTemperature2F();
+            mqttState.sensor1_connected = sensorManager.isSensor1Connected();
+            mqttState.sensor2_connected = sensorManager.isSensor2Connected();
+            mqttState.water_flow_rate = sensorManager.getFlowRate1();
+            float pulsesPerGal = settingsManager.getPulsesPerGallon();
+            mqttState.water_total_gallons = pulsesPerGal > 0 ? sensorManager.getPulseCount1() / pulsesPerGal : 0;
+            mqttState.pump_running = pumpController.isPumpOn();
+            mqttState.pump_auto_mode = pumpController.getState() == PumpState::PUMP_AUTO;
+            mqttState.water_flow_error = pumpController.hasFlowError();
+            mqttState.door_open = doorController.getPosition() == DoorPosition::OPEN;
+            mqttState.door_closed = doorController.getPosition() == DoorPosition::CLOSED;
+            mqttState.door_auto_mode = doorController.isAutoMode();
+            mqttState.light_on = lightController.getCurrentBrightness() > 0;
+            mqttState.light_brightness = lightController.getCurrentBrightness();
+            mqttState.light_auto_mode = lightController.isAutoMode();
+            mqttState.temp_threshold_on = settingsManager.getTempThresholdOnF();
+            mqttState.temp_threshold_off = settingsManager.getTempThresholdOffF();
+            mqttState.wifi_rssi = hal.wifiGetRSSI();
+            mqttState.free_heap = hal.getFreeHeap();
+            mqttState.uptime_seconds = currentTime / 1000;
+            mqttManager.publishState(mqttState);
+        }
 
         delay(10);
         

@@ -17,11 +17,11 @@ This document tracks in-progress and planned features. For completed features, s
 
 **Current Build:** RAM 29.8%, Flash 85.6%
 
-**Latest Build (2026-03-10):** Firmware and web UI builds successful
+**Latest Build (2026-03-11):** Firmware and web UI builds successful
 
-**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager, TelegramBot controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API, bot commands, and HTTP-based email API integration. CSV history export with Excel-compatible timestamps. Pulse-count-based leak detection for improved accuracy.
+**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager, TelegramBot, MQTTManager controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API, bot commands, and HTTP-based email API integration. CSV history export with Excel-compatible timestamps. Pulse-count-based leak detection for improved accuracy. Home Assistant MQTT integration with auto-discovery.
 
-**Test Coverage (March 2026):** 613/613 desktop tests passing (100% pass rate)
+**Test Coverage (March 2026):** 626/626 desktop tests passing (100% pass rate)
 
 | Component | Tests |
 |-----------|-------|
@@ -30,7 +30,8 @@ This document tracks in-progress and planned features. For completed features, s
 | DoorController | 68 |
 | LightController | 102 |
 | Logger | 11 |
-| NotificationManager | 18 |
+| MQTTManager | 10 |
+| NotificationManager | 21 |
 | PumpController | 84 |
 | SensorManager | 33 |
 | SettingsManager | 150 |
@@ -106,6 +107,34 @@ All completed features have been moved to [feature-tracker-finished.md](feature-
 *No features currently in progress.*
 
 ## Recently Completed (Not Yet Moved to Finished)
+
+### Home Assistant MQTT Integration (2026-03-11)
+- **Full Home Assistant device** with MQTT auto-discovery - device appears automatically in HA
+- **25 entities**: 7 sensors, 6 binary sensors, 3 switches, 1 light (JSON schema with brightness), 5 buttons, 3 number settings
+- **Sensors**: Temperature (x2), water flow rate, total gallons, WiFi RSSI, free heap, uptime
+- **Binary sensors**: Sensor connectivity (x2), pump running, door open/closed, water flow error
+- **Switches**: Pump/light/door auto mode toggles
+- **Light**: Coop light with brightness control (0-100%)
+- **Buttons**: Pump on/off, door open/close/stop
+- **Numbers**: Temperature thresholds ON/OFF, light brightness
+- **Architecture**: `MQTTManager` library using PubSubClient, `#ifdef ESP32` guards for desktop testing
+- **Availability**: LWT (Last Will and Testament) for online/offline status
+- **Reconnection**: Exponential backoff (5s to 60s max)
+- **State publishing**: Single JSON state topic + separate light state topic, 30s periodic refresh
+- **Command handling**: Wildcard subscription with callback dispatch to controllers
+- **Web UI**: MQTT settings section (enable, server, port, username, password)
+- **Settings**: 5 new fields in SettingsManager (mqtt_enabled, mqtt_server, mqtt_port, mqtt_username, mqtt_password)
+- **API endpoint**: `GET /mqtt/status` for MQTT connection status
+- **Tests**: 10 new MQTTManager unit tests (all passing)
+- **Files**: `lib/MQTTManager/`, `lib/SettingsManager/`, `lib/CoopControllerWebServer/`, `src/main.cpp`, `web/src/Settings.tsx`
+
+### Telegram/Email Test with Unsaved Settings (2026-03-11)
+- **Fix**: Test buttons for Telegram and email now send current form values in POST body
+- **Benefit**: Users can test notification settings before saving them
+- **Architecture**: New `sendTestWithConfig()` method on NotificationManager accepts JSON config overrides
+- **Backward compatible**: Empty body falls back to saved settings (existing behavior)
+- **Tests**: 3 new NotificationManager tests for sendTestWithConfig
+- **Files**: `lib/NotificationManager/`, `lib/CoopControllerWebServer/`, `web/src/Settings.tsx`
 
 ### CSV History Export Excel-Compatible Timestamps (2026-03-10)
 - **Change**: CSV export `timestamp` column renamed to `datetime`, now outputs `YYYY-MM-DD HH:MM:SS` format instead of raw epoch
@@ -231,15 +260,8 @@ Features organized by priority and implementation status.
 - Store in settings for persistent use
 - Note: Manual lat/long entry already works in Settings page
 
-#### Home Assistant Integration
-- MQTT settings configuration in web UI (broker, port, credentials)
-- Expose entities: sensors, switches, lights
-- Real-time status updates
-- Remote control capabilities
-- Automation integration
-- Alert notifications via HA
-- Auto discovery in Home Assistant
-- Requires MQTT library (~20-30KB flash)
+#### Home Assistant Integration - DONE (MQTT auto-discovery with 25 entities)
+- Remaining: HA-based alert notifications, automation triggers
 
 #### Interactive Map for Location Setting
 - Add interactive map component to Settings page

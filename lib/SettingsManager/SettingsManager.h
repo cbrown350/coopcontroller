@@ -178,6 +178,13 @@ struct user_settings // NOSONAR
     String   email_from = "";                      ///< From email address
     String   email_to = "";                        ///< Recipient email address
 
+    // MQTT
+    bool     mqtt_enabled = false;                 ///< Enable MQTT publishing
+    String   mqtt_server = "";                     ///< MQTT broker server address
+    uint16_t mqtt_port = 1883;                     ///< MQTT broker port (default: 1883)
+    String   mqtt_username = "";                   ///< MQTT authentication username
+    String   mqtt_password = "";                   ///< MQTT authentication password
+
     // Notification preferences (which alerts trigger notifications)
     bool   notify_pump_error = true;               ///< Notify on pump/flow errors
     bool   notify_sensor_error = true;             ///< Notify on sensor failures
@@ -468,6 +475,20 @@ class SettingsManager // NOSONAR
     void setEmailSmtpPassword(const String& password);
     void setEmailFrom(const String& from);
     void setEmailTo(const String& to);
+
+    // MQTT getters
+    bool     getMqttEnabled() const;
+    String   getMqttServer() const;
+    uint16_t getMqttPort() const;
+    String   getMqttUsername() const;
+    String   getMqttPassword() const;
+
+    // MQTT setters
+    void setMqttEnabled(bool enabled);
+    void setMqttServer(const String& server);
+    void setMqttPort(uint16_t port);
+    void setMqttUsername(const String& username);
+    void setMqttPassword(const String& password);
 
     // Notification preference getters
     bool getNotifyPumpError() const;

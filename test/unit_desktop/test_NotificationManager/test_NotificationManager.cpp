@@ -315,3 +315,103 @@ TEST_F(NotificationManagerTest, BothChannels_SendsToBoth) {
     // Both channels sent = 2 total
     EXPECT_EQ(notifier.getTotalSent(), 2u);
 }
+
+// ============================================================================
+// SEND TEST WITH CONFIG TESTS
+// ============================================================================
+
+TEST_F(NotificationManagerTest, SendTestWithConfig_Telegram_UsesProvidedCredentials) {
+    configureTelegram(); // Saved credentials: token=123456:ABC-DEF, chatId=987654321
+    mockHal->setWiFiConnected(true);
+    mockHal->setHttpPostResponse(R"({"ok":true,"result":{}})");
+
+    JsonDocument doc;
+    doc["telegram_bot_token"] = "NEWTOKEN:XYZ-999";
+    doc["telegram_chat_id"] = "111222333";
+
+    NotificationResult result = notifier.sendTestWithConfig(NotificationChannel::TELEGRAM, doc.as<JsonObject>());
+
+    EXPECT_TRUE(result.success);
+    // Should use the provided token, NOT the saved one
+    EXPECT_EQ(mockHal->getLastHttpPostUrl(), "https://api.telegram.org/botNEWTOKEN:XYZ-999/sendMessage");
+    EXPECT_TRUE(mockHal->getLastHttpPostBody().indexOf("111222333") >= 0);
+}
+
+TEST_F(NotificationManagerTest, SendTestWithConfig_Telegram_FallsBackToSavedCredentials) {
+    configureTelegram(); // Saved credentials: token=123456:ABC-DEF, chatId=987654321
+    mockHal->setWiFiConnected(true);
+    mockHal->setHttpPostResponse(R"({"ok":true,"result":{}})");
+
+    JsonDocument doc;
+    // Empty config - no overrides
+
+    NotificationResult result = notifier.sendTestWithConfig(NotificationChannel::TELEGRAM, doc.as<JsonObject>());
+
+    EXPECT_TRUE(result.success);
+    // Should fall back to the saved TelegramBot credentials
+    EXPECT_EQ(mockHal->getLastHttpPostUrl(), "https://api.telegram.org/bot123456:ABC-DEF/sendMessage");
+    EXPECT_TRUE(mockHal->getLastHttpPostBody().indexOf("987654321") >= 0);
+}
+
+TEST_F(NotificationManagerTest, SendTestWithConfig_Email_UsesProvidedConfig) {
+    mockHal->setWiFiConnected(true);
+
+    JsonDocument doc;
+    doc["email_smtp_server"] = "smtp.newserver.com";
+    doc["email_smtp_port"] = 465;
+    doc["email_smtp_username"] = "newuser@newserver.com";
+    doc["email_smtp_password"] = "newpassword";
+    doc["email_from"] = "newfrom@newserver.com";
+    doc["email_to"] = "newto@newserver.com";
+
+    NotificationResult result = notifier.sendTestWithConfig(NotificationChannel::EMAIL, doc.as<JsonObject>());
+
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(mockHal->getLastSmtpHost(), "smtp.newserver.com");
+    EXPECT_EQ(mockHal->getLastSmtpPort(), 465);
+    EXPECT_EQ(mockHal->getLastSmtpTo(), "newto@newserver.com");
+}
+
+TEST_F(NotificationManagerTest, SendTestWithConfig_Email_FallsBackToSavedConfig) {
+    configureEmail(); // Saved: smtp.example.com:587, user@example.com, etc.
+    mockHal->setWiFiConnected(true);
+
+    JsonDocument doc;
+    // Empty config - no overrides
+
+    NotificationResult result = notifier.sendTestWithConfig(NotificationChannel::EMAIL, doc.as<JsonObject>());
+
+    EXPECT_TRUE(result.success);
+    // Should fall back to saved email configuration
+    EXPECT_EQ(mockHal->getLastSmtpHost(), "smtp.example.com");
+    EXPECT_EQ(mockHal->getLastSmtpPort(), 587);
+    EXPECT_EQ(mockHal->getLastSmtpTo(), "test@example.com");
+}
+
+TEST_F(NotificationManagerTest, SendTestWithConfig_FailsWithoutHAL) {
+    NotificationManager nm;
+    // Don't call begin() - HAL not initialized
+
+    JsonDocument doc;
+    doc["telegram_bot_token"] = "token";
+    doc["telegram_chat_id"] = "chatid";
+
+    NotificationResult result = nm.sendTestWithConfig(NotificationChannel::TELEGRAM, doc.as<JsonObject>());
+
+    EXPECT_FALSE(result.success);
+    EXPECT_TRUE(result.error_message.indexOf("HAL") >= 0);
+}
+
+TEST_F(NotificationManagerTest, SendTestWithConfig_FailsWithoutWiFi) {
+    configureTelegram();
+    mockHal->setWiFiConnected(false);
+
+    JsonDocument doc;
+    doc["telegram_bot_token"] = "token";
+    doc["telegram_chat_id"] = "chatid";
+
+    NotificationResult result = notifier.sendTestWithConfig(NotificationChannel::TELEGRAM, doc.as<JsonObject>());
+
+    EXPECT_FALSE(result.success);
+    EXPECT_TRUE(result.error_message.indexOf("WiFi") >= 0);
+}

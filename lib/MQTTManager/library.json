@@ -1,0 +1,9 @@
+{
+    "name": "MQTTManager",
+    "version": "1.0.0",
+    "description": "MQTT client with Home Assistant auto-discovery for coop controller",
+    "dependencies": {
+        "bblanchon/ArduinoJson": "^7.4.2",
+        "knolleary/PubSubClient": "^2.8"
+    }
+}

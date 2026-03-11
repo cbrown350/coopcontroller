@@ -90,6 +90,64 @@ NotificationResult NotificationManager::sendTest(NotificationChannel channel) {
     return {false, "Unknown channel"};
 }
 
+NotificationResult NotificationManager::sendTestWithConfig(NotificationChannel channel, const JsonObject& config) {
+    if (!hal_) {
+        return {false, "HAL not initialized"};
+    }
+    if (!hal_->WiFiIsConnected()) {
+        return {false, "WiFi not connected"};
+    }
+
+    if (channel == NotificationChannel::TELEGRAM) {
+        String token = config["telegram_bot_token"] | (telegramBot_ ? telegramBot_->getBotToken() : String());
+        String chatId = config["telegram_chat_id"] | (telegramBot_ ? telegramBot_->getChatId() : String());
+
+        if (token.length() == 0 || chatId.length() == 0) {
+            return {false, "Telegram bot token or chat ID not configured"};
+        }
+
+        // Use the provided (potentially unsaved) credentials directly via HAL
+        String url = "https://api.telegram.org/bot" + token + "/sendMessage";
+        JsonDocument doc;
+        doc["chat_id"] = chatId;
+        doc["text"] = "🐔 *Coop Controller Test*\nThis is a test notification from your chicken coop controller!";
+        doc["parse_mode"] = "Markdown";
+        String payload;
+        serializeJson(doc, payload);
+
+        String response = hal_->httpPost(url, payload, 10000);
+        if (response.length() == 0) {
+            return {false, "No response from Telegram API"};
+        }
+
+        JsonDocument respDoc;
+        if (deserializeJson(respDoc, response) == DeserializationError::Ok) {
+            if (respDoc["ok"].as<bool>()) {
+                return {true, ""};
+            } else {
+                return {false, respDoc["description"].as<String>()};
+            }
+        }
+        return {true, ""};
+    } else if (channel == NotificationChannel::EMAIL) {
+        String server = config["email_smtp_server"] | smtp_server_;
+        uint16_t port = config["email_smtp_port"] | smtp_port_;
+        String username = config["email_smtp_username"] | smtp_username_;
+        String password = config["email_smtp_password"] | smtp_password_;
+        String from = config["email_from"] | email_from_;
+        String to = config["email_to"] | email_to_;
+
+        if (server.length() == 0 || to.length() == 0) {
+            return {false, "SMTP server or recipient not configured"};
+        }
+        return sendEmailWithConfig("Coop Controller Test",
+                                   "This is a test notification from your chicken coop controller.",
+                                   server, port, username, password, from, to);
+    }
+
+    return {false, "Unknown channel"};
+}
+
 void NotificationManager::sendDailyReport(const String& statusJson) {
     if (!hal_ || !hal_->WiFiIsConnected()) {
         return;
@@ -176,6 +234,33 @@ NotificationResult NotificationManager::sendEmail(const String& subject, const S
     }
 
     logger.logInfo("Email notification sent");
+    return {true, ""};
+}
+
+NotificationResult NotificationManager::sendEmailWithConfig(const String& subject, const String& body,
+                                                           const String& server, uint16_t port,
+                                                           const String& username, const String& password,
+                                                           const String& from, const String& to) {
+    String fromAddr = from.length() > 0 ? from : "coop@controller.local";
+    String host = server;
+    uint16_t usePort = port;
+
+    if (host.startsWith("http://") || host.startsWith("https://")) {
+        return {false, "Enter an SMTP hostname (e.g. smtp.gmail.com), not an API URL"};
+    }
+
+    int colonIdx = host.indexOf(':');
+    if (colonIdx >= 0) {
+        usePort = host.substring(colonIdx + 1).toInt();
+        host = host.substring(0, colonIdx);
+    }
+
+    String error = hal_->smtpSend(host, usePort, username, password, fromAddr, to, subject, body, 15000);
+    if (error.length() > 0) {
+        return {false, error};
+    }
+
+    logger.logInfo("Email test notification sent");
     return {true, ""};
 }
 

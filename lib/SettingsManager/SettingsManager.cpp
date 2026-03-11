@@ -864,6 +864,13 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     if (doc["email_from"].is<const char*>()) settings.email_from = doc["email_from"].as<String>();
     if (doc["email_to"].is<const char*>()) settings.email_to = doc["email_to"].as<String>();
 
+    // Load notification settings - MQTT
+    settings.mqtt_enabled = doc["mqtt_enabled"] | defaultSettings.mqtt_enabled;
+    if (doc["mqtt_server"].is<const char*>()) settings.mqtt_server = doc["mqtt_server"].as<String>();
+    settings.mqtt_port = doc["mqtt_port"] | defaultSettings.mqtt_port;
+    if (doc["mqtt_username"].is<const char*>()) settings.mqtt_username = doc["mqtt_username"].as<String>();
+    if (doc["mqtt_password"].is<const char*>()) settings.mqtt_password = doc["mqtt_password"].as<String>();
+
     // Load notification preferences
     settings.notify_pump_error = doc["notify_pump_error"] | defaultSettings.notify_pump_error;
     settings.notify_sensor_error = doc["notify_sensor_error"] | defaultSettings.notify_sensor_error;
@@ -989,6 +996,15 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["email_from"] = settings.email_from;
     doc["email_to"] = settings.email_to;
 
+    // Notification settings - MQTT
+    doc["mqtt_enabled"] = settings.mqtt_enabled;
+    doc["mqtt_server"] = settings.mqtt_server;
+    doc["mqtt_port"] = settings.mqtt_port;
+    doc["mqtt_username"] = settings.mqtt_username;
+    if (includePassword && settings.mqtt_password.length() != 0) {
+        doc["mqtt_password"] = settings.mqtt_password;
+    }
+
     // Notification preferences
     doc["notify_pump_error"] = settings.notify_pump_error;
     doc["notify_sensor_error"] = settings.notify_sensor_error;
@@ -1089,6 +1105,20 @@ void SettingsManager::setEmailSmtpUsername(const String& username) { settings.em
 void SettingsManager::setEmailSmtpPassword(const String& password) { settings.email_smtp_password = password; }
 void SettingsManager::setEmailFrom(const String& from) { settings.email_from = from; }
 void SettingsManager::setEmailTo(const String& to) { settings.email_to = to; }
+
+// MQTT getters
+bool SettingsManager::getMqttEnabled() const { return settings.mqtt_enabled; }
+String SettingsManager::getMqttServer() const { return settings.mqtt_server; }
+uint16_t SettingsManager::getMqttPort() const { return settings.mqtt_port; }
+String SettingsManager::getMqttUsername() const { return settings.mqtt_username; }
+String SettingsManager::getMqttPassword() const { return settings.mqtt_password; }
+
+// MQTT setters
+void SettingsManager::setMqttEnabled(bool enabled) { settings.mqtt_enabled = enabled; }
+void SettingsManager::setMqttServer(const String& server) { settings.mqtt_server = server; }
+void SettingsManager::setMqttPort(uint16_t port) { settings.mqtt_port = constrain(port, 1, 65535); }
+void SettingsManager::setMqttUsername(const String& username) { settings.mqtt_username = username; }
+void SettingsManager::setMqttPassword(const String& password) { settings.mqtt_password = password; }
 
 // Notification preference getters
 bool SettingsManager::getNotifyPumpError() const { return settings.notify_pump_error; }

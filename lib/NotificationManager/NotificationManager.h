@@ -73,6 +73,14 @@ public:
     NotificationResult sendTest(NotificationChannel channel);
 
     /**
+     * @brief Send a test notification using provided (unsaved) configuration
+     * @param channel Which channel to test
+     * @param config JSON object with override values (e.g. bot_token, chat_id, smtp_server, etc.)
+     * @return Result with success/failure and error details
+     */
+    NotificationResult sendTestWithConfig(NotificationChannel channel, const JsonObject& config);
+
+    /**
      * @brief Send a daily status report
      * @param statusJson JSON string with current system status
      */
@@ -165,6 +173,14 @@ private:
      * @brief Send an email via SMTP relay API
      */
     NotificationResult sendEmail(const String& subject, const String& body);
+
+    /**
+     * @brief Send an email with explicit SMTP settings (for testing unsaved config)
+     */
+    NotificationResult sendEmailWithConfig(const String& subject, const String& body,
+                                           const String& server, uint16_t port,
+                                           const String& username, const String& password,
+                                           const String& from, const String& to);
 
     /**
      * @brief Format alert message for notifications

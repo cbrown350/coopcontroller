@@ -397,6 +397,37 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       settingsManager.setManifestUrl(jsonObj["manifest_url"].as<String>());
                   }
 
+                  // Handle MQTT settings
+                  if (jsonObj["mqtt_enabled"].is<bool>()) {
+                      settingsManager.setMqttEnabled(jsonObj["mqtt_enabled"].as<bool>());
+                      if (mqttManager_) mqttManager_->setEnabled(jsonObj["mqtt_enabled"].as<bool>());
+                  }
+                  if (jsonObj["mqtt_server"].is<String>()) {
+                      settingsManager.setMqttServer(jsonObj["mqtt_server"].as<String>());
+                  }
+                  if (jsonObj["mqtt_port"].is<int>()) {
+                      settingsManager.setMqttPort(jsonObj["mqtt_port"].as<uint16_t>());
+                  }
+                  if (jsonObj["mqtt_username"].is<String>()) {
+                      settingsManager.setMqttUsername(jsonObj["mqtt_username"].as<String>());
+                  }
+                  if (jsonObj["mqtt_password"].is<String>()) {
+                      settingsManager.setMqttPassword(jsonObj["mqtt_password"].as<String>());
+                  }
+                  // Apply MQTT config changes at runtime
+                  if (mqttManager_ && (jsonObj["mqtt_server"].is<String>() || jsonObj["mqtt_port"].is<int>() ||
+                      jsonObj["mqtt_username"].is<String>() || jsonObj["mqtt_password"].is<String>())) {
+                      MQTTConfig mqttConfig;
+                      mqttConfig.server = settingsManager.getMqttServer();
+                      mqttConfig.port = settingsManager.getMqttPort();
+                      mqttConfig.username = settingsManager.getMqttUsername();
+                      mqttConfig.password = settingsManager.getMqttPassword();
+                      mqttConfig.device_id = mqttManager_->getConfig().device_id;
+                      mqttConfig.device_name = mqttManager_->getConfig().device_name;
+                      mqttConfig.fw_version = mqttManager_->getConfig().fw_version;
+                      mqttManager_->setConfig(mqttConfig);
+                  }
+
                   // Handle notification settings - Telegram
                   if (jsonObj["telegram_enabled"].is<bool>()) {
                       settingsManager.setTelegramEnabled(jsonObj["telegram_enabled"].as<bool>());
@@ -1790,7 +1821,7 @@ void CoopControllerWebServer::setNotificationManager(NotificationManager* notifi
 
     if (!notificationManager_ || !hal) return;
 
-    // Test Telegram notification endpoint
+    // Test Telegram notification endpoint - accepts optional JSON body with unsaved config
     hal->webServerOn("/notifications/test/telegram", HAL_WebRequestMethod::HTTP_POST,
         [this](IWebRequest *request, IWebResponse *response) {
             if (!isAuthenticated(request)) {
@@ -1801,7 +1832,20 @@ void CoopControllerWebServer::setNotificationManager(NotificationManager* notifi
                 response->send(500, "application/json", R"({"success":false,"error":"NotificationManager not initialized"})");
                 return;
             }
-            NotificationResult result = notificationManager_->sendTest(NotificationChannel::TELEGRAM);
+            // Try to parse JSON body with override config values
+            NotificationResult result;
+            String body = request->body();
+            if (body.length() > 0) {
+                JsonDocument bodyDoc;
+                if (deserializeJson(bodyDoc, body) == DeserializationError::Ok) {
+                    JsonObject config = bodyDoc.as<JsonObject>();
+                    result = notificationManager_->sendTestWithConfig(NotificationChannel::TELEGRAM, config);
+                } else {
+                    result = notificationManager_->sendTest(NotificationChannel::TELEGRAM);
+                }
+            } else {
+                result = notificationManager_->sendTest(NotificationChannel::TELEGRAM);
+            }
             JsonDocument doc;
             doc["success"] = result.success;
             if (!result.success) doc["error"] = result.error_message;
@@ -1810,7 +1854,7 @@ void CoopControllerWebServer::setNotificationManager(NotificationManager* notifi
             response->send(result.success ? 200 : 400, "application/json", output.c_str());
         });
 
-    // Test Email notification endpoint
+    // Test Email notification endpoint - accepts optional JSON body with unsaved config
     hal->webServerOn("/notifications/test/email", HAL_WebRequestMethod::HTTP_POST,
         [this](IWebRequest *request, IWebResponse *response) {
             if (!isAuthenticated(request)) {
@@ -1821,7 +1865,20 @@ void CoopControllerWebServer::setNotificationManager(NotificationManager* notifi
                 response->send(500, "application/json", R"({"success":false,"error":"NotificationManager not initialized"})");
                 return;
             }
-            NotificationResult result = notificationManager_->sendTest(NotificationChannel::EMAIL);
+            // Try to parse JSON body with override config values
+            NotificationResult result;
+            String body = request->body();
+            if (body.length() > 0) {
+                JsonDocument bodyDoc;
+                if (deserializeJson(bodyDoc, body) == DeserializationError::Ok) {
+                    JsonObject config = bodyDoc.as<JsonObject>();
+                    result = notificationManager_->sendTestWithConfig(NotificationChannel::EMAIL, config);
+                } else {
+                    result = notificationManager_->sendTest(NotificationChannel::EMAIL);
+                }
+            } else {
+                result = notificationManager_->sendTest(NotificationChannel::EMAIL);
+            }
             JsonDocument doc;
             doc["success"] = result.success;
             if (!result.success) doc["error"] = result.error_message;
@@ -1840,6 +1897,21 @@ void CoopControllerWebServer::setNotificationManager(NotificationManager* notifi
             JsonDocument doc;
             JsonObject obj = doc.to<JsonObject>();
             notificationManager_->toJson(obj);
+            String output;
+            serializeJson(doc, output);
+            response->send(200, "application/json", output.c_str());
+        });
+
+    // MQTT status endpoint
+    hal->webServerOn("/mqtt/status", HAL_WebRequestMethod::HTTP_GET,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!mqttManager_) {
+                response->send(200, "application/json", R"({"enabled":false,"connected":false})");
+                return;
+            }
+            JsonDocument doc;
+            JsonObject obj = doc.to<JsonObject>();
+            mqttManager_->toJson(obj);
             String output;
             serializeJson(doc, output);
             response->send(200, "application/json", output.c_str());
