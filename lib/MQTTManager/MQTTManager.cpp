@@ -1,5 +1,6 @@
 #include "MQTTManager.h"
 #include "Logger.h"
+#include <math.h>
 
 // ============================================================================
 // Public API
@@ -10,7 +11,7 @@ void MQTTManager::begin(const MQTTConfig& config) {
 #ifdef ESP32
     mqttClient_.setClient(wifiClient_);
     mqttClient_.setServer(config_.server.c_str(), config_.port);
-    mqttClient_.setBufferSize(1024);
+    mqttClient_.setBufferSize(2048);
     mqttClient_.setCallback([this](char* topic, byte* payload, unsigned int length) {
         String topicStr(topic);
         String payloadStr;
@@ -52,7 +53,7 @@ void MQTTManager::update() {
 
     mqttClient_.loop();
 
-    // Periodic state republish
+    // Publish state on meaningful change or periodic interval
     unsigned long now = millis();
     if (state_changed_ || (now - last_state_publish_ >= STATE_PUBLISH_INTERVAL)) {
         publishState(last_state_);
@@ -61,8 +62,42 @@ void MQTTManager::update() {
 #endif
 }
 
+void MQTTManager::setState(const MQTTStateData& state) {
+    if (!has_published_ || hasMeaningfulChange(last_state_, state)) {
+        state_changed_ = true;
+    }
+    last_state_ = state;
+}
+
+bool MQTTManager::hasMeaningfulChange(const MQTTStateData& a, const MQTTStateData& b) const {
+    // Compare all fields except heap, uptime, and rssi (these change constantly)
+    if (a.sensor1_connected != b.sensor1_connected) return true;
+    if (a.sensor2_connected != b.sensor2_connected) return true;
+    if (a.pump_running != b.pump_running) return true;
+    if (a.pump_auto_mode != b.pump_auto_mode) return true;
+    if (a.water_flow_error != b.water_flow_error) return true;
+    if (a.door_open != b.door_open) return true;
+    if (a.door_closed != b.door_closed) return true;
+    if (a.door_auto_mode != b.door_auto_mode) return true;
+    if (a.light_on != b.light_on) return true;
+    if (a.light_brightness != b.light_brightness) return true;
+    if (a.light_auto_mode != b.light_auto_mode) return true;
+    // Use threshold for float comparisons (0.1 degree)
+    if (fabsf(a.sensor1_temp_f - b.sensor1_temp_f) > 0.1f) return true;
+    if (fabsf(a.sensor2_temp_f - b.sensor2_temp_f) > 0.1f) return true;
+    if (fabsf(a.water_flow_rate - b.water_flow_rate) > 0.01f) return true;
+    if (fabsf(a.water_total_gallons - b.water_total_gallons) > 0.01f) return true;
+    if (fabsf(a.temp_threshold_on - b.temp_threshold_on) > 0.01f) return true;
+    if (fabsf(a.temp_threshold_off - b.temp_threshold_off) > 0.01f) return true;
+    // Handle NaN transitions
+    if (isnan(a.sensor1_temp_f) != isnan(b.sensor1_temp_f)) return true;
+    if (isnan(a.sensor2_temp_f) != isnan(b.sensor2_temp_f)) return true;
+    return false;
+}
+
 void MQTTManager::publishState(const MQTTStateData& state) {
     last_state_ = state;
+    has_published_ = true;
 
 #ifdef ESP32
     if (!mqttClient_.connected()) return;
@@ -70,8 +105,11 @@ void MQTTManager::publishState(const MQTTStateData& state) {
     // Publish main state JSON
     {
         JsonDocument doc;
-        doc["sensor1_temp_f"] = serialized(String(state.sensor1_temp_f, 1));
-        doc["sensor2_temp_f"] = serialized(String(state.sensor2_temp_f, 1));
+        // Use null for NaN values to keep JSON valid
+        if (isnan(state.sensor1_temp_f)) doc["sensor1_temp_f"] = nullptr;
+        else doc["sensor1_temp_f"] = serialized(String(state.sensor1_temp_f, 1));
+        if (isnan(state.sensor2_temp_f)) doc["sensor2_temp_f"] = nullptr;
+        else doc["sensor2_temp_f"] = serialized(String(state.sensor2_temp_f, 1));
         doc["sensor1_connected"] = state.sensor1_connected;
         doc["sensor2_connected"] = state.sensor2_connected;
         doc["water_flow_rate"] = serialized(String(state.water_flow_rate, 2));
@@ -240,7 +278,7 @@ void MQTTManager::addDeviceInfo(JsonObject& doc) const {
     device["manufacturer"] = "DIY";
     device["model"] = "Coop Controller";
     device["sw_version"] = config_.fw_version;
-    device["configuration_url"] = "http://" + config_.device_id + ".local";
+    device["configuration_url"] = "http://" + config_.hostname + ".local";
 }
 
 void MQTTManager::addOriginInfo(JsonObject& doc) const {
@@ -284,12 +322,14 @@ void MQTTManager::publishDiscovery() {
 
     // --- Sensors ---
     publishSensorDiscovery("sensor_1_temperature_f", "Sensor 1 Temperature",
-                           "{{ value_json.sensor1_temp_f }}",
-                           "temperature", "\u00b0F", "measurement");
+                           "{{ value_json.sensor1_temp_f | default('') }}",
+                           "temperature", "\u00b0F", "measurement", "",
+                           "", "{{ value_json.sensor1_temp_f is not none }}");
 
     publishSensorDiscovery("sensor_2_temperature_f", "Sensor 2 Temperature",
-                           "{{ value_json.sensor2_temp_f }}",
-                           "temperature", "\u00b0F", "measurement");
+                           "{{ value_json.sensor2_temp_f | default('') }}",
+                           "temperature", "\u00b0F", "measurement", "",
+                           "", "{{ value_json.sensor2_temp_f is not none }}");
 
     publishSensorDiscovery("water_flow_rate", "Water Flow Rate",
                            "{{ value_json.water_flow_rate }}",
@@ -365,15 +405,15 @@ void MQTTManager::publishDiscovery() {
     // --- Numbers ---
     publishNumberDiscovery("temp_threshold_on", "Temp Threshold ON",
                             "{{ value_json.temp_threshold_on }}",
-                            0, 120, 1, "\u00b0F", "mdi:thermometer-high");
+                            -10, 80, 0.5f, "\u00b0F", "mdi:thermometer-high", "box");
 
     publishNumberDiscovery("temp_threshold_off", "Temp Threshold OFF",
                             "{{ value_json.temp_threshold_off }}",
-                            0, 120, 1, "\u00b0F", "mdi:thermometer-low");
+                            -10, 80, 0.5f, "\u00b0F", "mdi:thermometer-low", "box");
 
     publishNumberDiscovery("light_brightness", "Light Brightness",
                             "{{ value_json.light_brightness }}",
-                            0, 100, 1, "%", "mdi:brightness-percent");
+                            0, 100, 1, "%", "mdi:brightness-percent", "slider");
 
     logger.logInfo("MQTT discovery configs published");
 }
@@ -388,7 +428,8 @@ void MQTTManager::publishSensorDiscovery(const String& objectId, const String& n
                                           const String& unit,
                                           const String& stateClass,
                                           const String& entityCategory,
-                                          const String& icon) {
+                                          const String& icon,
+                                          const String& availabilityTemplate) {
     JsonDocument doc;
     JsonObject root = doc.to<JsonObject>();
 
@@ -396,7 +437,6 @@ void MQTTManager::publishSensorDiscovery(const String& objectId, const String& n
     root["unique_id"] = config_.device_id + "_" + objectId;
     root["object_id"] = config_.device_id + "_" + objectId;
     root["state_topic"] = getBaseTopic() + "/state";
-    root["availability_topic"] = getBaseTopic() + "/availability";
     root["value_template"] = valueTemplate;
 
     if (deviceClass.length() > 0) root["device_class"] = deviceClass;
@@ -404,6 +444,21 @@ void MQTTManager::publishSensorDiscovery(const String& objectId, const String& n
     if (stateClass.length() > 0) root["state_class"] = stateClass;
     if (entityCategory.length() > 0) root["entity_category"] = entityCategory;
     if (icon.length() > 0) root["icon"] = icon;
+
+    // Use availability list to support both LWT and per-value availability
+    if (availabilityTemplate.length() > 0) {
+        JsonArray avail = root["availability"].to<JsonArray>();
+        JsonObject lwt = avail.add<JsonObject>();
+        lwt["topic"] = getBaseTopic() + "/availability";
+        JsonObject val = avail.add<JsonObject>();
+        val["topic"] = getBaseTopic() + "/state";
+        val["value_template"] = availabilityTemplate;
+        val["payload_available"] = "True";
+        val["payload_not_available"] = "False";
+        root["availability_mode"] = "all";
+    } else {
+        root["availability_topic"] = getBaseTopic() + "/availability";
+    }
 
     addDeviceInfo(root);
     addOriginInfo(root);
@@ -512,7 +567,8 @@ void MQTTManager::publishNumberDiscovery(const String& objectId, const String& n
                                           const String& valueTemplate,
                                           float min, float max, float step,
                                           const String& unit,
-                                          const String& icon) {
+                                          const String& icon,
+                                          const String& mode) {
     JsonDocument doc;
     JsonObject root = doc.to<JsonObject>();
 
@@ -529,6 +585,7 @@ void MQTTManager::publishNumberDiscovery(const String& objectId, const String& n
 
     if (unit.length() > 0) root["unit_of_measurement"] = unit;
     if (icon.length() > 0) root["icon"] = icon;
+    if (mode.length() > 0) root["mode"] = mode;
 
     addDeviceInfo(root);
     addOriginInfo(root);

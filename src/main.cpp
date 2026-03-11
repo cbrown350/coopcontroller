@@ -441,6 +441,7 @@ void setup() // NOSONAR - complexity ok
         mac.toLowerCase();
         mqttConfig.device_id = mac;
         mqttConfig.device_name = settingsManager.getHostname();
+        mqttConfig.hostname = settingsManager.getHostname();
         mqttConfig.fw_version = firmwareVersion;
         mqttManager.begin(mqttConfig);
         mqttManager.setEnabled(settingsManager.getMqttEnabled());
@@ -487,10 +488,18 @@ void setup() // NOSONAR - complexity ok
             // Number commands (numeric values)
             else if (entityId == "temp_threshold_on") {
                 float val = payload.toFloat();
+                // Ensure on threshold <= off threshold
+                if (val > settingsManager.getTempThresholdOffF()) {
+                    settingsManager.setTempThresholdOffF(val);
+                }
                 settingsManager.setTempThresholdOnF(val);
                 settingsManager.save();
             } else if (entityId == "temp_threshold_off") {
                 float val = payload.toFloat();
+                // Ensure off threshold >= on threshold
+                if (val < settingsManager.getTempThresholdOnF()) {
+                    settingsManager.setTempThresholdOnF(val);
+                }
                 settingsManager.setTempThresholdOffF(val);
                 settingsManager.save();
             } else if (entityId == "light_brightness") {
@@ -811,8 +820,8 @@ void setup() // NOSONAR - complexity ok
         // Update MQTT manager (connection, message processing, state publishing)
         mqttManager.update();
 
-        // Publish MQTT state periodically (every sensor update cycle)
-        if (mqttManager.isConnected() && currentTime - lastSensorUpdate < SENSOR_UPDATE_INTERVAL + 100) {
+        // Update MQTT state data (MQTTManager handles change detection and publish timing)
+        if (mqttManager.isEnabled()) {
             MQTTStateData mqttState;
             mqttState.sensor1_temp_f = sensorManager.getTemperature1F();
             mqttState.sensor2_temp_f = sensorManager.getTemperature2F();
@@ -835,7 +844,7 @@ void setup() // NOSONAR - complexity ok
             mqttState.wifi_rssi = hal.wifiGetRSSI();
             mqttState.free_heap = hal.getFreeHeap();
             mqttState.uptime_seconds = currentTime / 1000;
-            mqttManager.publishState(mqttState);
+            mqttManager.setState(mqttState);
         }
 
         delay(10);

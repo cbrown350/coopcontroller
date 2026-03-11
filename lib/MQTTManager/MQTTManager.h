@@ -22,6 +22,7 @@ struct MQTTConfig {
     String password;
     String device_id;      // Unique device identifier (from MAC or hostname)
     String device_name;    // Human-readable device name
+    String hostname;       // Device hostname for configuration_url
     String fw_version;     // Firmware version for device info
 };
 
@@ -70,7 +71,10 @@ public:
     // Call in main loop - handles connection, reconnection, and message processing
     void update();
 
-    // Publish current state (call when state changes or periodically)
+    // Update state data - detects meaningful changes and publishes when appropriate
+    void setState(const MQTTStateData& state);
+
+    // Force-publish current state immediately (used internally and after connect)
     void publishState(const MQTTStateData& state);
 
     // Register callback for when commands are received
@@ -110,6 +114,10 @@ private:
     static constexpr unsigned long STATE_PUBLISH_INTERVAL = 30000;  // Publish state every 30s
     MQTTStateData last_state_;
     bool state_changed_ = false;
+    bool has_published_ = false;  // True after first publish
+
+    // Check if meaningful state fields changed (excludes heap/uptime/rssi)
+    bool hasMeaningfulChange(const MQTTStateData& a, const MQTTStateData& b) const;
 
     // Statistics
     unsigned int messages_published_ = 0;
@@ -136,7 +144,8 @@ private:
                                 const String& unit = "",
                                 const String& stateClass = "",
                                 const String& entityCategory = "",
-                                const String& icon = "");
+                                const String& icon = "",
+                                const String& availabilityTemplate = "");
     void publishBinarySensorDiscovery(const String& objectId, const String& name,
                                       const String& valueTemplate,
                                       const String& deviceClass = "",
@@ -151,7 +160,8 @@ private:
                                 const String& valueTemplate,
                                 float min, float max, float step,
                                 const String& unit = "",
-                                const String& icon = "");
+                                const String& icon = "",
+                                const String& mode = "auto");
 
     // Build common device JSON
     void addDeviceInfo(JsonObject& doc) const;
