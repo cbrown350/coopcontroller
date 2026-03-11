@@ -293,7 +293,38 @@ void setup() // NOSONAR - complexity ok
     // Only sync NTP if connected to WiFi (not in AP mode)
     if (wifiController.isConnected()) {
         logger.logInfo("NTP time synchronization started");
-        configTime(0, 0, ntpServer);
+        String tzPosix = settingsManager.getTimezonePosix();
+        if (tzPosix.length() == 0) {
+            // Auto-detect timezone from coordinates (US-focused, covers CONUS + AK + HI)
+            float lat = settingsManager.getLatitude();
+            float lon = settingsManager.getLongitude();
+            if (lat >= 24.0f && lat <= 50.0f && lon >= -125.0f && lon <= -66.0f) {
+                // Continental US — pick timezone by longitude band
+                if (lon >= -87.5f)       tzPosix = "EST5EDT,M3.2.0,M11.1.0";  // Eastern (NYC -74, Detroit -83, Atlanta -84)
+                else if (lon >= -104.0f) tzPosix = "CST6CDT,M3.2.0,M11.1.0";  // Central (Chicago -87.6, Dallas -96.8)
+                else if (lon >= -115.0f) tzPosix = "MST7MDT,M3.2.0,M11.1.0";  // Mountain (Denver -104.9, SLC -111.9, Boise -116.2 is close)
+                else                     tzPosix = "PST8PDT,M3.2.0,M11.1.0";  // Pacific (LA -118.2, Seattle -122.3)
+            } else if (lat >= 51.0f && lon <= -130.0f) {
+                tzPosix = "AKST9AKDT,M3.2.0,M11.1.0"; // Alaska
+            } else if (lat >= 18.0f && lat <= 23.0f && lon >= -161.0f && lon <= -154.0f) {
+                tzPosix = "HST10"; // Hawaii
+            }
+            if (tzPosix.length() > 0) {
+                settingsManager.setTimezonePosix(tzPosix);
+                settingsManager.save();
+                logger.logfInfo("Timezone auto-detected from coordinates (%.2f, %.2f): %s", lat, lon, tzPosix.c_str());
+            }
+        }
+        if (tzPosix.length() > 0) {
+            configTzTime(tzPosix.c_str(), ntpServer);
+            logger.logfInfo("Timezone set via POSIX string: %s", tzPosix.c_str());
+        } else {
+            // Final fallback: use legacy offset (no DST)
+            int offset = settingsManager.getTimezoneOffsetHours();
+            String tz = "UTC" + String(-offset);
+            configTzTime(tz.c_str(), ntpServer);
+            logger.logfInfo("Timezone set from offset: %s (UTC%+d)", tz.c_str(), offset);
+        }
     } else {
         logger.logWarning("WiFi not connected - NTP time sync deferred");
     }

@@ -707,8 +707,8 @@ void DoorController::restorePosition() {
 }
 
 // Helper: get current local time in minutes since midnight.
-// ESP32 system clock is set to UTC (configTime(0,0,...)), but sunrise/sunset
-// minutes are in local time (utcOffset applied). Convert UTC to local here.
+// When configTzTime() is used (ESP32), localtime() returns DST-aware local time
+// directly via tm_gmtoff. Falls back to manual offset for desktop/test builds.
 int DoorController::getCurrentLocalMinutes() const {
     time_t now = time(nullptr);
     if (now < 0) return -1;
@@ -724,10 +724,21 @@ int DoorController::getCurrentLocalMinutes() const {
     if (localtime_r(&now, &timeinfo) == nullptr) return -1;
 #endif
 
-    int utcMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
-    // Apply timezone offset to convert UTC to local time
-    int localMinutes = utcMinutes + (settingsManager.getTimezoneOffsetHours() * 60);
-    // Handle day wraparound
+    int minutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+
+#ifdef ESP32
+    // On ESP32 with configTzTime(), localtime already returns DST-aware local time.
+    // Compare with gmtime to detect if timezone is configured.
+    struct tm utcTm{};
+    gmtime_r(&now, &utcTm);
+    int utcMinutes = utcTm.tm_hour * 60 + utcTm.tm_min;
+    if (minutes != utcMinutes || timeinfo.tm_mday != utcTm.tm_mday) {
+        return minutes; // Already local time
+    }
+#endif
+
+    // Fallback: manual offset when system time is pure UTC (or desktop)
+    int localMinutes = minutes + (settingsManager.getTimezoneOffsetHours() * 60);
     if (localMinutes < 0) localMinutes += 1440;
     if (localMinutes >= 1440) localMinutes -= 1440;
     return localMinutes;

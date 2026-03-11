@@ -46,20 +46,40 @@ void SunriseSunsetCalculator::forceUpdate() {
     logger.logWarning("Failed to get local time for sunrise/sunset calculation");
     return;
   }
-  
+
   // Calculate sunrise/sunset for today using SolarCalculator library functions
   double transit;
   double sunrise;
   double sunset;
-  
+
   // Use the library function to calculate sunrise/sunset (returns UTC time)
   calcSunriseSunset(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
                    latitude_, longitude_, transit, sunrise, sunset);
-  
+
+  // Determine actual UTC offset (DST-aware if configTzTime was used)
+  // Compare localtime vs gmtime to detect the real offset including DST
+  int effectiveOffset = utcOffset_; // Fallback to configured static offset
+#ifdef ESP32
+  // On ESP32 with configTzTime(), localtime returns DST-aware local time.
+  // Compare localtime vs gmtime to derive the actual offset including DST.
+  time_t nowUtc = time(nullptr);
+  if (nowUtc > 86400) { // Only if we have a valid time (past epoch day 1)
+    struct tm localTm{}, utcTm{};
+    localtime_r(&nowUtc, &localTm);
+    gmtime_r(&nowUtc, &utcTm);
+    int localMinTotal = localTm.tm_yday * 1440 + localTm.tm_hour * 60 + localTm.tm_min;
+    int utcMinTotal = utcTm.tm_yday * 1440 + utcTm.tm_hour * 60 + utcTm.tm_min;
+    int diffMinutes = localMinTotal - utcMinTotal;
+    // Handle year boundary (Dec 31 vs Jan 1)
+    if (diffMinutes > 720) diffMinutes -= 1440 * 365;
+    if (diffMinutes < -720) diffMinutes += 1440 * 365;
+    effectiveOffset = diffMinutes / 60;
+  }
+#endif
+
   // Convert from UTC to local time by adding the UTC offset
-  // Note: utcOffset_ is negative for western hemisphere (e.g., -7 for Mountain Time)
-  double sunriseLocal = sunrise + utcOffset_;
-  double sunsetLocal = sunset + utcOffset_;
+  double sunriseLocal = sunrise + effectiveOffset;
+  double sunsetLocal = sunset + effectiveOffset;
   
   // Handle day wraparound (if time goes negative or exceeds 24 hours)
   if (sunriseLocal < 0) sunriseLocal += 24;
@@ -89,10 +109,11 @@ void SunriseSunsetCalculator::forceUpdate() {
   
   lastCalculation_ = time(nullptr);
   
-  logger.logfInfo("Sunrise/sunset calculated for %d-%d-%d: Sunrise %s (%d:%d local), Sunset %s (%d:%d local) [UTC offset: %d]",
+  logger.logfInfo("Sunrise/sunset calculated for %d-%d-%d: Sunrise %s (%d:%02d local), Sunset %s (%d:%02d local) [offset: %d, DST: %s]",
     timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
     getSunriseTime().c_str(), sunriseHour, sunriseMinute,
-    getSunsetTime().c_str(), sunsetHour, sunsetMinute, utcOffset_);
+    getSunsetTime().c_str(), sunsetHour, sunsetMinute, effectiveOffset,
+    (effectiveOffset != utcOffset_) ? "yes" : "no");
 }
 
 int SunriseSunsetCalculator::getSunriseMinutes() const {

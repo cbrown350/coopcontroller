@@ -87,7 +87,8 @@ struct user_settings // NOSONAR
 
     float  latitude = (float)40.7128;       ///< Latitude for sunrise/sunset (default: NYC)
     float  longitude = (float)-74.0060;      ///< Longitude for sunrise/sunset (default: NYC)
-    int    timezone_offset_hours = -5;      ///< UTC timezone offset in hours (default: EST)
+    int    timezone_offset_hours = -5;      ///< UTC timezone offset in hours (legacy, used when timezone_posix is empty)
+    String timezone_posix = "";             ///< POSIX timezone string for DST support (e.g. "EST5EDT,M3.2.0,M11.1.0")
 
     // ========================================================================
     // DOOR ADVANCED FEATURES
@@ -315,7 +316,8 @@ class SettingsManager // NOSONAR
     float getLatitude() const;
     float getLongitude() const;
     int getTimezoneOffsetHours() const;
-    
+    String getTimezonePosix() const;
+
     // Door advanced features getters
     bool getDoorAutoCloseAfterSunsetEnabled() const;
     int getDoorAutoCloseAfterSunsetMinutes() const;
@@ -373,7 +375,8 @@ class SettingsManager // NOSONAR
     void setLatitude(float latitude);
     void setLongitude(float longitude);
     void setTimezoneOffsetHours(int offset);
-    
+    void setTimezonePosix(const String& tz);
+
     // Door advanced features setters
     void setDoorAutoCloseAfterSunsetEnabled(bool enabled);
     void setDoorAutoCloseAfterSunsetMinutes(int minutes);

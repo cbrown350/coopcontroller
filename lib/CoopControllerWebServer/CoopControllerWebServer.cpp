@@ -212,9 +212,43 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       settingsManager.setTimezoneOffsetHours(jsonObj["timezone_offset_hours"].as<int>());
                       locationChanged = true;
                   }
-                  
+                  if (jsonObj["timezone_posix"].is<const char*>()) {
+                      settingsManager.setTimezonePosix(jsonObj["timezone_posix"].as<String>());
+                      locationChanged = true;
+                  }
+
                   // Recalculate sunrise/sunset if location changed
                   if (locationChanged) {
+                      String tzPosix = settingsManager.getTimezonePosix();
+#ifdef ESP32
+                      // Auto-detect timezone from coordinates if not explicitly set
+                      if (tzPosix.length() == 0) {
+                          float lat = settingsManager.getLatitude();
+                          float lon = settingsManager.getLongitude();
+                          if (lat >= 24.0f && lat <= 50.0f && lon >= -125.0f && lon <= -66.0f) {
+                              if (lon >= -87.5f)       tzPosix = "EST5EDT,M3.2.0,M11.1.0";
+                              else if (lon >= -104.0f) tzPosix = "CST6CDT,M3.2.0,M11.1.0";
+                              else if (lon >= -115.0f) tzPosix = "MST7MDT,M3.2.0,M11.1.0";
+                              else                     tzPosix = "PST8PDT,M3.2.0,M11.1.0";
+                          } else if (lat >= 51.0f && lon <= -130.0f) {
+                              tzPosix = "AKST9AKDT,M3.2.0,M11.1.0";
+                          } else if (lat >= 18.0f && lat <= 23.0f && lon >= -161.0f && lon <= -154.0f) {
+                              tzPosix = "HST10";
+                          }
+                          if (tzPosix.length() > 0) {
+                              settingsManager.setTimezonePosix(tzPosix);
+                              logger.logfInfo("Timezone auto-detected from coordinates: %s", tzPosix.c_str());
+                          }
+                      }
+                      // Apply timezone via configTzTime for DST-aware local time
+                      if (tzPosix.length() > 0) {
+                          configTzTime(tzPosix.c_str(), "pool.ntp.org");
+                      } else {
+                          int offset = settingsManager.getTimezoneOffsetHours();
+                          String tz = "UTC" + String(-offset);
+                          configTzTime(tz.c_str(), "pool.ntp.org");
+                      }
+#endif
                       sunriseSunset.setCoordinates(settingsManager.getLatitude(),
                                           settingsManager.getLongitude(),
                                           settingsManager.getTimezoneOffsetHours());
@@ -1069,6 +1103,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   doc["latitude"] = settingsManager.getLatitude();
                   doc["longitude"] = settingsManager.getLongitude();
                   doc["timezone_offset"] = settingsManager.getTimezoneOffsetHours();
+                  doc["timezone_posix"] = settingsManager.getTimezonePosix();
                   
                   String jsonResponse;
                   serializeJson(doc, jsonResponse);

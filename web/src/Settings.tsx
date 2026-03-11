@@ -77,10 +77,13 @@ function Settings() {
   const [latitude, setLatitude] = createSignal<number | null>(null)
   const [longitude, setLongitude] = createSignal<number | null>(null)
   const [timezoneOffsetHours, setTimezoneOffsetHours] = createSignal<number | null>(null)
-  
+  const [timezonePosix, setTimezonePosix] = createSignal<string>("")
+
   // Sunrise/sunset data for preview
   // Helper function to get timezone display
   const getTimezoneDisplay = () => {
+    const tz = timezonePosix();
+    if (tz) return tz.split(',')[0]; // Show short name like "MST7MDT"
     const offset = timezoneOffsetHours() ?? 0;
     return `UTC${offset >= 0 ? '+' : ''}${offset}`;
   };
@@ -204,7 +207,38 @@ function Settings() {
       setLatitude(settings.latitude ?? 40.7128)
       setLongitude(settings.longitude ?? -74.0060)
       setTimezoneOffsetHours(settings.timezone_offset_hours ?? -5)
-      
+      let tz = settings.timezone_posix ?? ""
+      if (!tz) {
+        // Auto-detect timezone from browser when not set on device
+        try {
+          const ianaMap: Record<string, string> = {
+            'Pacific/Honolulu': 'HST10',
+            'America/Anchorage': 'AKST9AKDT,M3.2.0,M11.1.0',
+            'America/Los_Angeles': 'PST8PDT,M3.2.0,M11.1.0',
+            'America/Phoenix': 'MST7',
+            'America/Denver': 'MST7MDT,M3.2.0,M11.1.0',
+            'America/Boise': 'MST7MDT,M3.2.0,M11.1.0',
+            'America/Chicago': 'CST6CDT,M3.2.0,M11.1.0',
+            'America/New_York': 'EST5EDT,M3.2.0,M11.1.0',
+            'America/Indiana/Indianapolis': 'EST5EDT,M3.2.0,M11.1.0',
+            'America/Detroit': 'EST5EDT,M3.2.0,M11.1.0',
+            'America/Halifax': 'AST4ADT,M3.2.0,M11.1.0',
+            'Europe/London': 'GMT0BST,M3.5.0/1,M10.5.0',
+            'Europe/Berlin': 'CET-1CEST,M3.5.0,M10.5.0/3',
+            'Europe/Paris': 'CET-1CEST,M3.5.0,M10.5.0/3',
+            'Europe/Helsinki': 'EET-2EEST,M3.5.0/3,M10.5.0/4',
+            'Asia/Kolkata': 'IST-5:30',
+            'Asia/Shanghai': 'CST-8',
+            'Asia/Tokyo': 'JST-9',
+            'Australia/Sydney': 'AEST-10AEDT,M10.1.0,M4.1.0/3',
+            'Pacific/Auckland': 'NZST-12NZDT,M9.5.0,M4.1.0/3',
+          }
+          const ianaTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+          if (ianaTz && ianaMap[ianaTz]) tz = ianaMap[ianaTz]
+        } catch (_) { /* ignore */ }
+      }
+      setTimezonePosix(tz)
+
       // Load door lockout and auto-calc settings
       setDoorLockoutEnabled(settings.door_lockout_enabled ?? false)
       setDoorTimeoutAutoCalcEnabled(settings.door_timeout_auto_calc_enabled ?? false)
@@ -352,7 +386,7 @@ function Settings() {
         sunset_offset_minutes: sunsetOffsetMinutes() ?? 0,
         latitude: latitude() ?? 40.7128,
         longitude: longitude() ?? -74.0060,
-        timezone_offset_hours: timezoneOffsetHours() ?? -5,
+        timezone_posix: timezonePosix() ?? "",
         door_lockout_enabled: doorLockoutEnabled() ?? false,
         door_timeout_auto_calc_enabled: doorTimeoutAutoCalcEnabled() ?? false,
         door_auto_close_after_sunset_enabled: doorAutoCloseAfterSunsetEnabled() ?? false,
@@ -1324,44 +1358,31 @@ function Settings() {
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <fieldset class="fieldset">
-          <legend class="fieldset-legend">Timezone Offset</legend>
+          <legend class="fieldset-legend">Timezone</legend>
           <Show when={loaded()}>
-            <select id="timezone_offset_hours" title="Timezone Offset" class="select" value={timezoneOffsetHours() ?? -5} onInput={(e) => { setTimezoneOffsetHours(parseInt((e.target as HTMLSelectElement).value)); fetchSunriseSunsetData() }}>
-              <option value="-12">UTC-12 (Baker Island)</option>
-              <option value="-11">UTC-11 (American Samoa)</option>
-              <option value="-10">UTC-10 (Hawaii)</option>
-              <option value="-9">UTC-9 (Alaska)</option>
-              <option value="-8">UTC-8 (Pacific Time)</option>
-              <option value="-7">UTC-7 (Mountain Time)</option>
-              <option value="-6">UTC-6 (Central Time)</option>
-              <option value="-5">UTC-5 (Eastern Time)</option>
-              <option value="-4">UTC-4 (Atlantic Time)</option>
-              <option value="-3">UTC-3 (Brazil, Argentina)</option>
-              <option value="-2">UTC-2 (Mid-Atlantic)</option>
-              <option value="-1">UTC-1 (Azores)</option>
-              <option value="0">UTC+0 (London, Dublin)</option>
-              <option value="1">UTC+1 (Paris, Berlin)</option>
-              <option value="2">UTC+2 (Cairo, Johannesburg)</option>
-              <option value="3">UTC+3 (Moscow, Istanbul)</option>
-              <option value="4">UTC+4 (Dubai)</option>
-              <option value="5">UTC+5 (Pakistan)</option>
-              <option value="6">UTC+6 (Bangladesh)</option>
-              <option value="7">UTC+7 (Bangkok, Jakarta)</option>
-              <option value="8">UTC+8 (Beijing, Singapore)</option>
-              <option value="9">UTC+9 (Tokyo, Seoul)</option>
-              <option value="10">UTC+10 (Sydney)</option>
-              <option value="11">UTC+11 (Solomon Islands)</option>
-              <option value="12">UTC+12 (New Zealand)</option>
-              <option value="13">UTC+13 (Samoa)</option>
-              <option value="14">UTC+14 (Kiribati)</option>
+            <select id="timezone_posix" title="Timezone" class="select" value={timezonePosix()} onInput={(e) => { setTimezonePosix((e.target as HTMLSelectElement).value); fetchSunriseSunsetData() }}>
+              <option value="HST10">Hawaii (HST, no DST)</option>
+              <option value="AKST9AKDT,M3.2.0,M11.1.0">Alaska (AKST/AKDT)</option>
+              <option value="PST8PDT,M3.2.0,M11.1.0">Pacific (PST/PDT)</option>
+              <option value="MST7">Arizona (MST, no DST)</option>
+              <option value="MST7MDT,M3.2.0,M11.1.0">Mountain (MST/MDT)</option>
+              <option value="CST6CDT,M3.2.0,M11.1.0">Central (CST/CDT)</option>
+              <option value="EST5EDT,M3.2.0,M11.1.0">Eastern (EST/EDT)</option>
+              <option value="AST4ADT,M3.2.0,M11.1.0">Atlantic (AST/ADT)</option>
+              <option value="GMT0BST,M3.5.0/1,M10.5.0">UK (GMT/BST)</option>
+              <option value="CET-1CEST,M3.5.0,M10.5.0/3">Central Europe (CET/CEST)</option>
+              <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Eastern Europe (EET/EEST)</option>
+              <option value="IST-5:30">India (IST, no DST)</option>
+              <option value="CST-8">China (CST, no DST)</option>
+              <option value="JST-9">Japan (JST, no DST)</option>
+              <option value="AEST-10AEDT,M10.1.0,M4.1.0/3">Australia Eastern (AEST/AEDT)</option>
+              <option value="NZST-12NZDT,M9.5.0,M4.1.0/3">New Zealand (NZST/NZDT)</option>
             </select>
           </Show>
           <Show when={!loaded()}>
-            <select id="timezone_offset_hours-fallback" title="Timezone Offset" class="select input-disabled" disabled>
-              <option>--</option>
-            </select>
+            <select class="select input-disabled" disabled><option>--</option></select>
           </Show>
-          <div class="fieldset-label">UTC timezone offset for sunrise/sunset calculations</div>
+          <div class="fieldset-label">Timezone for sunrise/sunset times (includes automatic DST adjustment)</div>
         </fieldset>
 
         <fieldset class="fieldset">
@@ -1374,9 +1395,35 @@ function Settings() {
                   (position) => {
                     setLatitude(position.coords.latitude);
                     setLongitude(position.coords.longitude);
-                    // Try to guess timezone from browser
-                    const offset = -new Date().getTimezoneOffset() / 60;
-                    setTimezoneOffsetHours(offset);
+                    // Auto-detect timezone from browser IANA timezone
+                    const ianaToposix: Record<string, string> = {
+                      'Pacific/Honolulu': 'HST10',
+                      'America/Anchorage': 'AKST9AKDT,M3.2.0,M11.1.0',
+                      'America/Los_Angeles': 'PST8PDT,M3.2.0,M11.1.0',
+                      'America/Phoenix': 'MST7',
+                      'America/Denver': 'MST7MDT,M3.2.0,M11.1.0',
+                      'America/Boise': 'MST7MDT,M3.2.0,M11.1.0',
+                      'America/Chicago': 'CST6CDT,M3.2.0,M11.1.0',
+                      'America/New_York': 'EST5EDT,M3.2.0,M11.1.0',
+                      'America/Indiana/Indianapolis': 'EST5EDT,M3.2.0,M11.1.0',
+                      'America/Detroit': 'EST5EDT,M3.2.0,M11.1.0',
+                      'America/Halifax': 'AST4ADT,M3.2.0,M11.1.0',
+                      'Europe/London': 'GMT0BST,M3.5.0/1,M10.5.0',
+                      'Europe/Berlin': 'CET-1CEST,M3.5.0,M10.5.0/3',
+                      'Europe/Paris': 'CET-1CEST,M3.5.0,M10.5.0/3',
+                      'Europe/Helsinki': 'EET-2EEST,M3.5.0/3,M10.5.0/4',
+                      'Asia/Kolkata': 'IST-5:30',
+                      'Asia/Shanghai': 'CST-8',
+                      'Asia/Tokyo': 'JST-9',
+                      'Australia/Sydney': 'AEST-10AEDT,M10.1.0,M4.1.0/3',
+                      'Pacific/Auckland': 'NZST-12NZDT,M9.5.0,M4.1.0/3',
+                    };
+                    try {
+                      const ianaTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                      if (ianaTz && ianaToposix[ianaTz]) {
+                        setTimezonePosix(ianaToposix[ianaTz]);
+                      }
+                    } catch (_) { /* ignore */ }
                     fetchSunriseSunsetData();
                   },
                   (error) => {

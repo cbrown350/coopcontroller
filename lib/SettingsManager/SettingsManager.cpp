@@ -348,6 +348,10 @@ int SettingsManager::getTimezoneOffsetHours() const {
     return settings.timezone_offset_hours;
 }
 
+String SettingsManager::getTimezonePosix() const {
+    return settings.timezone_posix;
+}
+
 // Door advanced features getters
 bool SettingsManager::getDoorAutoCloseAfterSunsetEnabled() const {
     return settings.door_auto_close_after_sunset_enabled;
@@ -629,6 +633,10 @@ void SettingsManager::setTimezoneOffsetHours(int offset) {
     settings.timezone_offset_hours = offset;
 }
 
+void SettingsManager::setTimezonePosix(const String& tz) {
+    settings.timezone_posix = tz;
+}
+
 // Door advanced features setters
 void SettingsManager::setDoorAutoCloseAfterSunsetEnabled(bool enabled) {
     settings.door_auto_close_after_sunset_enabled = enabled;
@@ -801,7 +809,12 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.latitude = doc["latitude"] | defaultSettings.latitude;
     settings.longitude = doc["longitude"] | defaultSettings.longitude;
     settings.timezone_offset_hours = doc["timezone_offset_hours"] | defaultSettings.timezone_offset_hours;
-    
+    if (doc["timezone_posix"].is<const char*>()) {
+        settings.timezone_posix = doc["timezone_posix"].as<String>();
+    } else {
+        settings.timezone_posix = defaultSettings.timezone_posix;
+    }
+
     // Load door advanced features settings
     settings.door_auto_close_after_sunset_enabled = doc["door_auto_close_after_sunset_enabled"] | defaultSettings.door_auto_close_after_sunset_enabled;
     settings.door_auto_close_after_sunset_minutes = doc["door_auto_close_after_sunset_minutes"] | defaultSettings.door_auto_close_after_sunset_minutes;
@@ -924,7 +937,8 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["latitude"] = settings.latitude;
     doc["longitude"] = settings.longitude;
     doc["timezone_offset_hours"] = settings.timezone_offset_hours;
-    
+    doc["timezone_posix"] = settings.timezone_posix;
+
     // Door advanced features settings
     doc["door_auto_close_after_sunset_enabled"] = settings.door_auto_close_after_sunset_enabled;
     doc["door_auto_close_after_sunset_minutes"] = settings.door_auto_close_after_sunset_minutes;

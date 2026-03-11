@@ -42,7 +42,8 @@
 
   "latitude": 40.7128,
   "longitude": -74.006,
-  "timezone_offset_hours": -5,
+  "timezone_offset_hours": -7,
+  "timezone_posix": "MST7MDT,M3.2.0,M11.1.0",
 
   "door_auto_close_after_sunset_enabled": false,
   "door_auto_close_after_sunset_minutes": 0,
