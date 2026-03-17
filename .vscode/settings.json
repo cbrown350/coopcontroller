@@ -71,5 +71,5 @@
     "--header-insertion=never",
     "--query-driver=${userHome}/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-g*"
   ],
-  "python.defaultInterpreterPath": "~/.platformio/penv/Scripts/python.exe"
+  "python.defaultInterpreterPath": "${userHome}/.platformio/penv/Scripts/python.exe"
 }
