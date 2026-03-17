@@ -809,6 +809,30 @@ public:
    * @return true if removal successful
    */
   virtual bool nvsRemove(const char* ns, const char* key) = 0;
+
+  // ========================================================================
+  // THREAD SAFETY - Shared State Mutex
+  // ========================================================================
+
+  /**
+   * @brief Lock the shared state mutex
+   *
+   * Acquires a mutex that protects shared state accessed by both the main
+   * loop (core 1) and async web server handlers (core 0 via async_tcp task).
+   * Must be paired with unlockSharedState(). Uses a timeout to prevent deadlocks.
+   *
+   * @param timeout_ms Maximum time to wait for the lock (default 1000ms)
+   * @return true if lock acquired, false on timeout
+   */
+  virtual bool lockSharedState(unsigned long timeout_ms = 1000) = 0;
+
+  /**
+   * @brief Unlock the shared state mutex
+   *
+   * Releases the mutex acquired by lockSharedState(). Must only be called
+   * after a successful lockSharedState() call.
+   */
+  virtual void unlockSharedState() = 0;
 };
 
 #endif // __IHAL_H__

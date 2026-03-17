@@ -512,6 +512,23 @@ public:
     }
 
     // ========================================================================
+    // THREAD SAFETY - Shared State Mutex (no-op for single-threaded tests)
+    // ========================================================================
+
+    bool lockSharedState(unsigned long timeout_ms = 1000) override {
+        (void)timeout_ms;
+        mockMutexLocked = true;
+        return true;
+    }
+
+    void unlockSharedState() override {
+        mockMutexLocked = false;
+    }
+
+    // Test helper
+    bool isMutexLocked() const { return mockMutexLocked; }
+
+    // ========================================================================
     // HTTP CLIENT FUNCTIONS - For OTA Updates
     // ========================================================================
 
@@ -679,6 +696,9 @@ public:
         mockOtaWriteResult = true;
         mockOtaEndResult = true;
         mockOtaError = "";
+
+        // Reset mutex state
+        mockMutexLocked = false;
 
         // Reset NVS state
         mockNvsStorage.clear();
@@ -885,6 +905,9 @@ private:
     
     // NVS state
     std::map<String, String> mockNvsStorage;
+
+    // Mutex state
+    bool mockMutexLocked = false;
 
     // Web server state
     WebServerHandler mockWebServerHandler = nullptr;

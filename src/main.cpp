@@ -561,6 +561,11 @@ void setup() // NOSONAR - complexity ok
             return temp;
         };
 
+        // Lock shared state for controller updates (prevents races with async web handlers on core 0)
+        // The mutex is held during controller state modifications and released before
+        // web server loop, delay, and other non-critical sections.
+        hal.lockSharedState(100);
+
         // Update temperature sensors
         if (currentTime - lastSensorUpdate >= SENSOR_UPDATE_INTERVAL)
         {
@@ -807,7 +812,10 @@ void setup() // NOSONAR - complexity ok
             lastSunUpdate = currentTime;
             sunriseSunset.update();
         }
-        
+
+        // Release shared state mutex before web server loop and other async operations
+        hal.unlockSharedState();
+
         webServer.loop();
 
         // OTA update: check for deferred install requests every loop,

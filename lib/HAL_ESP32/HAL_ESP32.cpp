@@ -15,11 +15,19 @@
 #include <esp_task_wdt.h>   // For esp_task_wdt_reset()
 #include <Preferences.h>      // For NVS access
 #include <mbedtls/sha256.h>  // For SHA256 verification
+#include <freertos/semphr.h>  // For FreeRTOS mutex
 
 /**
  * @brief Constructor
  */
-HAL_ESP32::HAL_ESP32() : server_(nullptr) {}
+HAL_ESP32::HAL_ESP32() : server_(nullptr), sharedStateMutex_(nullptr) {
+  // Create the shared state mutex for thread-safe access between
+  // main loop (core 1) and async web server handlers (core 0)
+  sharedStateMutex_ = xSemaphoreCreateMutex();
+  if (sharedStateMutex_ == nullptr) {
+    Serial.println("[HAL_ESP32] CRITICAL: Failed to create shared state mutex!");
+  }
+}
 
 /**
  * @brief Destructor
@@ -28,6 +36,10 @@ HAL_ESP32::~HAL_ESP32() {
   if (server_ != nullptr) {
     delete server_;
     server_ = nullptr;
+  }
+  if (sharedStateMutex_ != nullptr) {
+    vSemaphoreDelete(static_cast<SemaphoreHandle_t>(sharedStateMutex_));
+    sharedStateMutex_ = nullptr;
   }
 }
 
@@ -376,7 +388,9 @@ public:
       : request_(request) {}
 
   void send(int code, const char *contentType, const char *body) override {
+    if (request_ == nullptr) return;
     AsyncWebServerResponse *response = request_->beginResponse(code, contentType, body);
+    if (response == nullptr) return;
     // Add any custom headers
     for (const auto& header : headers_) {
       response->addHeader(header.first, header.second);
@@ -385,6 +399,7 @@ public:
   }
 
   void sendFile(const char *path, const char *contentType) override {
+    if (request_ == nullptr) return;
     // For file sending, headers need to be added differently
     // AsyncWebServer's send(LittleFS, path) doesn't support custom headers easily
     // We'll create a response manually if we have custom headers
@@ -392,6 +407,7 @@ public:
       request_->send(LittleFS, path, contentType);
     } else {
       AsyncWebServerResponse *response = request_->beginResponse(LittleFS, path, contentType);
+      if (response == nullptr) return;
       for (const auto& header : headers_) {
         response->addHeader(header.first, header.second);
       }
@@ -414,10 +430,12 @@ public:
   }
 
   void sendChunked(int code, const char* contentType, ChunkedFillCallback callback) override {
+    if (request_ == nullptr) return;
     auto response = request_->beginChunkedResponse(contentType,
         [callback](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
             return callback(buffer, maxLen, index);
         });
+    if (response == nullptr) return;
     response->setCode(code);
     for (const auto& header : headers_) {
       response->addHeader(header.first, header.second);
@@ -486,9 +504,24 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
     break;
   }
 
+  // Capture mutex handle so web handlers (running on async_tcp core 0) can
+  // serialize access to shared state with the main loop (core 1)
+  SemaphoreHandle_t mutex = static_cast<SemaphoreHandle_t>(sharedStateMutex_);
+
   server_->on(uri, httpMethod,
               // Request handler - called when request is complete
-              [handler](AsyncWebServerRequest *request) {
+              [handler, mutex](AsyncWebServerRequest *request) {
+                // Acquire shared state mutex to prevent races with main loop
+                bool locked = false;
+                if (mutex != nullptr) {
+                  locked = (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE);
+                  if (!locked) {
+                    // Mutex timeout - respond with 503 to avoid crash
+                    request->send(503, "text/plain", "Server busy, try again");
+                    return;
+                  }
+                }
+
                 ESP32WebRequestWrapper wrappedRequest(request);
                 ESP32WebResponseWrapper wrappedResponse(request);
 
@@ -496,9 +529,17 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
                 // Document is owned by wrappedRequest so it outlives the JsonVariant references
                 if (request->_tempObject != nullptr) {
                   wrappedRequest.parseJsonBody((const char *)request->_tempObject);
+                  // Free body buffer now that it's parsed into JsonDocument
+                  free(request->_tempObject);
+                  request->_tempObject = nullptr;
                 }
 
                 handler(&wrappedRequest, &wrappedResponse);
+
+                // Release mutex
+                if (locked) {
+                  xSemaphoreGive(mutex);
+                }
               },
               nullptr, // upload handler
               // Body handler - collect POST/PUT body data
@@ -507,6 +548,10 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
                 if (total == 0 || total > 16384)
                   return;
                 if (index == 0) {
+                  // Free any previously allocated body buffer
+                  if (request->_tempObject != nullptr) {
+                    free(request->_tempObject);
+                  }
                   request->_tempObject = malloc(total + 1);
                 }
                 if (request->_tempObject != nullptr) {
@@ -1367,6 +1412,21 @@ bool HAL_ESP32::sha256Verify(const uint8_t *data, size_t data_length,
 
 unsigned long HAL_ESP32::millis() {
   return ::millis();
+}
+
+// ========================================================================
+// THREAD SAFETY - Shared State Mutex
+// ========================================================================
+
+bool HAL_ESP32::lockSharedState(unsigned long timeout_ms) {
+  if (sharedStateMutex_ == nullptr) return false;
+  return xSemaphoreTake(static_cast<SemaphoreHandle_t>(sharedStateMutex_),
+                        pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+}
+
+void HAL_ESP32::unlockSharedState() {
+  if (sharedStateMutex_ == nullptr) return;
+  xSemaphoreGive(static_cast<SemaphoreHandle_t>(sharedStateMutex_));
 }
 
 // ========================================================================
