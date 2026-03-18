@@ -48,7 +48,9 @@ function Update() {
   const [skipFilesystem, setSkipFilesystem] = createSignal(false);
   const [showInstallConfirm, setShowInstallConfirm] = createSignal(false);
   const [forceUpdate, setForceUpdate] = createSignal(false);
+  const [deviceRestarting, setDeviceRestarting] = createSignal(false);
   let statusInterval: number | undefined;
+  let pollFailCount = 0;
 
   onMount(() => {
     setLoading(true);
@@ -97,10 +99,14 @@ function Update() {
 
   const startStatusPolling = () => {
     if (statusInterval) clearInterval(statusInterval);
+    pollFailCount = 0;
+    setDeviceRestarting(false);
     statusInterval = window.setInterval(async () => {
       try {
         const response = await fetch('/update/status');
         if (response.ok) {
+          pollFailCount = 0;
+          setDeviceRestarting(false);
           const status: UpdateStatus = await response.json();
           setUpdateStatus(status);
           if (status.status === 'complete' || status.status === 'error' || status.status === 'idle') {
@@ -113,7 +119,17 @@ function Update() {
           }
         }
       } catch {
-        // Device may be rebooting
+        pollFailCount++;
+        if (pollFailCount >= 2) {
+          setDeviceRestarting(true);
+          setUpdateStatus({ status: 'installing', progress: 100, phase: 'restarting', last_check: 0, error: '' });
+        }
+        if (pollFailCount >= 8) {
+          // Device should have rebooted by now, try reloading
+          clearInterval(statusInterval);
+          statusInterval = undefined;
+          window.location.reload();
+        }
       }
     }, 2000);
   };
@@ -327,7 +343,14 @@ function Update() {
             </div>
           </Show>
 
-          <Show when={updateStatus()?.status === 'complete'}>
+          <Show when={deviceRestarting()}>
+            <div role="alert" class="alert alert-info mb-4">
+              <span class="loading loading-spinner loading-sm"></span>
+              Update installed. Device is restarting... This page will reload automatically.
+            </div>
+          </Show>
+
+          <Show when={updateStatus()?.status === 'complete' && !deviceRestarting()}>
             <div role="alert" class="alert alert-success mb-4">
               Update complete! The device will reboot shortly.
             </div>

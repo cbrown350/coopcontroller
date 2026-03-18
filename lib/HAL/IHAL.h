@@ -576,6 +576,12 @@ public:
    */
   virtual void webServerAddElegantOTA() = 0;
 
+  /**
+   * @brief Stop the web server and close all connections
+   * Used before filesystem OTA to prevent concurrent access to unmounted filesystem
+   */
+  virtual void webServerEnd() = 0;
+
   // ========================================================================
   // LEDC (LED Control) PWM Functions
   // ========================================================================

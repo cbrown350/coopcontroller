@@ -620,6 +620,12 @@ void HAL_ESP32::webServerAddElegantOTA() {
   Serial.println("[HAL_ESP32] ElegantOTA support added to web server");
 }
 
+void HAL_ESP32::webServerEnd() {
+  if (server_ == nullptr) return;
+  server_->end();
+  Serial.println("[HAL_ESP32] AsyncWebServer stopped");
+}
+
 // ========================================================================
 // LEDC (LED Control) PWM Functions
 // ========================================================================

@@ -131,6 +131,7 @@ public:
   void webServerOnNotFound(WebServerHandler handler) override;
   void webServerLoop() override;
   void webServerAddElegantOTA() override;
+  void webServerEnd() override;
 
   // ========================================================================
   // LEDC (LED Control) PWM Functions

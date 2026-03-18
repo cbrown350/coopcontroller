@@ -329,6 +329,11 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         mbedtls_sha256_starts_ret((mbedtls_sha256_context*)sha_ctx_, false);
         sha_ctx_initialized_ = true;
 
+        // Stop web server before filesystem OTA to prevent async handlers
+        // on core 0 from accessing LittleFS while it's being overwritten
+        hal_->webServerEnd();
+        delay(100);  // Allow in-flight requests to complete
+
         // End current filesystem before flashing
         hal_->fsEnd();
 
