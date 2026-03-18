@@ -21,12 +21,7 @@
  * @brief Constructor
  */
 HAL_ESP32::HAL_ESP32() : server_(nullptr), sharedStateMutex_(nullptr) {
-  // Create the shared state mutex for thread-safe access between
-  // main loop (core 1) and async web server handlers (core 0)
   sharedStateMutex_ = xSemaphoreCreateMutex();
-  if (sharedStateMutex_ == nullptr) {
-    Serial.println("[HAL_ESP32] CRITICAL: Failed to create shared state mutex!");
-  }
 }
 
 /**
@@ -504,19 +499,17 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
     break;
   }
 
-  // Capture mutex handle so web handlers (running on async_tcp core 0) can
-  // serialize access to shared state with the main loop (core 1)
+  // Capture mutex handle for use in lambda (web handlers run on async_tcp task, core 0)
   SemaphoreHandle_t mutex = static_cast<SemaphoreHandle_t>(sharedStateMutex_);
 
   server_->on(uri, httpMethod,
               // Request handler - called when request is complete
               [handler, mutex](AsyncWebServerRequest *request) {
-                // Acquire shared state mutex to prevent races with main loop
+                // Acquire shared state mutex to prevent races with main loop (core 1)
                 bool locked = false;
                 if (mutex != nullptr) {
                   locked = (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE);
                   if (!locked) {
-                    // Mutex timeout - respond with 503 to avoid crash
                     request->send(503, "text/plain", "Server busy, try again");
                     return;
                   }
@@ -526,17 +519,14 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
                 ESP32WebResponseWrapper wrappedResponse(request);
 
                 // If body was collected, try to parse as JSON
-                // Document is owned by wrappedRequest so it outlives the JsonVariant references
                 if (request->_tempObject != nullptr) {
                   wrappedRequest.parseJsonBody((const char *)request->_tempObject);
-                  // Free body buffer now that it's parsed into JsonDocument
                   free(request->_tempObject);
                   request->_tempObject = nullptr;
                 }
 
                 handler(&wrappedRequest, &wrappedResponse);
 
-                // Release mutex
                 if (locked) {
                   xSemaphoreGive(mutex);
                 }
@@ -548,7 +538,7 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
                 if (total == 0 || total > 16384)
                   return;
                 if (index == 0) {
-                  // Free any previously allocated body buffer
+                  // Free any previous allocation to prevent double-alloc
                   if (request->_tempObject != nullptr) {
                     free(request->_tempObject);
                   }
@@ -663,6 +653,21 @@ void HAL_ESP32::digitalWrite(uint8_t pin, uint8_t value) {
 int HAL_ESP32::getCoreID() { return xPortGetCoreID(); }
 
 void *HAL_ESP32::getCurrentTaskHandle() { return xTaskGetCurrentTaskHandle(); }
+
+// ========================================================================
+// THREAD SAFETY - Shared State Mutex
+// ========================================================================
+
+bool HAL_ESP32::lockSharedState(unsigned long timeout_ms) {
+  if (sharedStateMutex_ == nullptr) return false;
+  return xSemaphoreTake(static_cast<SemaphoreHandle_t>(sharedStateMutex_),
+                        pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+}
+
+void HAL_ESP32::unlockSharedState() {
+  if (sharedStateMutex_ == nullptr) return;
+  xSemaphoreGive(static_cast<SemaphoreHandle_t>(sharedStateMutex_));
+}
 
 // ========================================================================
 // HTTP CLIENT FUNCTIONS - For OTA Updates
@@ -1412,21 +1417,6 @@ bool HAL_ESP32::sha256Verify(const uint8_t *data, size_t data_length,
 
 unsigned long HAL_ESP32::millis() {
   return ::millis();
-}
-
-// ========================================================================
-// THREAD SAFETY - Shared State Mutex
-// ========================================================================
-
-bool HAL_ESP32::lockSharedState(unsigned long timeout_ms) {
-  if (sharedStateMutex_ == nullptr) return false;
-  return xSemaphoreTake(static_cast<SemaphoreHandle_t>(sharedStateMutex_),
-                        pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
-}
-
-void HAL_ESP32::unlockSharedState() {
-  if (sharedStateMutex_ == nullptr) return;
-  xSemaphoreGive(static_cast<SemaphoreHandle_t>(sharedStateMutex_));
 }
 
 // ========================================================================

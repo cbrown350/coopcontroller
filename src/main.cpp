@@ -545,6 +545,11 @@ void setup() // NOSONAR - complexity ok
             logger.logfVerbose("Watchdog fed at loop iteration %lu", loopCount);
         }
 
+        // Acquire shared state mutex before accessing controller objects.
+        // Web handlers on async_tcp (core 0) also acquire this mutex,
+        // preventing concurrent access to non-thread-safe Arduino Strings.
+        bool stateLocked = hal.lockSharedState(100);
+
         // Check if restart is requested
         unsigned long currentTime = millis();
         if (settingsManager.requestRestartAt > 0 && currentTime >= settingsManager.requestRestartAt)
@@ -560,11 +565,6 @@ void setup() // NOSONAR - complexity ok
             if (isnan(temp)) temp = sensorManager.getTemperature2F();
             return temp;
         };
-
-        // Lock shared state for controller updates (prevents races with async web handlers on core 0)
-        // The mutex is held during controller state modifications and released before
-        // web server loop, delay, and other non-critical sections.
-        hal.lockSharedState(100);
 
         // Update temperature sensors
         if (currentTime - lastSensorUpdate >= SENSOR_UPDATE_INTERVAL)
@@ -813,8 +813,11 @@ void setup() // NOSONAR - complexity ok
             sunriseSunset.update();
         }
 
-        // Release shared state mutex before web server loop and other async operations
-        hal.unlockSharedState();
+        // Release shared state mutex before web server loop and network I/O
+        if (stateLocked) {
+            hal.unlockSharedState();
+            stateLocked = false;
+        }
 
         webServer.loop();
 

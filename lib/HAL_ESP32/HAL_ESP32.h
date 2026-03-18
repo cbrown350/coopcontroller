@@ -172,6 +172,9 @@ public:
   int getCoreID() override;
   void *getCurrentTaskHandle() override;
 
+  bool lockSharedState(unsigned long timeout_ms = 1000) override;
+  void unlockSharedState() override;
+
   // ========================================================================
   // HTTP CLIENT FUNCTIONS - For OTA Updates
   // ========================================================================
@@ -198,13 +201,6 @@ public:
   unsigned long millis() override;
 
   // ========================================================================
-  // THREAD SAFETY - Shared State Mutex
-  // ========================================================================
-
-  bool lockSharedState(unsigned long timeout_ms = 1000) override;
-  void unlockSharedState() override;
-
-  // ========================================================================
   // NVS (Non-Volatile Storage) FUNCTIONS
   // ========================================================================
 
@@ -214,7 +210,7 @@ public:
 
 private:
   AsyncWebServer *server_;
-  void *sharedStateMutex_;  ///< FreeRTOS mutex for thread-safe shared state access (SemaphoreHandle_t)
+  void *sharedStateMutex_;  ///< FreeRTOS mutex for thread-safe shared state access
 };
 
 #endif // __HAL_ESP32_H__

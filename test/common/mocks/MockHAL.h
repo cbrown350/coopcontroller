@@ -475,6 +475,16 @@ public:
         return mockTaskHandle;
     }
 
+    bool lockSharedState(unsigned long timeout_ms = 1000) override {
+        (void)timeout_ms;
+        mockMutexLocked = true;
+        return true;
+    }
+
+    void unlockSharedState() override {
+        mockMutexLocked = false;
+    }
+
     bool getLocalTime(struct tm* timeinfo, unsigned long ms) override {
         (void)ms;
         if (timeinfo) {
@@ -510,23 +520,6 @@ public:
         String fullKey = String(ns) + "/" + String(key);
         return mockNvsStorage.erase(fullKey) > 0;
     }
-
-    // ========================================================================
-    // THREAD SAFETY - Shared State Mutex (no-op for single-threaded tests)
-    // ========================================================================
-
-    bool lockSharedState(unsigned long timeout_ms = 1000) override {
-        (void)timeout_ms;
-        mockMutexLocked = true;
-        return true;
-    }
-
-    void unlockSharedState() override {
-        mockMutexLocked = false;
-    }
-
-    // Test helper
-    bool isMutexLocked() const { return mockMutexLocked; }
 
     // ========================================================================
     // HTTP CLIENT FUNCTIONS - For OTA Updates

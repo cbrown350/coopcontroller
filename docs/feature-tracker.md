@@ -17,9 +17,9 @@ This document tracks in-progress and planned features. For completed features, s
 
 **Current Build:** RAM 29.8%, Flash 85.6%
 
-**Latest Build (2026-03-11):** Firmware and web UI builds successful
+**Latest Build (2026-03-17):** Firmware and web UI builds successful
 
-**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager, TelegramBot, MQTTManager controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API, bot commands, and HTTP-based email API integration. CSV history export with Excel-compatible timestamps. Pulse-count-based leak detection for improved accuracy. Home Assistant MQTT integration with auto-discovery.
+**Core features:** Sensors, Pump, Light, Door, Buzzer, WiFi, WebServer, SunriseSunset, Settings, Logger, UpdateManager, HistoricalDataManager, NotificationManager, TelegramBot, MQTTManager controllers fully implemented. HAL refactoring complete: Desktop unit testing infrastructure fully functional with MockHAL and ArduinoFake. NVS-based settings preservation for OTA filesystem updates. OTA update system complete with SHA256 verification. Notification system with Telegram Bot API, bot commands, and HTTP-based email API integration. CSV history export with Excel-compatible timestamps. Pulse-count-based leak detection for improved accuracy. Home Assistant MQTT integration with auto-discovery. Thread-safe shared state access via FreeRTOS mutex (fixes intermittent StoreProhibited crashes from ESPAsyncWebServer dual-core race conditions).
 
 **Test Coverage (March 2026):** 626/626 desktop tests passing (100% pass rate)
 
@@ -55,6 +55,7 @@ All completed features have been moved to [feature-tracker-finished.md](feature-
 
 | Feature | Date | Section |
 |---------|------|---------|
+| Thread-Safe Shared State Mutex (Crash Fix) | 2026-03-17 | v0.4.3 |
 | Release Date Display on Update Page | 2026-02-13 | [Link](feature-tracker-finished.md#release-date-display-on-update-page-) |
 | Auto-Close After Sunset Schedule Bug Fix | 2026-02-12 | [Link](feature-tracker-finished.md#auto-close-after-sunset-schedule-bug-fix-) |
 | Configurable Device Hostname | 2026-02-12 | [Link](feature-tracker-finished.md#configurable-device-hostname-) |
