@@ -96,9 +96,10 @@ protected:
         // Set default configuration
         doorController->setOpenTimeoutSeconds(30);
         doorController->setCloseTimeoutSeconds(30);
-        doorController->setSunriseOffsetMinutes(0);
-        doorController->setSunsetOffsetMinutes(0);
-        doorController->setAutoMode(false);
+        doorController->setAutoOpenOffsetMinutes(0);
+        doorController->setAutoCloseOffsetMinutes(0);
+        doorController->setAutoOpenEnabled(false);
+        doorController->setAutoCloseEnabled(false);
         doorController->setTestMode(true); // Use test mode to avoid ISR complications
     }
 
@@ -440,11 +441,33 @@ TEST_F(DoorControllerTest, HardwareFaultTransitionsToFaultState) {
 TEST_F(DoorControllerTest, AutoModeToggle) {
     EXPECT_FALSE(doorController->isAutoMode());
 
-    doorController->setAutoMode(true);
+    // Auto-open and auto-close are independent; isAutoMode() is true if either is on.
+    doorController->setAutoOpenEnabled(true);
     EXPECT_TRUE(doorController->isAutoMode());
+    EXPECT_TRUE(doorController->isAutoOpenEnabled());
+    EXPECT_FALSE(doorController->isAutoCloseEnabled());
 
-    doorController->setAutoMode(false);
+    doorController->setAutoOpenEnabled(false);
     EXPECT_FALSE(doorController->isAutoMode());
+
+    doorController->setAutoCloseEnabled(true);
+    EXPECT_TRUE(doorController->isAutoMode());
+    EXPECT_TRUE(doorController->isAutoCloseEnabled());
+
+    doorController->setAutoCloseEnabled(false);
+    EXPECT_FALSE(doorController->isAutoMode());
+}
+
+TEST_F(DoorControllerTest, AutoDaysOfWeekDefaultsAllEnabled) {
+    for (int i = 0; i < 7; i++) {
+        EXPECT_TRUE(doorController->getAutoOpenDay(i));
+        EXPECT_TRUE(doorController->getAutoCloseDay(i));
+    }
+    doorController->setAutoOpenDay(0, false); // Sunday off
+    EXPECT_FALSE(doorController->getAutoOpenDay(0));
+    EXPECT_TRUE(doorController->getAutoOpenDay(1));
+    doorController->setAutoCloseDay(6, false); // Saturday off
+    EXPECT_FALSE(doorController->getAutoCloseDay(6));
 }
 
 TEST_F(DoorControllerTest, TestModeToggle) {
@@ -469,14 +492,14 @@ TEST_F(DoorControllerTest, SetAndGetCloseTimeoutSeconds) {
     EXPECT_EQ(doorController->getCloseTimeoutSeconds(), 45u);
 }
 
-TEST_F(DoorControllerTest, SetAndGetSunriseOffsetMinutes) {
-    doorController->setSunriseOffsetMinutes(30);
-    EXPECT_EQ(doorController->getSunriseOffsetMinutes(), 30);
+TEST_F(DoorControllerTest, SetAndGetAutoOpenOffsetMinutes) {
+    doorController->setAutoOpenOffsetMinutes(30);
+    EXPECT_EQ(doorController->getAutoOpenOffsetMinutes(), 30);
 }
 
-TEST_F(DoorControllerTest, SetAndGetSunsetOffsetMinutes) {
-    doorController->setSunsetOffsetMinutes(-30);
-    EXPECT_EQ(doorController->getSunsetOffsetMinutes(), -30);
+TEST_F(DoorControllerTest, SetAndGetAutoCloseOffsetMinutes) {
+    doorController->setAutoCloseOffsetMinutes(-30);
+    EXPECT_EQ(doorController->getAutoCloseOffsetMinutes(), -30);
 }
 
 TEST_F(DoorControllerTest, TimeoutValuesClamped) {
@@ -488,11 +511,17 @@ TEST_F(DoorControllerTest, TimeoutValuesClamped) {
 }
 
 TEST_F(DoorControllerTest, OffsetValuesClamped) {
-    doorController->setSunriseOffsetMinutes(100); // Too high
-    EXPECT_LE(doorController->getSunriseOffsetMinutes(), 60);
+    doorController->setAutoOpenOffsetMinutes(200); // Too high
+    EXPECT_LE(doorController->getAutoOpenOffsetMinutes(), 120);
 
-    doorController->setSunriseOffsetMinutes(-100); // Too low
-    EXPECT_GE(doorController->getSunriseOffsetMinutes(), -60);
+    doorController->setAutoOpenOffsetMinutes(-200); // Too low
+    EXPECT_GE(doorController->getAutoOpenOffsetMinutes(), -120);
+
+    doorController->setAutoCloseOffsetMinutes(200);
+    EXPECT_LE(doorController->getAutoCloseOffsetMinutes(), 120);
+
+    doorController->setAutoCloseOffsetMinutes(-200);
+    EXPECT_GE(doorController->getAutoCloseOffsetMinutes(), -120);
 }
 
 // ============================================================================
@@ -760,8 +789,9 @@ TEST_F(DoorControllerTest, DoorLockout_BlocksClose) {
 }
 
 TEST_F(DoorControllerTest, DoorLockout_BlocksSchedule) {
-    // Enable auto mode and lockout
-    doorController->setAutoMode(true);
+    // Enable auto open/close and lockout
+    doorController->setAutoOpenEnabled(true);
+    doorController->setAutoCloseEnabled(true);
     doorController->setLockoutEnabled(true);
 
     // Run several update cycles - schedule should be blocked by lockout

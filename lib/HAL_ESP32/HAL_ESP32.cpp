@@ -16,6 +16,7 @@
 #include <Preferences.h>      // For NVS access
 #include <mbedtls/sha256.h>  // For SHA256 verification
 #include <freertos/semphr.h>  // For FreeRTOS mutex
+#include <exception>          // For std::exception in web-handler guards
 
 /**
  * @brief Constructor
@@ -377,13 +378,20 @@ class ESP32WebResponseWrapper : public IWebResponse {
 private:
   AsyncWebServerRequest *request_;
   std::vector<std::pair<String, String>> headers_;
+  bool responseSent_ = false;
 
 public:
   explicit ESP32WebResponseWrapper(AsyncWebServerRequest *request)
       : request_(request) {}
 
+  // True once any send*/sendFile/sendChunked path has handed a response to
+  // AsyncWebServer. The webServerOn exception guard uses this to avoid a
+  // double-send (which itself crashes AsyncWebServer) when a handler throws
+  // after it already responded.
+  bool responseSent() const { return responseSent_; }
+
   void send(int code, const char *contentType, const char *body) override {
-    if (request_ == nullptr) return;
+    if (request_ == nullptr || responseSent_) return;
     AsyncWebServerResponse *response = request_->beginResponse(code, contentType, body);
     if (response == nullptr) return;
     // Add any custom headers
@@ -391,10 +399,11 @@ public:
       response->addHeader(header.first, header.second);
     }
     request_->send(response);
+    responseSent_ = true;
   }
 
   void sendFile(const char *path, const char *contentType) override {
-    if (request_ == nullptr) return;
+    if (request_ == nullptr || responseSent_) return;
     // For file sending, headers need to be added differently
     // AsyncWebServer's send(LittleFS, path) doesn't support custom headers easily
     // We'll create a response manually if we have custom headers
@@ -408,6 +417,7 @@ public:
       }
       request_->send(response);
     }
+    responseSent_ = true;
   }
 
   void setContentLength(size_t len) override {
@@ -428,7 +438,14 @@ public:
     if (request_ == nullptr) return;
     auto response = request_->beginChunkedResponse(contentType,
         [callback](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-            return callback(buffer, maxLen, index);
+            // This filler runs on the async_tcp task per chunk; a throw here
+            // would abort the task and reboot. Return 0 to end the stream cleanly.
+            try {
+              return callback(buffer, maxLen, index);
+            } catch (...) {
+              Serial.println("[HAL_ESP32] chunked fill callback threw; ending stream");
+              return 0;
+            }
         });
     if (response == nullptr) return;
     response->setCode(code);
@@ -436,6 +453,7 @@ public:
       response->addHeader(header.first, header.second);
     }
     request_->send(response);
+    responseSent_ = true;
   }
 };
 
@@ -525,7 +543,25 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
                   request->_tempObject = nullptr;
                 }
 
-                handler(&wrappedRequest, &wrappedResponse);
+                // Guard the user handler: it runs on the async_tcp task where any
+                // uncaught exception (String/JSON allocation under fragmentation, an
+                // empty std::function call, etc.) propagates to std::terminate ->
+                // abort -> panic reboot. Catch here so a failed request returns HTTP
+                // 500 instead of taking down the whole device (issue #4 follow-up:
+                // v0.4.5 guarded only the outbound TLS path, not this inbound one).
+                try {
+                  handler(&wrappedRequest, &wrappedResponse);
+                } catch (const std::exception &e) {
+                  Serial.printf("[HAL_ESP32] webServerOn handler threw: %s\r\n", e.what());
+                  if (!wrappedResponse.responseSent()) {
+                    request->send(500, "text/plain", "Internal server error");
+                  }
+                } catch (...) {
+                  Serial.println("[HAL_ESP32] webServerOn handler threw unknown exception");
+                  if (!wrappedResponse.responseSent()) {
+                    request->send(500, "text/plain", "Internal server error");
+                  }
+                }
 
                 if (locked) {
                   xSemaphoreGive(mutex);
@@ -600,7 +636,21 @@ void HAL_ESP32::webServerOnNotFound(WebServerHandler handler) {
   server_->onNotFound([handler](AsyncWebServerRequest *request) {
     ESP32WebRequestWrapper wrappedRequest(request);
     ESP32WebResponseWrapper wrappedResponse(request);
-    handler(&wrappedRequest, &wrappedResponse);
+    // Same async_tcp exception guard as webServerOn: never let a throwing
+    // 404 handler abort the task and reboot the device.
+    try {
+      handler(&wrappedRequest, &wrappedResponse);
+    } catch (const std::exception &e) {
+      Serial.printf("[HAL_ESP32] onNotFound handler threw: %s\r\n", e.what());
+      if (!wrappedResponse.responseSent()) {
+        request->send(500, "text/plain", "Internal server error");
+      }
+    } catch (...) {
+      Serial.println("[HAL_ESP32] onNotFound handler threw unknown exception");
+      if (!wrappedResponse.responseSent()) {
+        request->send(500, "text/plain", "Internal server error");
+      }
+    }
   });
   Serial.println("[HAL_ESP32] webServerOnNotFound: handler registered");
 }

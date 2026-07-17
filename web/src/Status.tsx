@@ -64,6 +64,8 @@ function Status() {
       position: 'UNKNOWN',
       progress: 0,
       auto_mode: false,
+      auto_open_enabled: false,
+      auto_close_enabled: false,
       test_mode: false,
       lockout_enabled: false,
       hall_open: false,
@@ -916,12 +918,22 @@ function Status() {
                 {/* Door Status Details */}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                   <div class="stat">
-                    <div class="stat-title">Auto Mode</div>
-                    <div class={`stat-value text-lg ${sensorStatus().door?.auto_mode ? 'text-success' : 'text-warning'}`}>
-                      {sensorStatus().door?.auto_mode ? 'Enabled' : 'Disabled'}
+                    <div class="stat-title">Auto Open</div>
+                    <div class={`stat-value text-lg ${sensorStatus().door?.auto_open_enabled ? 'text-success' : 'text-warning'}`}>
+                      {sensorStatus().door?.auto_open_enabled ? 'Enabled' : 'Disabled'}
                     </div>
                     <div class="stat-desc">
                       {sensorStatus().door?.next_scheduled_action || 'No scheduled action'}
+                    </div>
+                  </div>
+
+                  <div class="stat">
+                    <div class="stat-title">Auto Close</div>
+                    <div class={`stat-value text-lg ${sensorStatus().door?.auto_close_enabled ? 'text-success' : 'text-warning'}`}>
+                      {sensorStatus().door?.auto_close_enabled ? 'Enabled' : 'Disabled'}
+                    </div>
+                    <div class="stat-desc">
+                      {sensorStatus().door?.auto_close_enabled ? 'Scheduled by sunset' : 'Manual / off-schedule'}
                     </div>
                   </div>
                   

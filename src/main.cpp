@@ -237,6 +237,17 @@ void setup() // NOSONAR - complexity ok
     buzzerController.begin(BUZZER_B_PIN);
     wifiController.begin(&hal, &settingsManager, &buzzerController, apPasswd);
     doorController.begin(&buzzerController, &sunriseSunset);
+    // Apply persisted door settings to the controller runtime. This fixes the
+    // long-standing bug where door_auto_mode/auto offsets were saved to NVS but
+    // never reflected in the controller (so Status UI always showed "Disabled").
+    doorController.setOpenTimeoutSeconds(settingsManager.getDoorOpenTimeoutSeconds());
+    doorController.setCloseTimeoutSeconds(settingsManager.getDoorCloseTimeoutSeconds());
+    doorController.setAutoOpenEnabled(settingsManager.getDoorAutoOpenEnabled(), TriggerSource::STARTUP);
+    doorController.setAutoOpenOffsetMinutes(settingsManager.getDoorAutoOpenOffsetMinutes());
+    for (int i = 0; i < 7; i++) doorController.setAutoOpenDay(i, settingsManager.getDoorAutoOpenDay(i));
+    doorController.setAutoCloseEnabled(settingsManager.getDoorAutoCloseEnabled(), TriggerSource::STARTUP);
+    doorController.setAutoCloseOffsetMinutes(settingsManager.getDoorAutoCloseOffsetMinutes());
+    for (int i = 0; i < 7; i++) doorController.setAutoCloseDay(i, settingsManager.getDoorAutoCloseDay(i));
     doorController.setLockoutEnabled(settingsManager.getDoorLockoutEnabled());
     doorController.setAutoCalcTimeoutEnabled(settingsManager.getDoorTimeoutAutoCalcEnabled());
     lightController.begin(&hal, &sunriseSunset);
@@ -386,7 +397,13 @@ void setup() // NOSONAR - complexity ok
         if (args == "open") { doorController.open(TriggerSource::API); return "🚪 Door opening..."; }
         if (args == "close") { doorController.close(TriggerSource::API); return "🚪 Door closing..."; }
         if (args == "stop") { doorController.stop(TriggerSource::API); return "🚪 Door stopped."; }
-        if (args == "auto") { doorController.setAutoMode(true, TriggerSource::API); return "🚪 Door set to AUTO."; }
+        if (args == "auto") {
+            doorController.setAutoOpenEnabled(true, TriggerSource::API);
+            doorController.setAutoCloseEnabled(true, TriggerSource::API);
+            settingsManager.setDoorAutoOpenEnabled(true);
+            settingsManager.setDoorAutoCloseEnabled(true);
+            return "🚪 Door set to AUTO (open + close).";
+        }
         return "Usage: /door open|close|stop|auto";
     });
 
@@ -456,7 +473,13 @@ void setup() // NOSONAR - complexity ok
             } else if (entityId == "light_auto_mode") {
                 lightController.setAutoMode(payload == "ON", TriggerSource::API);
             } else if (entityId == "door_auto_mode") {
-                doorController.setAutoMode(payload == "ON", TriggerSource::API);
+                // MQTT single "auto" switch toggles both directions together for
+                // backward compatibility with the existing Home Assistant entity.
+                bool on = (payload == "ON");
+                doorController.setAutoOpenEnabled(on, TriggerSource::API);
+                doorController.setAutoCloseEnabled(on, TriggerSource::API);
+                settingsManager.setDoorAutoOpenEnabled(on);
+                settingsManager.setDoorAutoCloseEnabled(on);
             }
             // Button commands (PRESS)
             else if (entityId == "pump_on") {

@@ -75,11 +75,27 @@ struct user_settings // NOSONAR
     // DOOR CONTROL SETTINGS
     // ========================================================================
 
-    bool   door_auto_mode = false;          ///< Enable automatic door control
     int    door_open_timeout_seconds = 30;  ///< Door open timeout (seconds)
     int    door_close_timeout_seconds = 30; ///< Door close timeout (seconds)
-    int    sunrise_offset_minutes = 0;      ///< Sunrise offset for door opening (minutes)
-    int    sunset_offset_minutes = 0;       ///< Sunset offset for door closing (minutes)
+
+    // Automatic open (independent of close). Offset is signed:
+    // positive = after sunrise, negative = before sunrise.
+    bool   door_auto_open_enabled = false;          ///< Enable automatic door opening
+    int    door_auto_open_offset_minutes = 0;       ///< Minutes after/before sunrise to open
+    bool   door_auto_open_days[7] = {true, true, true, true, true, true, true}; ///< Days-of-week to open (0=Sun..6=Sat)
+
+    // Automatic close (independent of open). Offset is signed:
+    // positive = after sunset, negative = before sunset.
+    bool   door_auto_close_enabled = false;         ///< Enable automatic door closing
+    int    door_auto_close_offset_minutes = 0;      ///< Minutes after/before sunset to close
+    bool   door_auto_close_days[7] = {true, true, true, true, true, true, true}; ///< Days-of-week to close (0=Sun..6=Sat)
+
+    // NOTE: sunrise_offset_minutes/sunset_offset_minutes below are vestigial
+    // LightController-owned fields (Light exposes get/set but does not use them
+    // for scheduling). Kept for backward compatibility; the door now has its own
+    // door_auto_open_offset_minutes / door_auto_close_offset_minutes.
+    int    sunrise_offset_minutes = 0;      ///< Light sunrise offset (vestigial, minutes)
+    int    sunset_offset_minutes = 0;       ///< Light sunset offset (vestigial, minutes)
 
     // ========================================================================
     // LOCATION SETTINGS
@@ -94,8 +110,6 @@ struct user_settings // NOSONAR
     // DOOR ADVANCED FEATURES
     // ========================================================================
 
-    bool   door_auto_close_after_sunset_enabled = false; ///< Auto-close after sunset
-    int    door_auto_close_after_sunset_minutes = 0;     ///< Minutes after sunset to close
     bool   door_lockout_enabled = false;                 ///< Prevent all door operations when true
     bool   door_timeout_auto_calc_enabled = false;       ///< Auto-calculate door timeouts from history
 
@@ -313,12 +327,19 @@ class SettingsManager // NOSONAR
     String getBuzzerType() const;
     
     // Door control settings getters
-    bool   getDoorAutoMode() const;
     int    getDoorOpenTimeoutSeconds() const;
     int    getDoorCloseTimeoutSeconds() const;
+    bool   getDoorAutoOpenEnabled() const;
+    int    getDoorAutoOpenOffsetMinutes() const;
+    bool   getDoorAutoOpenDay(int dayIdx) const;        ///< dayIdx: 0=Sun..6=Sat
+    bool   getDoorAutoCloseEnabled() const;
+    int    getDoorAutoCloseOffsetMinutes() const;
+    bool   getDoorAutoCloseDay(int dayIdx) const;       ///< dayIdx: 0=Sun..6=Sat
+
+    // Light sunrise/sunset offset (vestigial LightController-owned fields)
     int getSunriseOffsetMinutes() const;
     int getSunsetOffsetMinutes() const;
-    
+
     // Location settings getters
     float getLatitude() const;
     float getLongitude() const;
@@ -326,8 +347,6 @@ class SettingsManager // NOSONAR
     String getTimezonePosix() const;
 
     // Door advanced features getters
-    bool getDoorAutoCloseAfterSunsetEnabled() const;
-    int getDoorAutoCloseAfterSunsetMinutes() const;
     bool getDoorLockoutEnabled() const;
     bool getDoorTimeoutAutoCalcEnabled() const;
 
@@ -372,12 +391,19 @@ class SettingsManager // NOSONAR
     void setBuzzerType(const String& type);
     
     // Door control settings setters
-    void setDoorAutoMode(bool enabled);
     void setDoorOpenTimeoutSeconds(int seconds);
     void setDoorCloseTimeoutSeconds(int seconds);
+    void setDoorAutoOpenEnabled(bool enabled);
+    void setDoorAutoOpenOffsetMinutes(int minutes);
+    void setDoorAutoOpenDay(int dayIdx, bool enabled);
+    void setDoorAutoCloseEnabled(bool enabled);
+    void setDoorAutoCloseOffsetMinutes(int minutes);
+    void setDoorAutoCloseDay(int dayIdx, bool enabled);
+
+    // Light sunrise/sunset offset (vestigial LightController-owned fields)
     void setSunriseOffsetMinutes(int minutes);
     void setSunsetOffsetMinutes(int minutes);
-    
+
     // Location settings setters
     void setLatitude(float latitude);
     void setLongitude(float longitude);
@@ -385,8 +411,6 @@ class SettingsManager // NOSONAR
     void setTimezonePosix(const String& tz);
 
     // Door advanced features setters
-    void setDoorAutoCloseAfterSunsetEnabled(bool enabled);
-    void setDoorAutoCloseAfterSunsetMinutes(int minutes);
     void setDoorLockoutEnabled(bool enabled);
     void setDoorTimeoutAutoCalcEnabled(bool enabled);
     

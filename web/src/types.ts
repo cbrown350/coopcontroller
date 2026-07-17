@@ -91,6 +91,8 @@ export interface DoorStatus {
   position: string;
   progress: number;
   auto_mode: boolean;
+  auto_open_enabled: boolean;
+  auto_close_enabled: boolean;
   test_mode: boolean;
   lockout_enabled: boolean;
   hall_open: boolean;
@@ -133,10 +135,16 @@ export interface Settings {
   api_auth_enabled?: boolean;
   api_username?: string;
   api_password?: string;
+  door_open_timeout_seconds?: number;
+  door_close_timeout_seconds?: number;
+  door_auto_open_enabled?: boolean;
+  door_auto_open_offset_minutes?: number;
+  door_auto_open_days?: boolean[];
+  door_auto_close_enabled?: boolean;
+  door_auto_close_offset_minutes?: number;
+  door_auto_close_days?: boolean[];
   door_lockout_enabled?: boolean;
   door_timeout_auto_calc_enabled?: boolean;
-  door_auto_close_after_sunset_enabled?: boolean;
-  door_auto_close_after_sunset_minutes?: number;
   wifi_bssid_preference?: string;
   syslog_server?: string;
   syslog_port?: number;

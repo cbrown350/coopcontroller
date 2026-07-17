@@ -73,7 +73,8 @@ private:
     DoorState currentState;         ///< Current operational state
     DoorPosition currentPosition;   ///< Physical door position
     unsigned long stateStartTime;   ///< Timestamp when current state started
-    bool autoMode;                  ///< Automatic scheduling enabled
+    bool autoOpenEnabled;           ///< Automatic opening by schedule enabled
+    bool autoCloseEnabled;          ///< Automatic closing by schedule enabled
     bool testMode;                  ///< Test mode (no hardware control)
 
     // Last movement direction for manual switch reversal
@@ -87,8 +88,10 @@ private:
     // Configuration
     unsigned int openTimeoutSeconds;   ///< Maximum time to wait for open (default: 30)
     unsigned int closeTimeoutSeconds;  ///< Maximum time to wait for close (default: 30)
-    int sunriseOffsetMinutes;         ///< Minutes after sunrise to open door
-    int sunsetOffsetMinutes;          ///< Minutes after sunset to close door
+    int autoOpenOffsetMinutes;        ///< Minutes after (+) / before (-) sunrise to open door
+    int autoCloseOffsetMinutes;       ///< Minutes after (+) / before (-) sunset to close door
+    std::array<bool, 7> autoOpenDays;  ///< Days-of-week to auto-open (0=Sun..6=Sat)
+    std::array<bool, 7> autoCloseDays; ///< Days-of-week to auto-close (0=Sun..6=Sat)
     bool lockoutEnabled;              ///< Prevents all door operations when true
 
     // Timeout auto-calculation
@@ -159,20 +162,29 @@ private:
     void checkTimeout();
 
     /**
-     * @brief Check if door should operate based on schedule
+     * @brief Check if door should auto-open based on schedule
      *
-     * Compares current time with sunrise/sunset plus offsets.
-     * Only triggers if auto mode is enabled.
+     * Compares current time with sunrise + open offset. Only triggers
+     * when auto-open is enabled and today is an enabled day-of-week.
      */
-    void checkSchedule();
+    void checkAutoOpenSchedule();
 
     /**
-     * @brief Check if door should auto-close after sunset
+     * @brief Check if door should auto-close based on schedule
      *
-     * Works independently of auto mode. Only triggers when
-     * door_auto_close_after_sunset_enabled is true.
+     * Compares current time with sunset + close offset. Only triggers
+     * when auto-close is enabled and today is an enabled day-of-week.
      */
-    void checkAutoCloseAfterSunset();
+    void checkAutoCloseSchedule();
+
+    /**
+     * @brief Get today's day-of-week index (0=Sun..6=Sat)
+     *
+     * Uses local time so the schedule matches the user's timezone.
+     *
+     * @return Day index 0-6, or -1 if time unavailable
+     */
+    int getTodayDayOfWeek() const;
 
     /**
      * @brief Get current local time in minutes since midnight
@@ -309,21 +321,38 @@ public:
     // ========================================================================
 
     /**
-     * @brief Enable or disable automatic mode
+     * @brief Enable or disable automatic opening
      *
-     * When enabled, door automatically opens/closes based on schedule.
+     * When enabled, door automatically opens at sunrise + open offset
+     * on the configured days-of-week.
      *
-     * @param enabled true to enable auto mode, false to disable
-     * @param trigger What triggered this action (default: MANUAL)
+     * @param enabled true to enable auto-open
+     * @param trigger What triggered this action (default: WEB_UI)
      */
-    void setAutoMode(bool enabled, TriggerSource trigger = TriggerSource::WEB_UI);
+    void setAutoOpenEnabled(bool enabled, TriggerSource trigger = TriggerSource::WEB_UI);
 
     /**
-     * @brief Check if automatic mode is enabled
+     * @brief Enable or disable automatic closing
      *
-     * @return true if auto mode is enabled
+     * When enabled, door automatically closes at sunset + close offset
+     * on the configured days-of-week.
+     *
+     * @param enabled true to enable auto-close
+     * @param trigger What triggered this action (default: WEB_UI)
+     */
+    void setAutoCloseEnabled(bool enabled, TriggerSource trigger = TriggerSource::WEB_UI);
+
+    /**
+     * @brief Check if any automatic scheduling is enabled
+     *
+     * Convenience for status/MQTT: true if auto-open OR auto-close is enabled.
+     *
+     * @return true if any automatic mode is enabled
      */
     bool isAutoMode() const;
+
+    bool isAutoOpenEnabled() const;
+    bool isAutoCloseEnabled() const;
 
     // ========================================================================
     // TEST MODE
@@ -508,32 +537,64 @@ public:
     void setCloseTimeoutSeconds(unsigned int seconds);
 
     /**
-     * @brief Get sunrise offset for door opening
+     * @brief Get auto-open offset (minutes after/before sunrise)
      *
-     * @return Offset in minutes (positive = after sunrise)
+     * @return Offset in minutes (positive = after sunrise, negative = before)
      */
-    int getSunriseOffsetMinutes() const;
+    int getAutoOpenOffsetMinutes() const;
 
     /**
-     * @brief Set sunrise offset for door opening
+     * @brief Set auto-open offset (minutes after/before sunrise)
      *
-     * @param minutes Offset in minutes (positive = after sunrise)
+     * @param minutes Offset in minutes (positive = after sunrise, negative = before)
      */
-    void setSunriseOffsetMinutes(int minutes);
+    void setAutoOpenOffsetMinutes(int minutes);
 
     /**
-     * @brief Get sunset offset for door closing
+     * @brief Get auto-close offset (minutes after/before sunset)
      *
-     * @return Offset in minutes (positive = after sunset)
+     * @return Offset in minutes (positive = after sunset, negative = before)
      */
-    int getSunsetOffsetMinutes() const;
+    int getAutoCloseOffsetMinutes() const;
 
     /**
-     * @brief Set sunset offset for door closing
+     * @brief Set auto-close offset (minutes after/before sunset)
      *
-     * @param minutes Offset in minutes (positive = after sunset)
+     * @param minutes Offset in minutes (positive = after sunset, negative = before)
      */
-    void setSunsetOffsetMinutes(int minutes);
+    void setAutoCloseOffsetMinutes(int minutes);
+
+    /**
+     * @brief Get whether auto-open is enabled for a given day-of-week
+     *
+     * @param dayIdx 0=Sun..6=Sat
+     * @return true if auto-open is active on that day
+     */
+    bool getAutoOpenDay(int dayIdx) const;
+
+    /**
+     * @brief Enable/disable auto-open for a given day-of-week
+     *
+     * @param dayIdx 0=Sun..6=Sat
+     * @param enabled true to enable auto-open on that day
+     */
+    void setAutoOpenDay(int dayIdx, bool enabled);
+
+    /**
+     * @brief Get whether auto-close is enabled for a given day-of-week
+     *
+     * @param dayIdx 0=Sun..6=Sat
+     * @return true if auto-close is active on that day
+     */
+    bool getAutoCloseDay(int dayIdx) const;
+
+    /**
+     * @brief Enable/disable auto-close for a given day-of-week
+     *
+     * @param dayIdx 0=Sun..6=Sat
+     * @param enabled true to enable auto-close on that day
+     */
+    void setAutoCloseDay(int dayIdx, bool enabled);
 
     // ========================================================================
     // STATISTICS

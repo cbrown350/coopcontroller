@@ -182,20 +182,51 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   }
                   
                   // Handle door control settings
-                  if (jsonObj["door_auto_mode"].is<bool>()) {
-                      settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
-                  }
                   if (jsonObj["door_open_timeout_seconds"].is<int>()) {
                       settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
+                      doorController.setOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
                   }
                   if (jsonObj["door_close_timeout_seconds"].is<int>()) {
                       settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
+                      doorController.setCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
                   }
-                  if (jsonObj["sunrise_offset_minutes"].is<int>()) {
-                      settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
+                  if (jsonObj["door_auto_open_enabled"].is<bool>()) {
+                      bool en = jsonObj["door_auto_open_enabled"].as<bool>();
+                      settingsManager.setDoorAutoOpenEnabled(en);
+                      doorController.setAutoOpenEnabled(en, TriggerSource::WEB_UI);
                   }
-                  if (jsonObj["sunset_offset_minutes"].is<int>()) {
-                      settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
+                  if (jsonObj["door_auto_open_offset_minutes"].is<int>()) {
+                      int m = jsonObj["door_auto_open_offset_minutes"].as<int>();
+                      settingsManager.setDoorAutoOpenOffsetMinutes(m);
+                      doorController.setAutoOpenOffsetMinutes(m);
+                  }
+                  if (jsonObj["door_auto_open_days"].is<JsonArray>()) {
+                      JsonArrayConst arr = jsonObj["door_auto_open_days"].as<JsonArrayConst>();
+                      for (int i = 0; i < 7 && i < (int)arr.size(); i++) {
+                          if (arr[i].is<bool>()) {
+                              settingsManager.setDoorAutoOpenDay(i, arr[i].as<bool>());
+                              doorController.setAutoOpenDay(i, arr[i].as<bool>());
+                          }
+                      }
+                  }
+                  if (jsonObj["door_auto_close_enabled"].is<bool>()) {
+                      bool en = jsonObj["door_auto_close_enabled"].as<bool>();
+                      settingsManager.setDoorAutoCloseEnabled(en);
+                      doorController.setAutoCloseEnabled(en, TriggerSource::WEB_UI);
+                  }
+                  if (jsonObj["door_auto_close_offset_minutes"].is<int>()) {
+                      int m = jsonObj["door_auto_close_offset_minutes"].as<int>();
+                      settingsManager.setDoorAutoCloseOffsetMinutes(m);
+                      doorController.setAutoCloseOffsetMinutes(m);
+                  }
+                  if (jsonObj["door_auto_close_days"].is<JsonArray>()) {
+                      JsonArrayConst arr = jsonObj["door_auto_close_days"].as<JsonArrayConst>();
+                      for (int i = 0; i < 7 && i < (int)arr.size(); i++) {
+                          if (arr[i].is<bool>()) {
+                              settingsManager.setDoorAutoCloseDay(i, arr[i].as<bool>());
+                              doorController.setAutoCloseDay(i, arr[i].as<bool>());
+                          }
+                      }
                   }
                   
                   // Handle location settings
@@ -257,12 +288,6 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   }
                   
                   // Handle door advanced features settings
-                  if (jsonObj["door_auto_close_after_sunset_enabled"].is<bool>()) {
-                      settingsManager.setDoorAutoCloseAfterSunsetEnabled(jsonObj["door_auto_close_after_sunset_enabled"].as<bool>());
-                  }
-                  if (jsonObj["door_auto_close_after_sunset_minutes"].is<int>()) {
-                      settingsManager.setDoorAutoCloseAfterSunsetMinutes(jsonObj["door_auto_close_after_sunset_minutes"].as<int>());
-                  }
                   if (jsonObj["door_lockout_enabled"].is<bool>()) {
                       bool enabled = jsonObj["door_lockout_enabled"].as<bool>();
                       settingsManager.setDoorLockoutEnabled(enabled);
@@ -822,7 +847,12 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                   String autoStr = request->param("auto");
                   bool autoMode = (autoStr == "true" || autoStr == "1");
-                  doorController.setAutoMode(autoMode, TriggerSource::WEB_UI);
+                  // Legacy single-toggle endpoint: enables both auto-open and auto-close
+                  // together for backward compatibility with existing UI/MQTT callers.
+                  doorController.setAutoOpenEnabled(autoMode, TriggerSource::WEB_UI);
+                  doorController.setAutoCloseEnabled(autoMode, TriggerSource::WEB_UI);
+                  settingsManager.setDoorAutoOpenEnabled(autoMode);
+                  settingsManager.setDoorAutoCloseEnabled(autoMode);
                   response->send(200, "text/plain", autoMode ? "Door auto mode enabled" : "Door auto mode disabled");
               });
     
@@ -1437,20 +1467,35 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                     buzzerController.setBuzzerType(buzzerType);
                     logger.logInfo("Buzzer type restored: " + type);
                   }
-                  if (jsonObj["door_auto_mode"].is<bool>()) {
-                    settingsManager.setDoorAutoMode(jsonObj["door_auto_mode"].as<bool>());
-                  }
                   if (jsonObj["door_open_timeout_seconds"].is<int>()) {
                     settingsManager.setDoorOpenTimeoutSeconds(jsonObj["door_open_timeout_seconds"].as<int>());
                   }
                   if (jsonObj["door_close_timeout_seconds"].is<int>()) {
                     settingsManager.setDoorCloseTimeoutSeconds(jsonObj["door_close_timeout_seconds"].as<int>());
                   }
-                  if (jsonObj["sunrise_offset_minutes"].is<int>()) {
-                    settingsManager.setSunriseOffsetMinutes(jsonObj["sunrise_offset_minutes"].as<int>());
+                  if (jsonObj["door_auto_open_enabled"].is<bool>()) {
+                    settingsManager.setDoorAutoOpenEnabled(jsonObj["door_auto_open_enabled"].as<bool>());
                   }
-                  if (jsonObj["sunset_offset_minutes"].is<int>()) {
-                    settingsManager.setSunsetOffsetMinutes(jsonObj["sunset_offset_minutes"].as<int>());
+                  if (jsonObj["door_auto_open_offset_minutes"].is<int>()) {
+                    settingsManager.setDoorAutoOpenOffsetMinutes(jsonObj["door_auto_open_offset_minutes"].as<int>());
+                  }
+                  if (jsonObj["door_auto_open_days"].is<JsonArray>()) {
+                    JsonArrayConst arr = jsonObj["door_auto_open_days"].as<JsonArrayConst>();
+                    for (int i = 0; i < 7 && i < (int)arr.size(); i++) {
+                        if (arr[i].is<bool>()) settingsManager.setDoorAutoOpenDay(i, arr[i].as<bool>());
+                    }
+                  }
+                  if (jsonObj["door_auto_close_enabled"].is<bool>()) {
+                    settingsManager.setDoorAutoCloseEnabled(jsonObj["door_auto_close_enabled"].as<bool>());
+                  }
+                  if (jsonObj["door_auto_close_offset_minutes"].is<int>()) {
+                    settingsManager.setDoorAutoCloseOffsetMinutes(jsonObj["door_auto_close_offset_minutes"].as<int>());
+                  }
+                  if (jsonObj["door_auto_close_days"].is<JsonArray>()) {
+                    JsonArrayConst arr = jsonObj["door_auto_close_days"].as<JsonArrayConst>();
+                    for (int i = 0; i < 7 && i < (int)arr.size(); i++) {
+                        if (arr[i].is<bool>()) settingsManager.setDoorAutoCloseDay(i, arr[i].as<bool>());
+                    }
                   }
                   if (jsonObj["water_meter_per_pulse_calculation_enabled"].is<bool>()) {
                       bool enabled = jsonObj["water_meter_per_pulse_calculation_enabled"].as<bool>();
@@ -1498,6 +1543,16 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     // Add custom callback for filesystem updates - capture this to access hal
     ElegantOTA.onStart([this]() {
         logger.logInfo("Start OTA updating ");
+        // Back up settings to NVS before ElegantOTA flashes anything. A filesystem
+        // update overwrites /user_settings.json on LittleFS with the image's default
+        // file; without this backup the user's settings are lost. restoreFromNVS()
+        // (called in SettingsManager::begin on boot) reapplies the backup after the
+        // update. Harmless for firmware-only updates (backup sits unused, cleared on
+        // the next restore). The UpdateManager/GitHub path already does this; this
+        // closes the gap for ElegantOTA (web UI) updates.
+        if (!settingsManager.backupToNVS()) {
+            logger.logWarning("Failed to back up settings to NVS before OTA - settings may be lost if this is a filesystem update");
+        }
         hal->fsEnd();
     });
     
