@@ -1543,6 +1543,16 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     // Add custom callback for filesystem updates - capture this to access hal
     ElegantOTA.onStart([this]() {
         logger.logInfo("Start OTA updating ");
+        // Back up settings to NVS before ElegantOTA flashes anything. A filesystem
+        // update overwrites /user_settings.json on LittleFS with the image's default
+        // file; without this backup the user's settings are lost. restoreFromNVS()
+        // (called in SettingsManager::begin on boot) reapplies the backup after the
+        // update. Harmless for firmware-only updates (backup sits unused, cleared on
+        // the next restore). The UpdateManager/GitHub path already does this; this
+        // closes the gap for ElegantOTA (web UI) updates.
+        if (!settingsManager.backupToNVS()) {
+            logger.logWarning("Failed to back up settings to NVS before OTA - settings may be lost if this is a filesystem update");
+        }
         hal->fsEnd();
     });
     
