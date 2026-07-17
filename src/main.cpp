@@ -825,8 +825,14 @@ void setup() // NOSONAR - complexity ok
         // and periodic auto-update checks based on settings interval
         updateManager.update();
 
-        // Poll Telegram bot for incoming commands
-        telegramBot.update();
+        // Poll Telegram bot for incoming commands, but only when free heap is
+        // healthy. Each poll allocates a WiFiClientSecure TLS context + JSON
+        // docs; under heap pressure those allocations throw std::bad_alloc and,
+        // with -fexceptions on and no catch handler on this task, reboot the
+        // device (issue #4). Deferring non-essential polling lets heap recover.
+        if (hal.getFreeHeap() >= NETWORK_LOW_HEAP_FLOOR) {
+            telegramBot.update();
+        }
 
         // Update MQTT manager (connection, message processing, state publishing)
         mqttManager.update();

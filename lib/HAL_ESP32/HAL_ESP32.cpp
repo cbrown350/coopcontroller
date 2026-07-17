@@ -679,13 +679,46 @@ void HAL_ESP32::unlockSharedState() {
 // HTTP CLIENT FUNCTIONS - For OTA Updates
 // ========================================================================
 
+std::unique_ptr<WiFiClientSecure> HAL_ESP32::createSecureClient(unsigned long timeout_ms) {
+  // Refuse the TLS allocation when free heap is too low or fragmented to hold
+  // the mbedtls context. The constructor's internal `new` would otherwise throw
+  // std::bad_alloc; with -fexceptions enabled and no catch handler on the loop
+  // or async_tcp tasks, that aborts the task and reboots (issue #4 root cause).
+  if (ESP.getFreeHeap() < TLS_CLIENT_MIN_FREE_HEAP) {
+    Serial.printf("[HAL_ESP32] createSecureClient: refusing TLS alloc, free heap %u < %u\r\n",
+                  (unsigned)ESP.getFreeHeap(), (unsigned)TLS_CLIENT_MIN_FREE_HEAP);
+    return nullptr;
+  }
+
+  try {
+    // Construct inside try: WiFiClientSecure allocates the sslclient context
+    // with `new`, which can throw even above the threshold under fragmentation.
+    auto client = std::make_unique<WiFiClientSecure>();
+    client->setInsecure();
+    // Bound both the socket connect and the TLS handshake (defaults are 30 s /
+    // 120 s, which alone can stall the loop task past the 30 s watchdog).
+    // Clamp handshake to the same budget as the overall request timeout.
+    client->setTimeout(timeout_ms);
+    client->setHandshakeTimeout((timeout_ms + 999) / 1000);  // ms -> seconds, round up
+    return client;
+  } catch (...) {
+    Serial.println("[HAL_ESP32] createSecureClient: exception during TLS client allocation");
+    return nullptr;
+  }
+}
+
 String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
   String currentUrl = url;
   int maxRedirects = 5;
 
   for (int redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
-    WiFiClientSecure client;
-    client.setInsecure();
+    // Exception-safe TLS client; nullptr if heap too low to allocate safely.
+    auto clientHolder = createSecureClient(timeout_ms);
+    if (clientHolder == nullptr) {
+      Serial.println("[HAL_ESP32] httpGet: unavailable (low memory), aborting");
+      return "";
+    }
+    WiFiClientSecure &client = *clientHolder;
 
     String host = currentUrl;
     String path = "/";
@@ -713,7 +746,7 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     }
 
     unsigned long startTime = ::millis();
-    if (!client.connect(host.c_str(), port)) {
+    if (!client.connect(host.c_str(), port, timeout_ms)) {
       return "";
     }
 
@@ -803,8 +836,13 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
   int maxRedirects = 5;
 
   for (int redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
-    WiFiClientSecure client;
-    client.setInsecure();
+    // Exception-safe TLS client; nullptr if heap too low to allocate safely.
+    auto clientHolder = createSecureClient(timeout_ms);
+    if (clientHolder == nullptr) {
+      Serial.println("[HAL_ESP32] httpGetStream: unavailable (low memory), aborting");
+      return false;
+    }
+    WiFiClientSecure &client = *clientHolder;
 
     // Parse URL
     String host = currentUrl;
@@ -833,7 +871,7 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
     }
 
     unsigned long startTime = ::millis();
-    if (!client.connect(host.c_str(), port)) {
+    if (!client.connect(host.c_str(), port, timeout_ms)) {
       return false;
     }
 
@@ -938,8 +976,13 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
 }
 
 String HAL_ESP32::httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms) {
-  WiFiClientSecure client;
-  client.setInsecure();
+  // Exception-safe TLS client; nullptr if heap too low to allocate safely.
+  auto clientHolder = createSecureClient(timeout_ms);
+  if (clientHolder == nullptr) {
+    Serial.println("[HAL_ESP32] httpPost: unavailable (low memory), aborting");
+    return "";
+  }
+  WiFiClientSecure &client = *clientHolder;
 
   String host = url;
   String path = "/";
@@ -967,7 +1010,7 @@ String HAL_ESP32::httpPost(const String& url, const String& jsonBody, unsigned l
   }
 
   unsigned long startTime = ::millis();
-  if (!client.connect(host.c_str(), port)) {
+  if (!client.connect(host.c_str(), port, timeout_ms)) {
     return "";
   }
 

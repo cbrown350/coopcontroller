@@ -1,6 +1,7 @@
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 
+#include <cstdint>
 #include <cstring>
 #include "build_timestamp.h"
 
@@ -65,6 +66,15 @@ static constexpr size_t HISTORY_DEFAULT_BUFFER_SIZE = 200; // ~22KB default
 #define PUMP_UPDATE_INTERVAL 1000     // NOSONAR, Update pump controller every 1 second
 #define DOOR_UPDATE_INTERVAL 100      // NOSONAR, Update door controller every 100ms for faster response
 #define LIGHT_UPDATE_INTERVAL 100     // NOSONAR, Update light controller every 100ms for smooth fading
+
+// Minimum free heap (bytes) below which non-essential network polling is
+// deferred. Crashes traced in issue #4 are caused by TLS/JSON allocations
+// throwing std::bad_alloc under heap pressure; with -fexceptions enabled and
+// no catch handler on the loop/async_tcp tasks, an uncaught exception reboots
+// the device. Pausing polling while heap is tight lets the device recover
+// instead of racing into a throwing allocation. Chosen to leave headroom for a
+// TLS context (~16-40 KB) above the low-water mark where throws were seen.
+static constexpr uint32_t NETWORK_LOW_HEAP_FLOOR = 30000;
 
 
 // NTP server to request epoch time

@@ -6,6 +6,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <WiFiClientSecure.h>
+#include <memory>
 
 #include "ElegantOTA.h"
 
@@ -212,6 +214,29 @@ public:
 private:
   AsyncWebServer *server_;
   void *sharedStateMutex_;  ///< FreeRTOS mutex for thread-safe shared state access
+
+  // Minimum free heap (bytes) required to even attempt allocating a
+  // WiFiClientSecure TLS context, whose mbedtls structures need a sizable
+  // contiguous allocation. Below this the constructor's `new` would throw
+  // std::bad_alloc; with -fexceptions enabled and no catch handler on the
+  // loop/async_tcp tasks, that aborts the task and reboots (issue #4 root
+  // cause). This is a last-resort floor (the proactive throttle in main.cpp,
+  // NETWORK_LOW_HEAP_FLOOR, is higher); the try/catch below still guards any
+  // throw that slips through above this threshold under fragmentation.
+  static constexpr uint32_t TLS_CLIENT_MIN_FREE_HEAP = 16000;
+
+  /// @brief Create a WiFiClientSecure that is exception-safe.
+  ///
+  /// Guards against the issue #4 crash root cause: allocating a TLS context
+  /// under low/fragmented heap throws std::bad_alloc, and with -fexceptions on
+  /// and no catch handler up the stack, that aborts the calling task. This
+  /// helper refuses to allocate below TLS_CLIENT_MIN_FREE_HEAP and catches any
+  /// exception from the constructor, returning nullptr on failure instead.
+  ///
+  /// @param timeout_ms  Connect/handshake timeout passed to the client.
+  /// @return Owned client configured (insecure) with bounded timeouts, or
+  ///         nullptr if it could not be created safely.
+  std::unique_ptr<WiFiClientSecure> createSecureClient(unsigned long timeout_ms);
 };
 
 #endif // __HAL_ESP32_H__
