@@ -67,11 +67,14 @@ function Settings() {
   const [buzzerType, setBuzzerType] = createSignal<string | null>(null)
   
   // Door control settings
-  const [doorAutoMode, setDoorAutoMode] = createSignal<boolean | null>(null)
   const [doorOpenTimeoutSeconds, setDoorOpenTimeoutSeconds] = createSignal<number | null>(null)
   const [doorCloseTimeoutSeconds, setDoorCloseTimeoutSeconds] = createSignal<number | null>(null)
-  const [sunriseOffsetMinutes, setSunriseOffsetMinutes] = createSignal<number | null>(null)
-  const [sunsetOffsetMinutes, setSunsetOffsetMinutes] = createSignal<number | null>(null)
+  const [doorAutoOpenEnabled, setDoorAutoOpenEnabled] = createSignal<boolean | null>(null)
+  const [doorAutoOpenOffsetMinutes, setDoorAutoOpenOffsetMinutes] = createSignal<number | null>(null)
+  const [doorAutoOpenDays, setDoorAutoOpenDays] = createSignal<boolean[]>([true, true, true, true, true, true, true])
+  const [doorAutoCloseEnabled, setDoorAutoCloseEnabled] = createSignal<boolean | null>(null)
+  const [doorAutoCloseOffsetMinutes, setDoorAutoCloseOffsetMinutes] = createSignal<number | null>(null)
+  const [doorAutoCloseDays, setDoorAutoCloseDays] = createSignal<boolean[]>([true, true, true, true, true, true, true])
   
   // Location settings
   const [latitude, setLatitude] = createSignal<number | null>(null)
@@ -93,10 +96,6 @@ function Settings() {
   // Door lockout and auto-calc
   const [doorLockoutEnabled, setDoorLockoutEnabled] = createSignal<boolean | null>(null)
   const [doorTimeoutAutoCalcEnabled, setDoorTimeoutAutoCalcEnabled] = createSignal<boolean | null>(null)
-
-  // Task 3.5k preparation settings
-  const [doorAutoCloseAfterSunsetEnabled, setDoorAutoCloseAfterSunsetEnabled] = createSignal<boolean | null>(null)
-  const [doorAutoCloseAfterSunsetMinutes, setDoorAutoCloseAfterSunsetMinutes] = createSignal<number | null>(null)
 
   // API Authentication settings
   const [apiAuthEnabled, setApiAuthEnabled] = createSignal<boolean | null>(null)
@@ -204,11 +203,14 @@ function Settings() {
       setBuzzerType(settings.buzzer_type ?? 'ACTIVE')
       
       // Load door control settings
-      setDoorAutoMode(settings.door_auto_mode ?? false)
       setDoorOpenTimeoutSeconds(settings.door_open_timeout_seconds ?? 30)
       setDoorCloseTimeoutSeconds(settings.door_close_timeout_seconds ?? 30)
-      setSunriseOffsetMinutes(settings.sunrise_offset_minutes ?? 0)
-      setSunsetOffsetMinutes(settings.sunset_offset_minutes ?? 0)
+      setDoorAutoOpenEnabled(settings.door_auto_open_enabled ?? false)
+      setDoorAutoOpenOffsetMinutes(settings.door_auto_open_offset_minutes ?? 0)
+      setDoorAutoOpenDays(Array.isArray(settings.door_auto_open_days) ? settings.door_auto_open_days.slice(0, 7) : [true, true, true, true, true, true, true])
+      setDoorAutoCloseEnabled(settings.door_auto_close_enabled ?? false)
+      setDoorAutoCloseOffsetMinutes(settings.door_auto_close_offset_minutes ?? 0)
+      setDoorAutoCloseDays(Array.isArray(settings.door_auto_close_days) ? settings.door_auto_close_days.slice(0, 7) : [true, true, true, true, true, true, true])
       
       // Load location settings
       setLatitude(settings.latitude ?? 40.7128)
@@ -249,10 +251,6 @@ function Settings() {
       // Load door lockout and auto-calc settings
       setDoorLockoutEnabled(settings.door_lockout_enabled ?? false)
       setDoorTimeoutAutoCalcEnabled(settings.door_timeout_auto_calc_enabled ?? false)
-
-      // Load Task 3.5k preparation settings
-      setDoorAutoCloseAfterSunsetEnabled(settings.door_auto_close_after_sunset_enabled ?? false)
-      setDoorAutoCloseAfterSunsetMinutes(settings.door_auto_close_after_sunset_minutes ?? 0)
 
       // Load API authentication settings
       setApiAuthEnabled(settings.api_auth_enabled ?? false)
@@ -391,18 +389,19 @@ function Settings() {
         wifi_led_enabled: wifiLedEnabled() ?? true,
         buzzer_enabled: buzzerEnabled() ?? true,
         buzzer_type: buzzerType() ?? 'ACTIVE',
-        door_auto_mode: doorAutoMode() ?? false,
         door_open_timeout_seconds: doorOpenTimeoutSeconds() ?? 30,
         door_close_timeout_seconds: doorCloseTimeoutSeconds() ?? 30,
-        sunrise_offset_minutes: sunriseOffsetMinutes() ?? 0,
-        sunset_offset_minutes: sunsetOffsetMinutes() ?? 0,
+        door_auto_open_enabled: doorAutoOpenEnabled() ?? false,
+        door_auto_open_offset_minutes: doorAutoOpenOffsetMinutes() ?? 0,
+        door_auto_open_days: doorAutoOpenDays(),
+        door_auto_close_enabled: doorAutoCloseEnabled() ?? false,
+        door_auto_close_offset_minutes: doorAutoCloseOffsetMinutes() ?? 0,
+        door_auto_close_days: doorAutoCloseDays(),
         latitude: latitude() ?? 40.7128,
         longitude: longitude() ?? -74.0060,
         timezone_posix: timezonePosix() ?? "",
         door_lockout_enabled: doorLockoutEnabled() ?? false,
         door_timeout_auto_calc_enabled: doorTimeoutAutoCalcEnabled() ?? false,
-        door_auto_close_after_sunset_enabled: doorAutoCloseAfterSunsetEnabled() ?? false,
-        door_auto_close_after_sunset_minutes: isNaN(doorAutoCloseAfterSunsetMinutes()!) ? 0 : doorAutoCloseAfterSunsetMinutes()! ?? 0,
         log_level: logLevel() ?? 'INFO',
         api_auth_enabled: apiAuthEnabled() ?? false,
         api_username: apiUsername() ?? 'admin',
@@ -1261,28 +1260,126 @@ function Settings() {
             </div>
           </fieldset>
 
-          <h2 class="text-lg font-bold mb-4 mt-10">Door Control Settings</h2>
-          
+          <h2 class="text-lg font-bold mb-4 mt-10">Door Automatic Open &amp; Close</h2>
+          <p class="text-sm opacity-70 mb-2">
+            Automatic open and close are independent. Each can be enabled separately, has its own
+            sunrise/sunset offset (negative = before, positive = after), and its own days-of-week.
+          </p>
+
+          {/* Auto-Open */}
           <fieldset class="fieldset mt-4">
-            <legend class="fieldset-legend">Door Auto Mode</legend>
+            <legend class="fieldset-legend">Automatic Open (Sunrise)</legend>
             <div class="form-control">
               <label class="label cursor-pointer">
-                <span class="label-text">Enable Automatic Door Control</span>
+                <span class="label-text">Enable Automatic Open</span>
                 <input
                   type="checkbox"
                   class="toggle toggle-primary"
-                  checked={doorAutoMode() ?? false}
-                  onChange={(e) => setDoorAutoMode(e.currentTarget.checked)}
+                  checked={doorAutoOpenEnabled() ?? false}
+                  onChange={(e) => setDoorAutoOpenEnabled(e.currentTarget.checked)}
                 />
               </label>
               <label class="label">
                 <span class="label-text-alt">
-                  Enable automatic door opening/closing based on sunrise/sunset schedule
+                  Open the door automatically at sunrise + offset on the selected days
                 </span>
               </label>
             </div>
           </fieldset>
 
+          <Show when={doorAutoOpenEnabled()}>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Sunrise Offset (minutes)</legend>
+                <Show when={loaded()}>
+                  <input type="number" value={doorAutoOpenOffsetMinutes()!} onInput={(e) => setDoorAutoOpenOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-120" max="120" class="input" />
+                </Show>
+                <Show when={!loaded()}>
+                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                </Show>
+                <div class="fieldset-label">Minutes after (+) / before (-) sunrise to open door (default: 0)</div>
+              </fieldset>
+
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Days of Week</legend>
+                <div class="flex flex-wrap gap-2">
+                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => (
+                    <button
+                      type="button"
+                      class={`btn btn-sm ${doorAutoOpenDays()[i] ? 'btn-primary' : 'btn-outline'}`}
+                      onClick={() => {
+                        const arr = doorAutoOpenDays().slice()
+                        arr[i] = !arr[i]
+                        setDoorAutoOpenDays(arr)
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+                <div class="fieldset-label">Days the door auto-opens (default: every day)</div>
+              </fieldset>
+            </div>
+          </Show>
+
+          {/* Auto-Close */}
+          <fieldset class="fieldset mt-4">
+            <legend class="fieldset-legend">Automatic Close (Sunset)</legend>
+            <div class="form-control">
+              <label class="label cursor-pointer">
+                <span class="label-text">Enable Automatic Close</span>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={doorAutoCloseEnabled() ?? false}
+                  onChange={(e) => setDoorAutoCloseEnabled(e.currentTarget.checked)}
+                />
+              </label>
+              <label class="label">
+                <span class="label-text-alt">
+                  Close the door automatically at sunset + offset on the selected days
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <Show when={doorAutoCloseEnabled()}>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Sunset Offset (minutes)</legend>
+                <Show when={loaded()}>
+                  <input type="number" value={doorAutoCloseOffsetMinutes()!} onInput={(e) => setDoorAutoCloseOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-120" max="120" class="input" />
+                </Show>
+                <Show when={!loaded()}>
+                  <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
+                </Show>
+                <div class="fieldset-label">Minutes after (+) / before (-) sunset to close door (default: 0)</div>
+              </fieldset>
+
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Days of Week</legend>
+                <div class="flex flex-wrap gap-2">
+                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => (
+                    <button
+                      type="button"
+                      class={`btn btn-sm ${doorAutoCloseDays()[i] ? 'btn-primary' : 'btn-outline'}`}
+                      onClick={() => {
+                        const arr = doorAutoCloseDays().slice()
+                        arr[i] = !arr[i]
+                        setDoorAutoCloseDays(arr)
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+                <div class="fieldset-label">Days the door auto-closes (default: every day)</div>
+              </fieldset>
+            </div>
+          </Show>
+
+          {/* Timeouts */}
+          <h2 class="text-lg font-bold mb-4 mt-10">Door Timeouts</h2>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <fieldset class="fieldset">
               <legend class="fieldset-legend">Door Open Timeout (seconds)</legend>
@@ -1292,7 +1389,7 @@ function Settings() {
               <Show when={!loaded()}>
                 <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
               </Show>
-              <div class="fieldset-label">Time to wait before declaring open timeout (default: 10 seconds)</div>
+              <div class="fieldset-label">Time to wait before declaring an open timeout (default: 30 seconds)</div>
             </fieldset>
 
             <fieldset class="fieldset">
@@ -1303,31 +1400,7 @@ function Settings() {
               <Show when={!loaded()}>
                 <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
               </Show>
-              <div class="fieldset-label">Time to wait before declaring close timeout (default: 10 seconds)</div>
-            </fieldset>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Sunrise Offset (minutes)</legend>
-              <Show when={loaded()}>
-                <input type="number" value={sunriseOffsetMinutes()!} onInput={(e) => setSunriseOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-60" max="60" class="input" />
-              </Show>
-              <Show when={!loaded()}>
-                <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
-              </Show>
-              <div class="fieldset-label">Minutes before/after sunrise to open door (default: 0)</div>
-            </fieldset>
-
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Sunset Offset (minutes)</legend>
-              <Show when={loaded()}>
-                <input type="number" value={sunsetOffsetMinutes()!} onInput={(e) => setSunsetOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-60" max="60" class="input" />
-              </Show>
-              <Show when={!loaded()}>
-                <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
-              </Show>
-              <div class="fieldset-label">Minutes before/after sunset to close door (default: 0)</div>
+              <div class="fieldset-label">Time to wait before declaring a close timeout (default: 30 seconds)</div>
             </fieldset>
           </div>
 
@@ -1512,40 +1585,7 @@ function Settings() {
         </div>
       </div>
 
-      <h2 class="text-lg font-bold mb-4 mt-10">Automatic Door Close</h2>
-      
-      <fieldset class="fieldset mt-4">
-        <legend class="fieldset-legend">Auto-Close After Sunset</legend>
-        <div class="form-control">
-          <label class="label cursor-pointer">
-            <span class="label-text">Enable Auto-Close After Sunset</span>
-            <input
-              type="checkbox"
-              class="toggle toggle-primary"
-              checked={doorAutoCloseAfterSunsetEnabled() ?? false}
-              onChange={(e) => setDoorAutoCloseAfterSunsetEnabled(e.currentTarget.checked)}
-            />
-          </label>
-          <label class="label">
-            <span class="label-text-alt">
-              Enable automatic door closing X minutes after sunset (separate from sunset offset)
-            </span>
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset class="fieldset mt-4">
-        <legend class="fieldset-legend">Auto-Close Delay (minutes)</legend>
-        <Show when={loaded()}>
-          <input type="number" value={doorAutoCloseAfterSunsetMinutes()!} onInput={(e) => setDoorAutoCloseAfterSunsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="0" max="120" class="input" />
-        </Show>
-        <Show when={!loaded()}>
-          <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
-        </Show>
-        <div class="fieldset-label">Minutes after sunset to auto-close door (default: 0 = immediate)</div>
-      </fieldset>
-
-          <h2 class="text-lg font-bold mb-4 mt-10">OTA Updates</h2>
+      <h2 class="text-lg font-bold mb-4 mt-10">OTA Updates</h2>
 
           <fieldset class="fieldset mt-4">
             <legend class="fieldset-legend">Auto-Update Check</legend>

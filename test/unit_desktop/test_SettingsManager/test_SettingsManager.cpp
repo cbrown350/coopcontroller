@@ -83,16 +83,17 @@ protected:
   "wifi_led_enabled": true,
   "buzzer_enabled": true,
   "buzzer_type": "ACTIVE",
-  "door_auto_mode": false,
   "door_open_timeout_seconds": 30,
   "door_close_timeout_seconds": 30,
-  "sunrise_offset_minutes": 0,
-  "sunset_offset_minutes": 0,
+  "door_auto_open_enabled": false,
+  "door_auto_open_offset_minutes": 0,
+  "door_auto_open_days": [true, true, true, true, true, true, true],
+  "door_auto_close_enabled": false,
+  "door_auto_close_offset_minutes": 0,
+  "door_auto_close_days": [true, true, true, true, true, true, true],
   "latitude": 40.7128,
   "longitude": -74.0060,
   "timezone_offset_hours": -5,
-  "door_auto_close_after_sunset_enabled": false,
-  "door_auto_close_after_sunset_minutes": 0,
   "log_level": "INFO"
 })";
     }
@@ -648,14 +649,53 @@ TEST_F(SettingsManagerTest, BuzzerTypeSetterUpdatesValue) {
 // Door Settings Tests
 // ============================================================================
 
-TEST_F(SettingsManagerTest, DoorAutoModeGetterReturnsCorrectValue) {
-    sm.setDoorAutoMode(true);
-    EXPECT_TRUE(sm.getDoorAutoMode());
+TEST_F(SettingsManagerTest, DoorAutoOpenEnabledGetterReturnsCorrectValue) {
+    sm.setDoorAutoOpenEnabled(true);
+    EXPECT_TRUE(sm.getDoorAutoOpenEnabled());
 }
 
-TEST_F(SettingsManagerTest, DoorAutoModeSetterUpdatesValue) {
-    sm.setDoorAutoMode(false);
-    EXPECT_FALSE(sm.getDoorAutoMode());
+TEST_F(SettingsManagerTest, DoorAutoOpenEnabledSetterUpdatesValue) {
+    sm.setDoorAutoOpenEnabled(false);
+    EXPECT_FALSE(sm.getDoorAutoOpenEnabled());
+}
+
+TEST_F(SettingsManagerTest, DoorAutoCloseEnabledGetterReturnsCorrectValue) {
+    sm.setDoorAutoCloseEnabled(true);
+    EXPECT_TRUE(sm.getDoorAutoCloseEnabled());
+}
+
+TEST_F(SettingsManagerTest, DoorAutoCloseEnabledSetterUpdatesValue) {
+    sm.setDoorAutoCloseEnabled(false);
+    EXPECT_FALSE(sm.getDoorAutoCloseEnabled());
+}
+
+TEST_F(SettingsManagerTest, DoorAutoOpenOffsetMinutesGetterReturnsCorrectValue) {
+    sm.setDoorAutoOpenOffsetMinutes(30);
+    EXPECT_EQ(sm.getDoorAutoOpenOffsetMinutes(), 30);
+}
+
+TEST_F(SettingsManagerTest, DoorAutoCloseOffsetMinutesSetterUpdatesValue) {
+    sm.setDoorAutoCloseOffsetMinutes(-15);
+    EXPECT_EQ(sm.getDoorAutoCloseOffsetMinutes(), -15);
+}
+
+TEST_F(SettingsManagerTest, DoorAutoOpenDayTogglesPerDay) {
+    for (int i = 0; i < 7; i++) {
+        sm.setDoorAutoOpenDay(i, false);
+        EXPECT_FALSE(sm.getDoorAutoOpenDay(i));
+        sm.setDoorAutoOpenDay(i, true);
+        EXPECT_TRUE(sm.getDoorAutoOpenDay(i));
+    }
+    // Out-of-range is safely ignored
+    sm.setDoorAutoOpenDay(7, true);
+    EXPECT_FALSE(sm.getDoorAutoOpenDay(7));
+}
+
+TEST_F(SettingsManagerTest, DoorAutoCloseDayTogglesPerDay) {
+    sm.setDoorAutoCloseDay(3, false);
+    EXPECT_FALSE(sm.getDoorAutoCloseDay(3));
+    sm.setDoorAutoCloseDay(3, true);
+    EXPECT_TRUE(sm.getDoorAutoCloseDay(3));
 }
 
 TEST_F(SettingsManagerTest, DoorOpenTimeoutSecondsGetterReturnsCorrectValue) {
@@ -1133,11 +1173,12 @@ TEST_F(SettingsManagerTest, AllSettersAndGettersAreConsistent) {
     sm.setWifiLedEnabled(false);
     sm.setBuzzerEnabled(true);
     sm.setBuzzerType("passive");
-    sm.setDoorAutoMode(true);
     sm.setDoorOpenTimeoutSeconds(45);
     sm.setDoorCloseTimeoutSeconds(45);
-    sm.setSunriseOffsetMinutes(15);
-    sm.setSunsetOffsetMinutes(15);
+    sm.setDoorAutoOpenEnabled(true);
+    sm.setDoorAutoOpenOffsetMinutes(15);
+    sm.setDoorAutoCloseEnabled(true);
+    sm.setDoorAutoCloseOffsetMinutes(15);
     sm.setLatitude(41.8781);
     sm.setLongitude(-87.6298);
     sm.setTimezoneOffsetHours(-6.0);
@@ -1174,11 +1215,12 @@ TEST_F(SettingsManagerTest, AllSettersAndGettersAreConsistent) {
     EXPECT_FALSE(sm.getWifiLedEnabled());
     EXPECT_TRUE(sm.getBuzzerEnabled());
     EXPECT_STREQ(sm.getBuzzerType().c_str(), "passive");
-    EXPECT_TRUE(sm.getDoorAutoMode());
+    EXPECT_TRUE(sm.getDoorAutoOpenEnabled());
+    EXPECT_TRUE(sm.getDoorAutoCloseEnabled());
+    EXPECT_EQ(sm.getDoorAutoOpenOffsetMinutes(), 15);
+    EXPECT_EQ(sm.getDoorAutoCloseOffsetMinutes(), 15);
     EXPECT_EQ(sm.getDoorOpenTimeoutSeconds(), 45);
     EXPECT_EQ(sm.getDoorCloseTimeoutSeconds(), 45);
-    EXPECT_EQ(sm.getSunriseOffsetMinutes(), 15);
-    EXPECT_EQ(sm.getSunsetOffsetMinutes(), 15);
     EXPECT_FLOAT_EQ(sm.getLatitude(), 41.8781);
     EXPECT_FLOAT_EQ(sm.getLongitude(), -87.6298);
     EXPECT_FLOAT_EQ(sm.getTimezoneOffsetHours(), -6.0);
@@ -1187,37 +1229,93 @@ TEST_F(SettingsManagerTest, AllSettersAndGettersAreConsistent) {
 }
 
 // ============================================================================
-// Door Auto Close After Sunset Settings Tests
+// Legacy settings migration (issue #3)
 // ============================================================================
 
-TEST_F(SettingsManagerTest, DoorAutoCloseAfterSunsetEnabledGetterReturnsCorrectValue) {
-    sm.setDoorAutoCloseAfterSunsetEnabled(true);
-    EXPECT_TRUE(sm.getDoorAutoCloseAfterSunsetEnabled());
+TEST_F(SettingsManagerTest, MigratesLegacyAutoModeOpenOffset) {
+    // door_auto_mode enables both directions; sunrise offset migrates to open offset
+    JsonDocument doc;
+    doc["door_auto_mode"] = true;
+    doc["sunrise_offset_minutes"] = 20;
+    doc["sunset_offset_minutes"] = -15;
+
+    sm.setFromJsonDoc(doc);
+
+    EXPECT_TRUE(sm.getDoorAutoOpenEnabled());
+    EXPECT_TRUE(sm.getDoorAutoCloseEnabled());
+    EXPECT_EQ(sm.getDoorAutoOpenOffsetMinutes(), 20);
+    // No after-sunset present, so close offset is just the sunset offset
+    EXPECT_EQ(sm.getDoorAutoCloseOffsetMinutes(), -15);
 }
 
-TEST_F(SettingsManagerTest, DoorAutoCloseAfterSunsetEnabledSetterUpdatesValue) {
-    sm.setDoorAutoCloseAfterSunsetEnabled(false);
-    EXPECT_FALSE(sm.getDoorAutoCloseAfterSunsetEnabled());
+TEST_F(SettingsManagerTest, MigratesLegacyAutoModeWithAfterSunsetTakesLaterCloseTime) {
+    // When both auto_mode and after-sunset are on, the old firmware closed at the
+    // LATER of sunset_offset and after_sunset_minutes. Migration preserves that.
+    JsonDocument doc;
+    doc["door_auto_mode"] = true;
+    doc["sunset_offset_minutes"] = -15;
+    doc["door_auto_close_after_sunset_enabled"] = true;
+    doc["door_auto_close_after_sunset_minutes"] = 30;
+
+    sm.setFromJsonDoc(doc);
+
+    EXPECT_TRUE(sm.getDoorAutoCloseEnabled());
+    EXPECT_EQ(sm.getDoorAutoCloseOffsetMinutes(), 30); // max(-15, 30)
 }
 
-TEST_F(SettingsManagerTest, DoorAutoCloseAfterSunsetMinutesGetterReturnsCorrectValue) {
-    sm.setDoorAutoCloseAfterSunsetMinutes(30);
-    EXPECT_EQ(sm.getDoorAutoCloseAfterSunsetMinutes(), 30);
+TEST_F(SettingsManagerTest, LegacyAfterSunsetOnlyFoldsIntoAutoClose) {
+    // The real board's state: auto_mode OFF, after-sunset ON with a 45-min delay.
+    // Old firmware closed 45 min after sunset and never auto-opened.
+    JsonDocument doc;
+    doc["door_auto_mode"] = false;
+    doc["sunrise_offset_minutes"] = 0;
+    doc["sunset_offset_minutes"] = 0;
+    doc["door_auto_close_after_sunset_enabled"] = true;
+    doc["door_auto_close_after_sunset_minutes"] = 45;
+
+    sm.setFromJsonDoc(doc);
+
+    EXPECT_FALSE(sm.getDoorAutoOpenEnabled());
+    EXPECT_TRUE(sm.getDoorAutoCloseEnabled());
+    EXPECT_EQ(sm.getDoorAutoCloseOffsetMinutes(), 45);
 }
 
-TEST_F(SettingsManagerTest, DoorAutoCloseAfterSunsetMinutesSetterUpdatesValue) {
-    sm.setDoorAutoCloseAfterSunsetMinutes(45);
-    EXPECT_EQ(sm.getDoorAutoCloseAfterSunsetMinutes(), 45);
+TEST_F(SettingsManagerTest, NewStyleSettingsTakePrecedenceOverLegacy) {
+    // If both old and new keys are present, the new keys win
+    JsonDocument doc;
+    doc["door_auto_mode"] = true;
+    doc["sunrise_offset_minutes"] = 99;
+    doc["door_auto_open_enabled"] = false;
+    doc["door_auto_open_offset_minutes"] = 10;
+
+    sm.setFromJsonDoc(doc);
+
+    EXPECT_FALSE(sm.getDoorAutoOpenEnabled());
+    EXPECT_EQ(sm.getDoorAutoOpenOffsetMinutes(), 10);
 }
 
-TEST_F(SettingsManagerTest, DoorAutoCloseAfterSunsetMinutesHandlesNegativeValues) {
-    sm.setDoorAutoCloseAfterSunsetMinutes(-30);
-    EXPECT_EQ(sm.getDoorAutoCloseAfterSunsetMinutes(), -30);
+TEST_F(SettingsManagerTest, DefaultsAllDaysEnabledForAutoOpenAndClose) {
+    for (int i = 0; i < 7; i++) {
+        EXPECT_TRUE(sm.getDoorAutoOpenDay(i));
+        EXPECT_TRUE(sm.getDoorAutoCloseDay(i));
+    }
 }
 
-TEST_F(SettingsManagerTest, DoorAutoCloseAfterSunsetMinutesHandlesZero) {
-    sm.setDoorAutoCloseAfterSunsetMinutes(0);
-    EXPECT_EQ(sm.getDoorAutoCloseAfterSunsetMinutes(), 0);
+TEST_F(SettingsManagerTest, AutoDaysRoundTripThroughJson) {
+    sm.setDoorAutoOpenDay(0, false); // disable Sunday open
+    sm.setDoorAutoCloseDay(6, false); // disable Saturday close
+
+    String json = sm.toJson(false);
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, json);
+    ASSERT_FALSE(err);
+
+    // Re-load and verify the day arrays persist
+    sm.setFromJsonDoc(doc);
+    EXPECT_FALSE(sm.getDoorAutoOpenDay(0));
+    EXPECT_TRUE(sm.getDoorAutoOpenDay(1));
+    EXPECT_FALSE(sm.getDoorAutoCloseDay(6));
+    EXPECT_TRUE(sm.getDoorAutoCloseDay(5));
 }
 
 // ============================================================================

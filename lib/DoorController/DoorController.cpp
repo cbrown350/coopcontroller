@@ -21,17 +21,20 @@ DoorController::DoorController() {
     currentState = DoorState::IDLE;
     currentPosition = DoorPosition::UNKNOWN;
     stateStartTime = 0;
-    autoMode = false;
+    autoOpenEnabled = false;
+    autoCloseEnabled = false;
     testMode = false;
     lastMovementDirection = DoorState::IDLE;
     lastSwitchCheck = 0;
     lastSwitchState = HIGH;
-    
+
     // Default configuration
     openTimeoutSeconds = 30;
     closeTimeoutSeconds = 30;
-    sunriseOffsetMinutes = 0;
-    sunsetOffsetMinutes = 0;
+    autoOpenOffsetMinutes = 0;
+    autoCloseOffsetMinutes = 0;
+    autoOpenDays.fill(true);
+    autoCloseDays.fill(true);
     lockoutEnabled = false;
 
     // Timeout auto-calculation
@@ -158,13 +161,13 @@ void DoorController::update() {
         setState(DoorState::FAULT);
     }
     
-    // Check automatic schedule (sunrise/sunset open/close requires autoMode)
+    // Check automatic schedule. Auto-open and auto-close are independent:
+    // each is gated by its own enable flag and day-of-week list.
     if (currentState == DoorState::IDLE || currentState == DoorState::OPEN || currentState == DoorState::CLOSED) {
-        if (autoMode) {
-            checkSchedule();
+        if (autoOpenEnabled || autoCloseEnabled) {
+            if (autoOpenEnabled) checkAutoOpenSchedule();
+            if (autoCloseEnabled) checkAutoCloseSchedule();
         }
-        // Auto-close after sunset works independently of autoMode
-        checkAutoCloseAfterSunset();
     }
 }
 
@@ -391,30 +394,23 @@ void DoorController::checkTimeout() {
     }
 }
 
-void DoorController::checkSchedule() {
+void DoorController::checkAutoOpenSchedule() {
     if (lockoutEnabled) return;
+    int dayIdx = getTodayDayOfWeek();
+    if (dayIdx < 0 || !autoOpenDays[dayIdx]) return;
     if (shouldOpenBySchedule() && currentPosition != DoorPosition::OPEN) {
         logger.logInfo("Schedule: Opening door (sunrise)");
         open(TriggerSource::SUNRISE);
-    } else if (shouldCloseBySchedule() && currentPosition != DoorPosition::CLOSED) {
-        logger.logInfo("Schedule: Closing door (sunset)");
-        close(TriggerSource::SUNSET);
     }
 }
 
-void DoorController::checkAutoCloseAfterSunset() {
+void DoorController::checkAutoCloseSchedule() {
     if (lockoutEnabled) return;
-    if (!settingsManager.getDoorAutoCloseAfterSunsetEnabled()) return;
-    if (autoMode) return; // Already handled by checkSchedule when autoMode is on
-    if (currentPosition == DoorPosition::CLOSED) return;
-
-    int currentMinutes = getCurrentLocalMinutes();
-    if (currentMinutes < 0) return;
-
-    int autoCloseTime = sunriseSunset->getSunsetMinutes() + settingsManager.getDoorAutoCloseAfterSunsetMinutes();
-    if (currentMinutes >= autoCloseTime) {
-        logger.logInfo("Auto-close after sunset: Closing door");
-        close(TriggerSource::AUTO_CLOSE_SUNSET);
+    int dayIdx = getTodayDayOfWeek();
+    if (dayIdx < 0 || !autoCloseDays[dayIdx]) return;
+    if (shouldCloseBySchedule() && currentPosition != DoorPosition::CLOSED) {
+        logger.logInfo("Schedule: Closing door (sunset)");
+        close(TriggerSource::SUNSET);
     }
 }
 
@@ -508,14 +504,28 @@ int DoorController::getCloseTimingCount() const {
 }
 
 // Mode control
-void DoorController::setAutoMode(bool enabled, TriggerSource trigger) {
-    autoMode = enabled;
+void DoorController::setAutoOpenEnabled(bool enabled, TriggerSource trigger) {
+    autoOpenEnabled = enabled;
     lastTriggerSource_ = trigger;
-    logger.logfInfo("Door auto mode: %s (trigger: %s)", enabled ? "ENABLED" : "DISABLED", triggerSourceToString(trigger).c_str());
+    logger.logfInfo("Door auto-open: %s (trigger: %s)", enabled ? "ENABLED" : "DISABLED", triggerSourceToString(trigger).c_str());
+}
+
+void DoorController::setAutoCloseEnabled(bool enabled, TriggerSource trigger) {
+    autoCloseEnabled = enabled;
+    lastTriggerSource_ = trigger;
+    logger.logfInfo("Door auto-close: %s (trigger: %s)", enabled ? "ENABLED" : "DISABLED", triggerSourceToString(trigger).c_str());
 }
 
 bool DoorController::isAutoMode() const {
-    return autoMode;
+    return autoOpenEnabled || autoCloseEnabled;
+}
+
+bool DoorController::isAutoOpenEnabled() const {
+    return autoOpenEnabled;
+}
+
+bool DoorController::isAutoCloseEnabled() const {
+    return autoCloseEnabled;
 }
 
 void DoorController::setTestMode(bool enabled) {
@@ -615,22 +625,44 @@ void DoorController::setCloseTimeoutSeconds(unsigned int seconds) {
     logger.logfDebug("Door close timeout: %u seconds", closeTimeoutSeconds);
 }
 
-int DoorController::getSunriseOffsetMinutes() const {
-    return sunriseOffsetMinutes;
+int DoorController::getAutoOpenOffsetMinutes() const {
+    return autoOpenOffsetMinutes;
 }
 
-void DoorController::setSunriseOffsetMinutes(int minutes) {
-    sunriseOffsetMinutes = std::max(-60, std::min(60, minutes));
-    logger.logfDebug("Door sunrise offset: %d minutes", sunriseOffsetMinutes);
+void DoorController::setAutoOpenOffsetMinutes(int minutes) {
+    autoOpenOffsetMinutes = std::max(-120, std::min(120, minutes));
+    logger.logfDebug("Door auto-open offset: %d minutes", autoOpenOffsetMinutes);
 }
 
-int DoorController::getSunsetOffsetMinutes() const {
-    return sunsetOffsetMinutes;
+int DoorController::getAutoCloseOffsetMinutes() const {
+    return autoCloseOffsetMinutes;
 }
 
-void DoorController::setSunsetOffsetMinutes(int minutes) {
-    sunsetOffsetMinutes = std::max(-60, std::min(60, minutes));
-    logger.logfDebug("Door sunset offset: %d minutes", sunsetOffsetMinutes);
+void DoorController::setAutoCloseOffsetMinutes(int minutes) {
+    autoCloseOffsetMinutes = std::max(-120, std::min(120, minutes));
+    logger.logfDebug("Door auto-close offset: %d minutes", autoCloseOffsetMinutes);
+}
+
+bool DoorController::getAutoOpenDay(int dayIdx) const {
+    if (dayIdx < 0 || dayIdx > 6) return false;
+    return autoOpenDays[dayIdx];
+}
+
+void DoorController::setAutoOpenDay(int dayIdx, bool enabled) {
+    if (dayIdx < 0 || dayIdx > 6) return;
+    autoOpenDays[dayIdx] = enabled;
+    logger.logfDebug("Door auto-open day %d: %s", dayIdx, enabled ? "enabled" : "disabled");
+}
+
+bool DoorController::getAutoCloseDay(int dayIdx) const {
+    if (dayIdx < 0 || dayIdx > 6) return false;
+    return autoCloseDays[dayIdx];
+}
+
+void DoorController::setAutoCloseDay(int dayIdx, bool enabled) {
+    if (dayIdx < 0 || dayIdx > 6) return;
+    autoCloseDays[dayIdx] = enabled;
+    logger.logfDebug("Door auto-close day %d: %s", dayIdx, enabled ? "enabled" : "disabled");
 }
 
 // Statistics
@@ -658,7 +690,9 @@ void DoorController::toJson(JsonObject& json) const { // NOSONAR - json is writt
     json["state"] = getStateString();
     json["position"] = getPositionString();
     json["progress"] = getProgressPercentage();
-    json["auto_mode"] = autoMode;
+    json["auto_mode"] = isAutoMode();          // any auto enabled (backward-compat for status/MQTT)
+    json["auto_open_enabled"] = autoOpenEnabled;
+    json["auto_close_enabled"] = autoCloseEnabled;
     json["test_mode"] = testMode;
     json["lockout_enabled"] = lockoutEnabled;
     json["hall_open"] = (digitalRead(DOOR_A_HALL_SENSOR_OPEN_B_PIN) == LOW);
@@ -673,9 +707,10 @@ void DoorController::toJson(JsonObject& json) const { // NOSONAR - json is writt
 }
 
 String DoorController::getNextScheduledAction() const {
-    if (!autoMode) return "Auto mode disabled";
-    if (shouldOpenBySchedule()) return "Scheduled to open";
-    if (shouldCloseBySchedule()) return "Scheduled to close";
+    if (!autoOpenEnabled && !autoCloseEnabled) return "Auto mode disabled";
+    // Report whichever direction is enabled and relevant right now.
+    if (autoOpenEnabled && shouldOpenBySchedule()) return "Scheduled to open";
+    if (autoCloseEnabled && shouldCloseBySchedule()) return "Scheduled to close";
     return "No scheduled action";
 }
 
@@ -744,35 +779,66 @@ int DoorController::getCurrentLocalMinutes() const {
     return localMinutes;
 }
 
+// Day-of-week from local time. tm_wday: 0=Sunday..6=Saturday.
+// Falls back to -1 if time is unavailable.
+int DoorController::getTodayDayOfWeek() const {
+    time_t now = time(nullptr);
+    if (now < 0) return -1;
+
+    struct tm timeinfo{};
+#if defined(_WIN32)
+    if (localtime_s(&timeinfo, &now) != 0) return -1;
+#elif defined(ARDUINO) && !defined(ESP32)
+    struct tm* result = localtime(&now);
+    if (result == nullptr) return -1;
+    timeinfo = *result;
+#else
+    if (localtime_r(&now, &timeinfo) == nullptr) return -1;
+#endif
+
+#ifdef ESP32
+    // If timezone is configured, localtime_r already returns local-time tm_wday.
+    // Detect UTC (unconfigured tz) by comparing with gmtime and fall back gracefully.
+    struct tm utcTm{};
+    gmtime_r(&now, &utcTm);
+    if (timeinfo.tm_wday == utcTm.tm_wday && timeinfo.tm_hour == utcTm.tm_hour) {
+        // Treat as UTC; shift by timezone offset hours (best-effort day boundary)
+        int localWday = utcTm.tm_wday;
+        int localHour = utcTm.tm_hour + settingsManager.getTimezoneOffsetHours();
+        if (localHour < 0) localWday = (localWday + 6) % 7;
+        else if (localHour >= 24) localWday = (localWday + 1) % 7;
+        return localWday;
+    }
+#endif
+    return timeinfo.tm_wday;
+}
+
 // Schedule helpers using sunrise/sunset calculations
 bool DoorController::shouldOpenBySchedule() const {
     int currentMinutes = getCurrentLocalMinutes();
     if (currentMinutes < 0) return false;
 
-    int openTime = sunriseSunset->getSunriseMinutes() + sunriseOffsetMinutes;
+    int openTime = sunriseSunset->getSunriseMinutes() + autoOpenOffsetMinutes;
 
-    // Calculate the close time (must match shouldCloseBySchedule logic)
-    int closeTime = sunriseSunset->getSunsetMinutes() + sunsetOffsetMinutes;
-    if (settingsManager.getDoorAutoCloseAfterSunsetEnabled()) {
-        int autoCloseTime = sunriseSunset->getSunsetMinutes() + settingsManager.getDoorAutoCloseAfterSunsetMinutes();
-        closeTime = std::max(closeTime, autoCloseTime);
+    // Calculate the close time (must match shouldCloseBySchedule logic).
+    // Used as the upper bound of the daytime open window so that auto-open
+    // does not re-open the door after auto-close fires, which would create
+    // an open/close loop. Only apply this guard when auto-close is enabled.
+    int closeTime = sunriseSunset->getSunsetMinutes() + autoCloseOffsetMinutes;
+
+    if (autoCloseEnabled) {
+        // Only open during the daytime window: after sunrise but before close time
+        return (currentMinutes >= openTime && currentMinutes < closeTime && currentPosition != DoorPosition::OPEN);
     }
-
-    // Only open during the daytime window: after sunrise but before close time
-    // Without this upper bound, the open schedule would re-open the door after
-    // auto-close fires at sunset, creating an open/close loop
-    return (currentMinutes >= openTime && currentMinutes < closeTime && currentPosition != DoorPosition::OPEN);
+    // No auto-close enabled: only the lower bound applies
+    return (currentMinutes >= openTime && currentPosition != DoorPosition::OPEN);
 }
 
 bool DoorController::shouldCloseBySchedule() const {
     int currentMinutes = getCurrentLocalMinutes();
     if (currentMinutes < 0) return false;
 
-    int closeTime = sunriseSunset->getSunsetMinutes() + sunsetOffsetMinutes;
-    if (settingsManager.getDoorAutoCloseAfterSunsetEnabled()) {
-        int autoCloseTime = sunriseSunset->getSunsetMinutes() + settingsManager.getDoorAutoCloseAfterSunsetMinutes();
-        closeTime = std::max(closeTime, autoCloseTime);
-    }
+    int closeTime = sunriseSunset->getSunsetMinutes() + autoCloseOffsetMinutes;
     return (currentMinutes >= closeTime && currentPosition != DoorPosition::CLOSED);
 }
 time_t DoorController::getTodaySunrise() const {

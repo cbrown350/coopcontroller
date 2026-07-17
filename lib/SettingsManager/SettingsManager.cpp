@@ -315,10 +315,6 @@ String SettingsManager::getBuzzerType() const {
 }
 
 // Door control settings getters
-bool SettingsManager::getDoorAutoMode() const {
-    return settings.door_auto_mode;
-}
-
 int SettingsManager::getDoorOpenTimeoutSeconds() const {
     return settings.door_open_timeout_seconds;
 }
@@ -327,6 +323,33 @@ int SettingsManager::getDoorCloseTimeoutSeconds() const {
     return settings.door_close_timeout_seconds;
 }
 
+bool SettingsManager::getDoorAutoOpenEnabled() const {
+    return settings.door_auto_open_enabled;
+}
+
+int SettingsManager::getDoorAutoOpenOffsetMinutes() const {
+    return settings.door_auto_open_offset_minutes;
+}
+
+bool SettingsManager::getDoorAutoOpenDay(int dayIdx) const {
+    if (dayIdx < 0 || dayIdx > 6) return false;
+    return settings.door_auto_open_days[dayIdx];
+}
+
+bool SettingsManager::getDoorAutoCloseEnabled() const {
+    return settings.door_auto_close_enabled;
+}
+
+int SettingsManager::getDoorAutoCloseOffsetMinutes() const {
+    return settings.door_auto_close_offset_minutes;
+}
+
+bool SettingsManager::getDoorAutoCloseDay(int dayIdx) const {
+    if (dayIdx < 0 || dayIdx > 6) return false;
+    return settings.door_auto_close_days[dayIdx];
+}
+
+// Light sunrise/sunset offset (vestigial LightController-owned fields)
 int SettingsManager::getSunriseOffsetMinutes() const {
     return settings.sunrise_offset_minutes;
 }
@@ -353,14 +376,6 @@ String SettingsManager::getTimezonePosix() const {
 }
 
 // Door advanced features getters
-bool SettingsManager::getDoorAutoCloseAfterSunsetEnabled() const {
-    return settings.door_auto_close_after_sunset_enabled;
-}
-
-int SettingsManager::getDoorAutoCloseAfterSunsetMinutes() const {
-    return settings.door_auto_close_after_sunset_minutes;
-}
-
 bool SettingsManager::getDoorLockoutEnabled() const {
     return settings.door_lockout_enabled;
 }
@@ -600,10 +615,6 @@ void SettingsManager::setBuzzerType(const String& type) {
 }
 
 // Door control settings setters
-void SettingsManager::setDoorAutoMode(bool enabled) {
-    settings.door_auto_mode = enabled;
-}
-
 void SettingsManager::setDoorOpenTimeoutSeconds(int seconds) {
     settings.door_open_timeout_seconds = seconds;
 }
@@ -612,6 +623,33 @@ void SettingsManager::setDoorCloseTimeoutSeconds(int seconds) {
     settings.door_close_timeout_seconds = seconds;
 }
 
+void SettingsManager::setDoorAutoOpenEnabled(bool enabled) {
+    settings.door_auto_open_enabled = enabled;
+}
+
+void SettingsManager::setDoorAutoOpenOffsetMinutes(int minutes) {
+    settings.door_auto_open_offset_minutes = minutes;
+}
+
+void SettingsManager::setDoorAutoOpenDay(int dayIdx, bool enabled) {
+    if (dayIdx < 0 || dayIdx > 6) return;
+    settings.door_auto_open_days[dayIdx] = enabled;
+}
+
+void SettingsManager::setDoorAutoCloseEnabled(bool enabled) {
+    settings.door_auto_close_enabled = enabled;
+}
+
+void SettingsManager::setDoorAutoCloseOffsetMinutes(int minutes) {
+    settings.door_auto_close_offset_minutes = minutes;
+}
+
+void SettingsManager::setDoorAutoCloseDay(int dayIdx, bool enabled) {
+    if (dayIdx < 0 || dayIdx > 6) return;
+    settings.door_auto_close_days[dayIdx] = enabled;
+}
+
+// Light sunrise/sunset offset (vestigial LightController-owned fields)
 void SettingsManager::setSunriseOffsetMinutes(int minutes) {
     settings.sunrise_offset_minutes = minutes;
 }
@@ -638,14 +676,6 @@ void SettingsManager::setTimezonePosix(const String& tz) {
 }
 
 // Door advanced features setters
-void SettingsManager::setDoorAutoCloseAfterSunsetEnabled(bool enabled) {
-    settings.door_auto_close_after_sunset_enabled = enabled;
-}
-
-void SettingsManager::setDoorAutoCloseAfterSunsetMinutes(int minutes) {
-    settings.door_auto_close_after_sunset_minutes = minutes;
-}
-
 void SettingsManager::setDoorLockoutEnabled(bool enabled) {
     settings.door_lockout_enabled = enabled;
 }
@@ -799,12 +829,83 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.buzzer_type = doc["buzzer_type"] | defaultSettings.buzzer_type;
     
     // Load door control settings
-    settings.door_auto_mode = doc["door_auto_mode"] | defaultSettings.door_auto_mode;
     settings.door_open_timeout_seconds = doc["door_open_timeout_seconds"] | defaultSettings.door_open_timeout_seconds;
     settings.door_close_timeout_seconds = doc["door_close_timeout_seconds"] | defaultSettings.door_close_timeout_seconds;
+
+    // Light sunrise/sunset offset (vestigial LightController-owned fields; kept
+    // for backward-compat — LightController does not use them for scheduling).
     settings.sunrise_offset_minutes = doc["sunrise_offset_minutes"] | defaultSettings.sunrise_offset_minutes;
     settings.sunset_offset_minutes = doc["sunset_offset_minutes"] | defaultSettings.sunset_offset_minutes;
-    
+
+    // Automatic open (independent of close)
+    settings.door_auto_open_enabled = doc["door_auto_open_enabled"] | defaultSettings.door_auto_open_enabled;
+    settings.door_auto_open_offset_minutes = doc["door_auto_open_offset_minutes"] | defaultSettings.door_auto_open_offset_minutes;
+    for (int i = 0; i < 7; i++) {
+        settings.door_auto_open_days[i] = defaultSettings.door_auto_open_days[i];
+    }
+    if (doc["door_auto_open_days"].is<JsonArrayConst>()) {
+        JsonArrayConst arr = doc["door_auto_open_days"].as<JsonArrayConst>();
+        for (int i = 0; i < 7 && i < (int)arr.size(); i++) {
+            if (arr[i].is<bool>()) settings.door_auto_open_days[i] = arr[i].as<bool>();
+        }
+    }
+
+    // Automatic close (independent of open)
+    settings.door_auto_close_enabled = doc["door_auto_close_enabled"] | defaultSettings.door_auto_close_enabled;
+    settings.door_auto_close_offset_minutes = doc["door_auto_close_offset_minutes"] | defaultSettings.door_auto_close_offset_minutes;
+    for (int i = 0; i < 7; i++) {
+        settings.door_auto_close_days[i] = defaultSettings.door_auto_close_days[i];
+    }
+    if (doc["door_auto_close_days"].is<JsonArrayConst>()) {
+        JsonArrayConst arr = doc["door_auto_close_days"].as<JsonArrayConst>();
+        for (int i = 0; i < 7 && i < (int)arr.size(); i++) {
+            if (arr[i].is<bool>()) settings.door_auto_close_days[i] = arr[i].as<bool>();
+        }
+    }
+
+    // Migration from legacy door model (issue #3). We reconstruct the SAME
+    // wall-clock behavior the old firmware produced so a device keeps opening
+    // and closing at the same times after an upgrade.
+    //
+    // Old semantics:
+    //   - Auto-open ran only when door_auto_mode==true, at sunrise + sunrise_offset.
+    //   - Auto-close ran when EITHER door_auto_mode==true (close at
+    //     max(sunset+sunset_offset, sunset+after_sunset_minutes when after-sunset on))
+    //     OR door_auto_close_after_sunset_enabled==true (close at sunset+after_sunset_minutes).
+    //
+    // New-style keys (door_auto_open_enabled, etc.) always take precedence when
+    // present, so re-loading a file this firmware saved never re-migrates.
+    const bool hasLegacyAutoMode = doc["door_auto_mode"].is<bool>();
+    const bool hasLegacyAfterSunset = doc["door_auto_close_after_sunset_enabled"].is<bool>();
+    const bool legacyAutoMode = hasLegacyAutoMode && doc["door_auto_mode"].as<bool>();
+    const bool legacyAfterSunsetEnabled = hasLegacyAfterSunset && doc["door_auto_close_after_sunset_enabled"].as<bool>();
+    const int  legacySunriseOffset = doc["sunrise_offset_minutes"] | 0;
+    const int  legacySunsetOffset = doc["sunset_offset_minutes"] | 0;
+    const int  legacyAfterSunsetMinutes = doc["door_auto_close_after_sunset_minutes"] | 0;
+
+    // Auto-open enable
+    if (!doc["door_auto_open_enabled"].is<bool>() && hasLegacyAutoMode) {
+        settings.door_auto_open_enabled = legacyAutoMode;
+    }
+    // Auto-open offset
+    if (!doc["door_auto_open_offset_minutes"].is<int>() && doc["sunrise_offset_minutes"].is<int>()) {
+        settings.door_auto_open_offset_minutes = legacySunriseOffset;
+    }
+    // Auto-close enable: on if either legacy mechanism would have closed the door
+    if (!doc["door_auto_close_enabled"].is<bool>() && (hasLegacyAutoMode || hasLegacyAfterSunset)) {
+        settings.door_auto_close_enabled = legacyAutoMode || legacyAfterSunsetEnabled;
+    }
+    // Auto-close offset: reproduce the old effective close time
+    if (!doc["door_auto_close_offset_minutes"].is<int>()
+            && (doc["sunset_offset_minutes"].is<int>() || hasLegacyAfterSunset)) {
+        int closeOffset = legacySunsetOffset;
+        if (legacyAfterSunsetEnabled) {
+            closeOffset = legacyAutoMode ? std::max(legacySunsetOffset, legacyAfterSunsetMinutes)
+                                         : legacyAfterSunsetMinutes;
+        }
+        settings.door_auto_close_offset_minutes = closeOffset;
+    }
+
     // Load location settings
     settings.latitude = doc["latitude"] | defaultSettings.latitude;
     settings.longitude = doc["longitude"] | defaultSettings.longitude;
@@ -816,8 +917,6 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     }
 
     // Load door advanced features settings
-    settings.door_auto_close_after_sunset_enabled = doc["door_auto_close_after_sunset_enabled"] | defaultSettings.door_auto_close_after_sunset_enabled;
-    settings.door_auto_close_after_sunset_minutes = doc["door_auto_close_after_sunset_minutes"] | defaultSettings.door_auto_close_after_sunset_minutes;
     settings.door_lockout_enabled = doc["door_lockout_enabled"] | defaultSettings.door_lockout_enabled;
     settings.door_timeout_auto_calc_enabled = doc["door_timeout_auto_calc_enabled"] | defaultSettings.door_timeout_auto_calc_enabled;
 
@@ -934,12 +1033,21 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["buzzer_type"] = settings.buzzer_type;
     
     // Door control settings
-    doc["door_auto_mode"] = settings.door_auto_mode;
     doc["door_open_timeout_seconds"] = settings.door_open_timeout_seconds;
     doc["door_close_timeout_seconds"] = settings.door_close_timeout_seconds;
+    doc["door_auto_open_enabled"] = settings.door_auto_open_enabled;
+    doc["door_auto_open_offset_minutes"] = settings.door_auto_open_offset_minutes;
+    JsonArray openDaysArr = doc["door_auto_open_days"].to<JsonArray>();
+    for (int i = 0; i < 7; i++) openDaysArr.add(settings.door_auto_open_days[i]);
+    doc["door_auto_close_enabled"] = settings.door_auto_close_enabled;
+    doc["door_auto_close_offset_minutes"] = settings.door_auto_close_offset_minutes;
+    JsonArray closeDaysArr = doc["door_auto_close_days"].to<JsonArray>();
+    for (int i = 0; i < 7; i++) closeDaysArr.add(settings.door_auto_close_days[i]);
+
+    // Light sunrise/sunset offset (vestigial LightController-owned fields)
     doc["sunrise_offset_minutes"] = settings.sunrise_offset_minutes;
     doc["sunset_offset_minutes"] = settings.sunset_offset_minutes;
-    
+
     // Location settings
     doc["latitude"] = settings.latitude;
     doc["longitude"] = settings.longitude;
@@ -947,8 +1055,6 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["timezone_posix"] = settings.timezone_posix;
 
     // Door advanced features settings
-    doc["door_auto_close_after_sunset_enabled"] = settings.door_auto_close_after_sunset_enabled;
-    doc["door_auto_close_after_sunset_minutes"] = settings.door_auto_close_after_sunset_minutes;
     doc["door_lockout_enabled"] = settings.door_lockout_enabled;
     doc["door_timeout_auto_calc_enabled"] = settings.door_timeout_auto_calc_enabled;
 

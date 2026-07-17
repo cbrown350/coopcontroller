@@ -34,19 +34,20 @@
   "buzzer_enabled": true,
   "buzzer_type": "ACTIVE",
 
-  "door_auto_mode": false,
   "door_open_timeout_seconds": 30,
   "door_close_timeout_seconds": 30,
-  "sunrise_offset_minutes": 0,
-  "sunset_offset_minutes": 0,
+  "door_auto_open_enabled": false,
+  "door_auto_open_offset_minutes": 0,
+  "door_auto_open_days": [true, true, true, true, true, true, true],
+  "door_auto_close_enabled": false,
+  "door_auto_close_offset_minutes": 0,
+  "door_auto_close_days": [true, true, true, true, true, true, true],
 
   "latitude": 40.7128,
   "longitude": -74.006,
   "timezone_offset_hours": -7,
   "timezone_posix": "MST7MDT,M3.2.0,M11.1.0",
 
-  "door_auto_close_after_sunset_enabled": false,
-  "door_auto_close_after_sunset_minutes": 0,
   "door_lockout_enabled": false,
   "door_timeout_auto_calc_enabled": false,
 
