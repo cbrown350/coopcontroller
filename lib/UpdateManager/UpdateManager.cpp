@@ -21,6 +21,7 @@ void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
     current_operation_start_ = 0;
     last_error_message_ = "";
 
+    check_requested_ = false;
     install_requested_ = false;
     install_skip_filesystem_ = false;
     install_force_ = false;
@@ -457,6 +458,13 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
     hal_->restart();
 }
 
+void UpdateManager::requestCheck() {
+    check_requested_ = true;  // coalesces repeated clicks while pending
+    status_ = UpdateStatus::CHECKING; // primitive write; lets UI poll immediately
+    last_check_ok_ = false;
+    logger.logInfo("Update check requested (deferred to main loop)");
+}
+
 void UpdateManager::requestInstall(bool skip_filesystem, bool force) {
     install_requested_ = true;
     install_skip_filesystem_ = skip_filesystem;
@@ -466,6 +474,15 @@ void UpdateManager::requestInstall(bool skip_filesystem, bool force) {
 
 void UpdateManager::update() {
     if (!hal_) return;
+
+    // Consume a deferred check before the generic busy guard because
+    // requestCheck() marks status CHECKING immediately for UI polling.
+    if (check_requested_) {
+        check_requested_ = false;
+        checkForUpdates();
+        return;
+    }
+
     if (status_ == UpdateStatus::DOWNLOADING || status_ == UpdateStatus::INSTALLING ||
         status_ == UpdateStatus::VERIFYING || status_ == UpdateStatus::CHECKING) {
         return; // Already busy

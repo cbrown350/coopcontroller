@@ -1290,7 +1290,9 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
     // OTA UPDATE ENDPOINTS
     // ========================================================================
 
-    // Check for updates
+    // Check for updates: enqueue only. GitHub TLS must run from the main loop,
+    // never in the async_tcp callback (concurrent TLS caused heap collapse and
+    // ESP_RST_PANIC on production).
     hal->webServerOn("/update/check", HAL_WebRequestMethod::HTTP_GET,
               [this](IWebRequest *request, IWebResponse *response)
               {
@@ -1298,7 +1300,18 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       response->send(503, "application/json", "{\"error\":\"Update manager not available\"}");
                       return;
                   }
-                  updateManager_->checkForUpdates();
+                  updateManager_->requestCheck();
+                  response->send(202, "application/json", "{\"status\":\"checking\"}");
+              });
+
+    // Return the most recent check result without starting network I/O.
+    hal->webServerOn("/update/check_result", HAL_WebRequestMethod::HTTP_GET,
+              [this](IWebRequest *request, IWebResponse *response)
+              {
+                  if (!updateManager_) {
+                      response->send(503, "application/json", "{\"error\":\"Update manager not available\"}");
+                      return;
+                  }
                   JsonDocument doc = updateManager_->getCheckResponseJson();
                   String jsonResponse;
                   serializeJson(doc, jsonResponse);

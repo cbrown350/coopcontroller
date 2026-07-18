@@ -86,11 +86,35 @@ function Update() {
     setCheckError('');
     setCheckResult(null);
     try {
+      // Enqueue only; GitHub TLS runs from the device's main loop, not the
+      // async web-server task. This endpoint returns 202 immediately.
       const response = await fetch('/update/check');
       if (!response.ok) {
         throw new Error(`Check failed: ${response.status} ${response.statusText}`);
       }
-      const data: UpdateCheckResult = await response.json();
+
+      // Poll lightweight status until the main-loop check finishes.
+      let completed = false;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const statusResponse = await fetch('/update/status');
+        if (!statusResponse.ok) continue;
+        const status: UpdateStatus = await statusResponse.json();
+        if (status.status !== 'checking') {
+          completed = true;
+          break;
+        }
+      }
+      if (!completed) {
+        throw new Error('Update check timed out');
+      }
+
+      // Read the completed result without triggering another network request.
+      const resultResponse = await fetch('/update/check_result');
+      if (!resultResponse.ok) {
+        throw new Error(`Failed to read check result: ${resultResponse.status}`);
+      }
+      const data: UpdateCheckResult = await resultResponse.json();
       setCheckResult(data);
     } catch (err: any) {
       setCheckError(err.message || 'Failed to check for updates');

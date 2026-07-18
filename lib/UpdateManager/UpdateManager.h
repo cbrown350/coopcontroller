@@ -125,7 +125,8 @@ private:
     // Phase tracking
     String phase_;
 
-    // Deferred install request (set by web handler, executed by main loop)
+    // Deferred requests (set by async web handler, executed by main loop)
+    bool check_requested_ = false;
     bool install_requested_;
     bool install_skip_filesystem_;
     bool install_force_;
@@ -197,6 +198,15 @@ public:
      * @param manifest_url New manifest URL, or empty for the default
      */
     void setManifestUrl(const String& manifest_url);
+
+    /**
+     * @brief Request a deferred update check
+     *
+     * Safe to call from an async web handler: only sets a flag. The actual
+     * GitHub TLS fetch runs later from update() on the main loop task, avoiding
+     * concurrent WiFiClientSecure contexts and async_tcp panic resets.
+     */
+    void requestCheck();
 
     /**
      * @brief Check for available updates

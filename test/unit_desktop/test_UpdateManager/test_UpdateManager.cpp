@@ -92,6 +92,46 @@ protected:
 };
 
 // ============================================================================
+// DEFERRED CHECK TESTS
+// ============================================================================
+
+// Regression for production ESP_RST_PANIC: /update/check used to call
+// checkForUpdates() directly from the async_tcp web callback, allocating a
+// multi-hop GitHub TLS client concurrently with main-loop weather/Telegram TLS.
+// requestCheck() must only enqueue; network I/O happens later in update().
+TEST_F(UpdateManagerTest, RequestCheck_DefersNetworkUntilMainLoopUpdate) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(VALID_MANIFEST);
+
+    um.requestCheck();
+
+    // No outbound HTTP from the requesting (web-handler) context.
+    EXPECT_EQ(mockHal.getLastHttpGetUrl(), String(""));
+
+    // Main-loop update performs the queued check.
+    um.update();
+    EXPECT_EQ(mockHal.getLastHttpGetUrl(), String("https://example.com/manifest.json"));
+    EXPECT_EQ(um.getLatestVersion(), String("2.0.0"));
+}
+
+// Repeated clicks while a check is pending coalesce into one pending request;
+// after update() consumes it, another update() does not fetch again when
+// automatic checks are disabled.
+TEST_F(UpdateManagerTest, RequestCheck_IsConsumedOnce) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(VALID_MANIFEST);
+
+    um.requestCheck();
+    um.requestCheck();
+    um.update();
+    EXPECT_EQ(um.getLatestVersion(), String("2.0.0"));
+
+    mockHal.setHttpGetResponse("");
+    um.update();
+    EXPECT_NE(um.getStatus().status, UpdateStatus::ERROR);
+}
+
+// ============================================================================
 // VERSION PARSING TESTS
 // ============================================================================
 
