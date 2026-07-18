@@ -729,6 +729,40 @@ void HAL_ESP32::unlockSharedState() {
 // HTTP CLIENT FUNCTIONS - For OTA Updates
 // ========================================================================
 
+// Read a single HTTP line (up to and including '\n') byte-by-byte from a TLS
+// client, bounded by an overall deadline. Returns the line WITHOUT the
+// trailing newline (CR/LF stripped).
+//
+// Why not readStringUntil('\n'): Arduino's Stream::readStringUntil() uses the
+// stream's internal setTimeout() and timedRead() per character. When
+// client.available() reports data but the full line hasn't all arrived yet
+// (common on TLS for long header lines — e.g. GitHub's ~750-char signed
+// release-asset redirect Location), readStringUntil() can return a partial
+// line or empty string when its internal timeout fires mid-line. That made
+// the GitHub manifest fetch intermittent (sometimes the redirect Location was
+// truncated/missed, so the redirect chain broke and httpGet returned "").
+// This reader keeps the overall deadline only and blocks on read bytes until
+// the newline or the connection closes, so long header lines are never split.
+static String readHttpLine(WiFiClientSecure& client, unsigned long deadlineMs) {
+  String line;
+  while (::millis() < deadlineMs) {
+    int c = client.read();
+    if (c < 0) {
+      // No data available right now; wait for more or connection close
+      if (!client.connected() && client.available() == 0) break;
+      delay(1);
+      continue;
+    }
+    if (c == '\n') break;
+    if (c != '\r') {
+      line += (char)c;
+      // Guard against a runaway header line (no newline in 8 KB)
+      if (line.length() > 8192) break;
+    }
+  }
+  return line;
+}
+
 std::unique_ptr<WiFiClientSecure> HAL_ESP32::createSecureClient(unsigned long timeout_ms) {
   // Refuse the TLS allocation when free heap is too low or fragmented to hold
   // the mbedtls context. The constructor's internal `new` would otherwise throw
@@ -807,16 +841,9 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
 
     client.print(request);
 
-    // Read status line
-    String statusLine = "";
-    while (client.connected()) {
-      if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
-      if (client.available()) {
-        statusLine = client.readStringUntil('\n');
-        break;
-      }
-      delay(10);
-    }
+    // Read status line (byte-by-byte; see readHttpLine for why not readStringUntil)
+    unsigned long deadline = startTime + timeout_ms;
+    String statusLine = readHttpLine(client, deadline);
 
     int statusCode = 0;
     int spaceIdx = statusLine.indexOf(' ');
@@ -828,23 +855,19 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     String response = "";
     bool headerDone = false;
     String redirectLocation = "";
-    unsigned long lastActivity = ::millis();
 
-    while (client.connected() && !headerDone) {
-      if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
-      if (client.available()) {
-        String line = client.readStringUntil('\n');
-        line.trim();
-        if (line.startsWith("Location:") || line.startsWith("location:")) {
-          redirectLocation = line.substring(9);
-          redirectLocation.trim();
-        }
-        if (line.length() == 0) {
-          headerDone = true;
-        }
-        lastActivity = ::millis();
-      } else {
-        delay(10);
+    while (!headerDone && ::millis() < deadline) {
+      String line = readHttpLine(client, deadline);
+      if (line.startsWith("Location:") || line.startsWith("location:")) {
+        redirectLocation = line.substring(9);
+        redirectLocation.trim();
+      }
+      if (line.length() == 0) {
+        headerDone = true;
+      }
+      // If the connection closed before we finished headers, stop waiting
+      if (!client.connected() && client.available() == 0 && line.length() == 0) {
+        headerDone = true;
       }
     }
 
@@ -860,16 +883,19 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
       return "";
     }
 
-    // Read body
-    while (client.connected() || client.available()) {
-      if (::millis() - startTime > timeout_ms) break;
-      if (client.available()) {
-        String line = client.readStringUntil('\n');
-        response += line;
-        lastActivity = ::millis();
+    // Read body byte-by-byte, preserving all bytes (including newlines). The
+    // manifest is JSON; we must return it intact so the parser can read it.
+    while (::millis() < deadline) {
+      int c = client.read();
+      if (c >= 0) {
+        response += (char)c;
+        // Cap the response to a sane size (manifest/JSON payloads are small;
+        // OTA binaries use httpGetStream, not this path)
+        if (response.length() > 65535) break;
+      } else if (!client.connected() && client.available() == 0) {
+        break;  // Server closed the connection — body complete
       } else {
-        if (::millis() - lastActivity > 1000) break;
-        delay(10);
+        delay(1);
       }
     }
 
