@@ -1,5 +1,5 @@
-import { createSignal, onMount, onCleanup, Show, createEffect } from 'solid-js'
-import { SystemStatus } from './types'
+import { createSignal, onMount, onCleanup, Show, For, createEffect } from 'solid-js'
+import { SystemStatus, WeatherStatus } from './types'
 import { authenticatedFetch } from './utils/api'
 
 function Status() {
@@ -74,6 +74,7 @@ function Status() {
       total_close_time: 0,
       total_cycles: 0,
       next_scheduled_action: 'No scheduled action',
+      weather_postponed: false,
       auto_calc_timeout_enabled: false,
       recommended_open_timeout: 0,
       recommended_close_timeout: 0
@@ -100,6 +101,9 @@ function Status() {
     sunrise_minutes: 0,
     sunset_minutes: 0
   })
+
+  // Weather state (null until first fetch / when disabled)
+  const [weatherStatus, setWeatherStatus] = createSignal<WeatherStatus | null>(null)
 
    const [localBrightness, setLocalBrightness] = createSignal(0)
 
@@ -135,6 +139,28 @@ function Status() {
     return `${displayHours}:${mins.toString().padStart(2, '0')} ${period}`
   }
 
+  // Weather unit label per OpenWeatherMap units system
+  const weatherUnitLabel = (units: string, kind: 'temp' | 'wind') => {
+    if (kind === 'temp') {
+      if (units === 'metric') return '°C'
+      if (units === 'standard') return 'K'
+      return '°F'
+    }
+    // wind
+    return units === 'imperial' ? 'mph' : 'm/s'
+  }
+
+  // Forecast timestamps are unix epoch seconds
+  const formatForecastTime = (epochSeconds: number) => {
+    if (!epochSeconds) return '--'
+    const d = new Date(epochSeconds * 1000)
+    let hours = d.getHours()
+    const period = hours >= 12 ? 'PM' : 'AM'
+    hours = hours % 12
+    if (hours === 0) hours = 12
+    return `${hours}${period}`
+  }
+
   const refreshSunTimes = async () => {
     try {
       const response = await fetch('/sun/times')
@@ -149,10 +175,11 @@ function Status() {
 
   const refreshSensorStatus = async () => {
     try {
-      const [sensorResponse, systemResponse, sunResponse] = await Promise.all([
+      const [sensorResponse, systemResponse, sunResponse, weatherResponse] = await Promise.all([
         fetch('/sensor_status'),
         fetch('/system_status'),
-        fetch('/sun/times')
+        fetch('/sun/times'),
+        fetch('/weather/status')
       ])
       
       if (!sensorResponse.ok) {
@@ -177,7 +204,13 @@ function Status() {
         const sunData = await sunResponse.json()
         setSunTimes(sunData)
       }
-      
+
+      if (weatherResponse.ok) {
+        const weatherData = await weatherResponse.json()
+        // Only show the card when the weather feature is enabled
+        setWeatherStatus(weatherData?.enabled ? weatherData : null)
+      }
+
       setLoading(false)
       // Clear any existing error when data is successfully fetched
       setError('')
@@ -925,6 +958,11 @@ function Status() {
                     <div class="stat-desc">
                       {sensorStatus().door?.next_scheduled_action || 'No scheduled action'}
                     </div>
+                    <Show when={sensorStatus().door?.weather_postponed}>
+                      <div class="stat-desc text-warning font-semibold">
+                        ⛆ Opening postponed — inclement weather
+                      </div>
+                    </Show>
                   </div>
 
                   <div class="stat">
@@ -1043,6 +1081,104 @@ function Status() {
               </div>
             </div>
           </div>
+
+          {/* Weather Section (only when the feature is enabled) */}
+          <Show when={weatherStatus()}>
+            <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">
+              <div class="card-body">
+                <h2 class="card-title">
+                  Weather
+                  <Show when={weatherStatus()!.gate_active}>
+                    <span class={`badge badge-sm ${weatherStatus()!.good_for_opening ? 'badge-success' : 'badge-warning'}`}>
+                      {weatherStatus()!.good_for_opening ? 'OK to open' : 'Hold door'}
+                    </span>
+                  </Show>
+                </h2>
+
+                {/* Not yet configured / no data */}
+                <Show when={!weatherStatus()!.configured}>
+                  <div class="alert alert-warning text-sm">
+                    Weather is enabled but no API key is set. Add an OpenWeatherMap API key in Settings.
+                  </div>
+                </Show>
+                <Show when={weatherStatus()!.configured && !weatherStatus()!.current}>
+                  <div class="text-sm opacity-70">
+                    Waiting for first weather update…
+                    <Show when={weatherStatus()!.last_error}>
+                      <span class="text-error"> ({weatherStatus()!.last_error})</span>
+                    </Show>
+                  </div>
+                </Show>
+
+                {/* Current conditions */}
+                <Show when={weatherStatus()!.current}>
+                  <div class="stats stats-vertical md:stats-horizontal w-full shadow bg-base-300">
+                    <div class="stat">
+                      <div class="stat-title">Conditions</div>
+                      <div class={`stat-value text-lg ${weatherStatus()!.current!.condition === 'GOOD' ? 'text-success' : 'text-warning'}`}>
+                        {weatherStatus()!.current!.description || weatherStatus()!.current!.condition}
+                      </div>
+                      <Show when={weatherStatus()!.decision_reason}>
+                        <div class="stat-desc">Decision: {weatherStatus()!.decision_reason}</div>
+                      </Show>
+                    </div>
+
+                    <Show when={weatherStatus()!.current!.temp !== undefined}>
+                      <div class="stat">
+                        <div class="stat-title">Temperature</div>
+                        <div class="stat-value text-lg">
+                          {weatherStatus()!.current!.temp!.toFixed(0)}{weatherUnitLabel(weatherStatus()!.units, 'temp')}
+                        </div>
+                        <Show when={weatherStatus()!.current!.feels_like !== undefined}>
+                          <div class="stat-desc">Feels {weatherStatus()!.current!.feels_like!.toFixed(0)}{weatherUnitLabel(weatherStatus()!.units, 'temp')}</div>
+                        </Show>
+                      </div>
+                    </Show>
+
+                    <Show when={weatherStatus()!.current!.wind_speed !== undefined}>
+                      <div class="stat">
+                        <div class="stat-title">Wind</div>
+                        <div class="stat-value text-lg">
+                          {weatherStatus()!.current!.wind_speed!.toFixed(0)} {weatherUnitLabel(weatherStatus()!.units, 'wind')}
+                        </div>
+                        <Show when={weatherStatus()!.current!.humidity !== undefined}>
+                          <div class="stat-desc">Humidity {weatherStatus()!.current!.humidity}%</div>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
+
+                  {/* Short-term forecast */}
+                  <Show when={weatherStatus()!.forecast && weatherStatus()!.forecast!.length > 0}>
+                    <div class="mt-2">
+                      <div class="text-sm font-semibold mb-1">Short-term forecast</div>
+                      <div class="flex flex-wrap gap-2">
+                        <For each={weatherStatus()!.forecast}>
+                          {(fc) => (
+                            <div class="badge badge-outline badge-lg gap-1">
+                              <span>{formatForecastTime(fc.dt)}</span>
+                              <span class="opacity-70">{fc.description}</span>
+                              <Show when={fc.temp !== undefined}>
+                                <span>{fc.temp!.toFixed(0)}{weatherUnitLabel(weatherStatus()!.units, 'temp')}</span>
+                              </Show>
+                              <Show when={fc.precip_prob !== undefined && fc.precip_prob >= 0}>
+                                <span class={fc.precip_prob! >= 0.5 ? 'text-warning' : 'opacity-70'}>💧{Math.round(fc.precip_prob! * 100)}%</span>
+                              </Show>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                  </Show>
+                </Show>
+
+                <div class="text-xs opacity-50 mt-1">
+                  Updates every {weatherStatus()!.update_interval_minutes} min · engine: {weatherStatus()!.decider ?? 'rules'} ·
+                  {' '}{weatherStatus()!.successful_fetches} ok / {weatherStatus()!.failed_fetches} failed
+                </div>
+              </div>
+            </div>
+          </Show>
 
           {/* Sunrise/Sunset Section */}
           <div class="card w-full mt-4 bg-base-200 card-sm shadow-sm">

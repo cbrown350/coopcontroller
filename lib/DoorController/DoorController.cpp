@@ -37,6 +37,11 @@ DoorController::DoorController() {
     autoCloseDays.fill(true);
     lockoutEnabled = false;
 
+    // Weather-gated auto-open
+    weatherManager = nullptr;
+    weatherPostponeUntilMs = 0;
+    weatherPostponedOpen = false;
+
     // Timeout auto-calculation
     openTimingHistory.fill(0);
     closeTimingHistory.fill(0);
@@ -399,6 +404,28 @@ void DoorController::checkAutoOpenSchedule() {
     int dayIdx = getTodayDayOfWeek();
     if (dayIdx < 0 || !autoOpenDays[dayIdx]) return;
     if (shouldOpenBySchedule() && currentPosition != DoorPosition::OPEN) {
+        // Weather gate: when a WeatherManager is attached and its gate is
+        // active, hold back opening during inclement weather. The schedule
+        // condition (shouldOpenBySchedule) already bounds this to the daytime
+        // window, so once the door has opened or the close time arrives, this
+        // path stops firing on its own.
+        if (weatherManager != nullptr && weatherManager->isWeatherGateActive() &&
+            !weatherManager->isWeatherGoodForOpening()) {
+            unsigned long now = millis();
+            // Recheck about once an hour rather than every loop, to avoid log
+            // spam. millis() only moves forward here (no rollover concern for
+            // the ~49-day wrap within a single daytime window).
+            if (weatherPostponeUntilMs == 0 || now >= weatherPostponeUntilMs) {
+                logger.logInfo("Schedule: auto-open postponed due to inclement weather; will recheck in ~1 hour");
+                weatherPostponeUntilMs = now + 3600000UL; // 1 hour
+            }
+            weatherPostponedOpen = true;
+            return;
+        }
+
+        // Weather is good (or not gating) — clear any postpone state and open.
+        weatherPostponedOpen = false;
+        weatherPostponeUntilMs = 0;
         logger.logInfo("Schedule: Opening door (sunrise)");
         open(TriggerSource::SUNRISE);
     }
@@ -503,10 +530,24 @@ int DoorController::getCloseTimingCount() const {
     return closeTimingCount;
 }
 
+// Weather gate
+void DoorController::setWeatherManager(WeatherManager* _weatherManager) {
+    weatherManager = _weatherManager;
+}
+
+bool DoorController::isWeatherPostponed() const {
+    // Only meaningful while the door is not already open.
+    return weatherPostponedOpen && currentPosition != DoorPosition::OPEN;
+}
+
 // Mode control
 void DoorController::setAutoOpenEnabled(bool enabled, TriggerSource trigger) {
     autoOpenEnabled = enabled;
     lastTriggerSource_ = trigger;
+    // Reset any weather-postpone state when the mode is toggled so a stale
+    // recheck timer doesn't carry over.
+    weatherPostponedOpen = false;
+    weatherPostponeUntilMs = 0;
     logger.logfInfo("Door auto-open: %s (trigger: %s)", enabled ? "ENABLED" : "DISABLED", triggerSourceToString(trigger).c_str());
 }
 
@@ -701,6 +742,7 @@ void DoorController::toJson(JsonObject& json) const { // NOSONAR - json is writt
     json["total_close_time"] = totalCloseTime / 1000;
     json["total_cycles"] = totalCycles;
     json["next_scheduled_action"] = getNextScheduledAction();
+    json["weather_postponed"] = isWeatherPostponed();
     json["auto_calc_timeout_enabled"] = autoCalcTimeoutEnabled;
     json["recommended_open_timeout"] = getRecommendedOpenTimeout();
     json["recommended_close_timeout"] = getRecommendedCloseTimeout();
@@ -709,7 +751,10 @@ void DoorController::toJson(JsonObject& json) const { // NOSONAR - json is writt
 String DoorController::getNextScheduledAction() const {
     if (!autoOpenEnabled && !autoCloseEnabled) return "Auto mode disabled";
     // Report whichever direction is enabled and relevant right now.
-    if (autoOpenEnabled && shouldOpenBySchedule()) return "Scheduled to open";
+    if (autoOpenEnabled && shouldOpenBySchedule()) {
+        if (isWeatherPostponed()) return "Open postponed (weather)";
+        return "Scheduled to open";
+    }
     if (autoCloseEnabled && shouldCloseBySchedule()) return "Scheduled to close";
     return "No scheduled action";
 }

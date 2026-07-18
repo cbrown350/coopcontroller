@@ -101,6 +101,7 @@ export interface DoorStatus {
   total_close_time: number;
   total_cycles: number;
   next_scheduled_action: string;
+  weather_postponed?: boolean;
   auto_calc_timeout_enabled: boolean;
   recommended_open_timeout: number;
   recommended_close_timeout: number;
@@ -155,4 +156,45 @@ export interface Settings {
   history_buffer_size?: number;
   auto_update_enabled?: boolean;
   update_check_interval_hours?: number;
+  weather_enabled?: boolean;
+  weather_api_key?: string;
+  weather_units?: string;
+  weather_update_interval_minutes?: number;
+}
+
+export interface WeatherCurrent {
+  condition: string; // "GOOD" | "INCLEMENT" | "UNKNOWN"
+  description: string;
+  icon: string;
+  temp?: number;
+  feels_like?: number;
+  humidity?: number;
+  wind_speed?: number;
+  pressure?: number;
+  cloudiness?: number;
+  fetch_time: number;
+}
+
+export interface WeatherForecast {
+  dt: number;
+  temp?: number;
+  wind_speed?: number;
+  precip_prob?: number;
+  description: string;
+}
+
+export interface WeatherStatus {
+  enabled: boolean;
+  configured: boolean;
+  units: string;
+  gate_active: boolean;
+  good_for_opening: boolean;
+  decider?: string;
+  decision_reason?: string;
+  update_interval_minutes: number;
+  successful_fetches: number;
+  failed_fetches: number;
+  last_error?: string;
+  current?: WeatherCurrent;
+  forecast?: WeatherForecast[];
 }

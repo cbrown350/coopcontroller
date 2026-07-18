@@ -453,6 +453,41 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       mqttManager_->setConfig(mqttConfig);
                   }
 
+                  // Handle weather (OpenWeatherMap) settings
+                  {
+                      bool weatherChanged = false;
+                      if (jsonObj["weather_enabled"].is<bool>()) {
+                          bool en = jsonObj["weather_enabled"].as<bool>();
+                          settingsManager.setWeatherEnabled(en);
+                          if (weatherManager_) weatherManager_->setEnabled(en);
+                          weatherChanged = true;
+                      }
+                      if (jsonObj["weather_api_key"].is<String>()) {
+                          String key = jsonObj["weather_api_key"].as<String>();
+                          settingsManager.setWeatherApiKey(key);
+                          if (weatherManager_) weatherManager_->setApiKey(key);
+                          weatherChanged = true;
+                      }
+                      if (jsonObj["weather_units"].is<String>()) {
+                          settingsManager.setWeatherUnits(jsonObj["weather_units"].as<String>());
+                          if (weatherManager_) weatherManager_->setUnits(settingsManager.getWeatherUnits());
+                          weatherChanged = true;
+                      }
+                      if (jsonObj["weather_update_interval_minutes"].is<int>()) {
+                          settingsManager.setWeatherUpdateIntervalMinutes(jsonObj["weather_update_interval_minutes"].as<unsigned int>());
+                          if (weatherManager_) weatherManager_->setUpdateIntervalMinutes(settingsManager.getWeatherUpdateIntervalMinutes());
+                          weatherChanged = true;
+                      }
+                      // Keep the weather location in sync with the coop location.
+                      if (weatherManager_ && locationChanged) {
+                          weatherManager_->setLocation(settingsManager.getLatitude(), settingsManager.getLongitude());
+                      }
+                      // Note: do NOT trigger a synchronous forceRefresh() from this
+                      // async web handler — TLS/JSON work must stay on the loop
+                      // task (issue #4). The next loop tick will refresh if enabled.
+                      (void)weatherChanged;
+                  }
+
                   // Handle notification settings - Telegram
                   if (jsonObj["telegram_enabled"].is<bool>()) {
                       settingsManager.setTelegramEnabled(jsonObj["telegram_enabled"].as<bool>());
@@ -1869,6 +1904,29 @@ String CoopControllerWebServer::base64Decode(const String& input) {
     }
 
     return output;
+}
+
+void CoopControllerWebServer::setWeatherManager(WeatherManager* weatherManager) {
+    weatherManager_ = weatherManager;
+
+    if (!weatherManager_ || !hal) return;
+
+    // Weather status endpoint - current conditions + short forecast for status page
+    hal->webServerOn("/weather/status", HAL_WebRequestMethod::HTTP_GET,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!weatherManager_) {
+                response->send(200, "application/json", R"({"enabled":false,"configured":false})");
+                return;
+            }
+            JsonDocument doc;
+            JsonObject obj = doc.to<JsonObject>();
+            weatherManager_->toJson(obj);
+            String output;
+            serializeJson(doc, output);
+            response->send(200, "application/json", output.c_str());
+        });
+
+    logger.logInfo("Weather endpoint registered");
 }
 
 void CoopControllerWebServer::setNotificationManager(NotificationManager* notificationManager) {

@@ -123,6 +123,13 @@ function Settings() {
   const [autoUpdateEnabled, setAutoUpdateEnabled] = createSignal<boolean | null>(null)
   const [updateCheckIntervalHours, setUpdateCheckIntervalHours] = createSignal<number | null>(null)
 
+  // Weather (OpenWeatherMap) settings
+  const [weatherEnabled, setWeatherEnabled] = createSignal<boolean | null>(null)
+  const [weatherApiKey, setWeatherApiKey] = createSignal('')
+  const [showWeatherApiKey, setShowWeatherApiKey] = createSignal(false)
+  const [weatherUnits, setWeatherUnits] = createSignal<string>('imperial')
+  const [weatherUpdateIntervalMinutes, setWeatherUpdateIntervalMinutes] = createSignal<number | null>(10)
+
   // Notification settings - Telegram
   const [telegramEnabled, setTelegramEnabled] = createSignal<boolean | null>(null)
   const [telegramBotToken, setTelegramBotToken] = createSignal('')
@@ -283,6 +290,12 @@ function Settings() {
       setAutoUpdateEnabled(settings.auto_update_enabled ?? false)
       setUpdateCheckIntervalHours(settings.update_check_interval_hours ?? 24)
 
+      // Load weather settings (API key never returned for security)
+      setWeatherEnabled(settings.weather_enabled ?? false)
+      setWeatherApiKey('')
+      setWeatherUnits(settings.weather_units ?? 'imperial')
+      setWeatherUpdateIntervalMinutes(settings.weather_update_interval_minutes ?? 10)
+
       // Load notification settings
       setTelegramEnabled(settings.telegram_enabled ?? false)
       setTelegramBotToken('') // Never load token back for security
@@ -415,6 +428,9 @@ function Settings() {
         history_buffer_size: historyBufferSize() ?? 500,
         auto_update_enabled: autoUpdateEnabled() ?? false,
         update_check_interval_hours: updateCheckIntervalHours() ?? 24,
+        weather_enabled: weatherEnabled() ?? false,
+        weather_units: weatherUnits() ?? 'imperial',
+        weather_update_interval_minutes: weatherUpdateIntervalMinutes() ?? 10,
         water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
         water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
         telegram_enabled: telegramEnabled() ?? false,
@@ -447,6 +463,11 @@ function Settings() {
       // Handle API password: only include if provided (non-empty)
       if (apiPassword().length > 0) {
         settingsPayload['api_password'] = apiPassword()
+      }
+
+      // Handle weather API key: only include if provided (non-empty)
+      if (weatherApiKey().length > 0) {
+        settingsPayload['weather_api_key'] = weatherApiKey()
       }
 
       // Handle Telegram bot token: only include if provided (non-empty)
@@ -1582,6 +1603,68 @@ function Settings() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Weather-Based Door Opening */}
+      <h2 class="text-lg font-bold mb-4 mt-10">Weather</h2>
+      <div class="card bg-base-200 card-sm shadow-sm mt-4">
+        <div class="card-body">
+          <h2 class="card-title">Weather-Based Door Opening</h2>
+          <div class="fieldset-label">
+            When enabled, the automatic door open (sunrise) checks current conditions and the
+            short-term forecast from OpenWeatherMap first. If the weather is inclement
+            (rain, snow, storms, high wind, or extreme cold), opening is postponed and
+            rechecked about once an hour until the weather clears or the auto-close/sunset
+            time arrives. Auto-close is never blocked. Uses your Location coordinates above.
+          </div>
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">Enable Weather Check</legend>
+            <label class="label cursor-pointer justify-start gap-2">
+              <span class="label-text">Gate automatic opening on weather</span>
+              <Show when={loaded()}>
+                <input type="checkbox" class="toggle toggle-accent"
+                  checked={weatherEnabled() ?? false}
+                  onChange={(e) => setWeatherEnabled(e.currentTarget.checked)} />
+              </Show>
+            </label>
+          </fieldset>
+          <Show when={weatherEnabled()}>
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">OpenWeatherMap API Key</legend>
+              <div class="join w-full">
+                <input type={showWeatherApiKey() ? 'text' : 'password'}
+                  value={weatherApiKey()}
+                  onInput={(e) => setWeatherApiKey(e.target.value)}
+                  placeholder="Enter API key (from openweathermap.org)"
+                  class="input join-item w-full" />
+                <button type="button" class="btn join-item"
+                  onClick={() => setShowWeatherApiKey(!showWeatherApiKey())}>
+                  {showWeatherApiKey() ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <div class="fieldset-label">Free key from openweathermap.org (Current Weather + 5-day/3-hour forecast). Leave blank to keep existing key.</div>
+            </fieldset>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Units</legend>
+                <select class="select w-full" value={weatherUnits()}
+                  onInput={(e) => setWeatherUnits((e.target as HTMLSelectElement).value)}>
+                  <option value="imperial">Imperial (°F, mph)</option>
+                  <option value="metric">Metric (°C, m/s)</option>
+                  <option value="standard">Standard (K, m/s)</option>
+                </select>
+              </fieldset>
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Update Interval (minutes)</legend>
+                <input type="number" min="5" max="360" step="5"
+                  value={weatherUpdateIntervalMinutes() ?? 10}
+                  onInput={(e) => setWeatherUpdateIntervalMinutes(parseInt(e.target.value) || 10)}
+                  class="input w-full" />
+                <div class="fieldset-label">How often to refresh weather (5-360 min, default 10). Kept well within the free tier.</div>
+              </fieldset>
+            </div>
+          </Show>
         </div>
       </div>
 

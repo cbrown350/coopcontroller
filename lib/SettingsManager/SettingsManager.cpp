@@ -976,6 +976,12 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     settings.notify_door_fault = doc["notify_door_fault"] | defaultSettings.notify_door_fault;
     settings.notify_wifi_disconnect = doc["notify_wifi_disconnect"] | defaultSettings.notify_wifi_disconnect;
     settings.notify_system_error = doc["notify_system_error"] | defaultSettings.notify_system_error;
+
+    // Load weather (OpenWeatherMap) settings
+    settings.weather_enabled = doc["weather_enabled"] | defaultSettings.weather_enabled;
+    if (doc["weather_api_key"].is<const char*>()) settings.weather_api_key = doc["weather_api_key"].as<String>();
+    if (doc["weather_units"].is<const char*>()) settings.weather_units = doc["weather_units"].as<String>();
+    settings.weather_update_interval_minutes = doc["weather_update_interval_minutes"] | defaultSettings.weather_update_interval_minutes;
 }
 
 JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
@@ -1118,6 +1124,15 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["notify_wifi_disconnect"] = settings.notify_wifi_disconnect;
     doc["notify_system_error"] = settings.notify_system_error;
 
+    // Weather (OpenWeatherMap) settings. API key is a secret, so it is only
+    // serialized when passwords are included (NVS backup), never to the web UI.
+    doc["weather_enabled"] = settings.weather_enabled;
+    if (includePassword && settings.weather_api_key.length() != 0) {
+        doc["weather_api_key"] = settings.weather_api_key;
+    }
+    doc["weather_units"] = settings.weather_units;
+    doc["weather_update_interval_minutes"] = settings.weather_update_interval_minutes;
+
     return doc;
 }
 
@@ -1239,3 +1254,22 @@ void SettingsManager::setNotifySensorError(bool enabled) { settings.notify_senso
 void SettingsManager::setNotifyDoorFault(bool enabled) { settings.notify_door_fault = enabled; }
 void SettingsManager::setNotifyWifiDisconnect(bool enabled) { settings.notify_wifi_disconnect = enabled; }
 void SettingsManager::setNotifySystemError(bool enabled) { settings.notify_system_error = enabled; }
+
+// Weather (OpenWeatherMap) getters
+bool SettingsManager::getWeatherEnabled() const { return settings.weather_enabled; }
+String SettingsManager::getWeatherApiKey() const { return settings.weather_api_key; }
+String SettingsManager::getWeatherUnits() const { return settings.weather_units; }
+unsigned int SettingsManager::getWeatherUpdateIntervalMinutes() const { return settings.weather_update_interval_minutes; }
+
+// Weather (OpenWeatherMap) setters
+void SettingsManager::setWeatherEnabled(bool enabled) { settings.weather_enabled = enabled; }
+void SettingsManager::setWeatherApiKey(const String& key) { settings.weather_api_key = key; }
+void SettingsManager::setWeatherUnits(const String& units) {
+    // Only accept the three OpenWeatherMap unit systems; ignore anything else.
+    if (units == "imperial" || units == "metric" || units == "standard") {
+        settings.weather_units = units;
+    }
+}
+void SettingsManager::setWeatherUpdateIntervalMinutes(unsigned int minutes) {
+    settings.weather_update_interval_minutes = constrain(minutes, 5, 360);
+}

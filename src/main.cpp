@@ -65,6 +65,7 @@
 #include "NotificationManager.h"
 #include "TelegramBot.h"
 #include "MQTTManager.h"
+#include "WeatherManager.h"
 #include "CrashDiagnostics.h"
 
 
@@ -212,6 +213,7 @@ void setup() // NOSONAR - complexity ok
     NotificationManager notificationManager;
     TelegramBot telegramBot;
     MQTTManager mqttManager;
+    WeatherManager weatherManager;
 
     settingsManager.begin(&hal);
     settingsManager.load();
@@ -250,6 +252,17 @@ void setup() // NOSONAR - complexity ok
     for (int i = 0; i < 7; i++) doorController.setAutoCloseDay(i, settingsManager.getDoorAutoCloseDay(i));
     doorController.setLockoutEnabled(settingsManager.getDoorLockoutEnabled());
     doorController.setAutoCalcTimeoutEnabled(settingsManager.getDoorTimeoutAutoCalcEnabled());
+
+    // Initialize weather manager (OpenWeatherMap) and attach it as the door's
+    // weather gate. Location comes from the same lat/lon used for sunrise/sunset.
+    weatherManager.begin(&hal);
+    weatherManager.setEnabled(settingsManager.getWeatherEnabled());
+    weatherManager.setApiKey(settingsManager.getWeatherApiKey());
+    weatherManager.setUnits(settingsManager.getWeatherUnits());
+    weatherManager.setUpdateIntervalMinutes(settingsManager.getWeatherUpdateIntervalMinutes());
+    weatherManager.setLocation(settingsManager.getLatitude(), settingsManager.getLongitude());
+    doorController.setWeatherManager(&weatherManager);
+
     lightController.begin(&hal, &sunriseSunset);
     
     // Initialize sunrise/sunset calculator with location settings
@@ -443,6 +456,7 @@ void setup() // NOSONAR - complexity ok
     notificationManager.setNotifyOnSystemError(settingsManager.getNotifySystemError());
     webServer.setNotificationManager(&notificationManager);
     webServer.setTelegramBot(&telegramBot);
+    webServer.setWeatherManager(&weatherManager);
     logger.logInfo("Notification manager and Telegram bot initialized");
 
     // Initialize MQTT manager for Home Assistant integration
@@ -855,6 +869,15 @@ void setup() // NOSONAR - complexity ok
         // device (issue #4). Deferring non-essential polling lets heap recover.
         if (hal.getFreeHeap() >= NETWORK_LOW_HEAP_FLOOR) {
             telegramBot.update();
+        }
+
+        // Update weather manager (fetches at its configured interval). Like the
+        // Telegram poll, only run when heap is healthy — the fetch allocates a
+        // WiFiClientSecure TLS context + JSON docs, which under heap pressure can
+        // throw std::bad_alloc and reboot the device (issue #4). WeatherManager
+        // also guards internally, but this keeps the loop-task budget clear.
+        if (hal.getFreeHeap() >= NETWORK_LOW_HEAP_FLOOR) {
+            weatherManager.update();
         }
 
         // Update MQTT manager (connection, message processing, state publishing)

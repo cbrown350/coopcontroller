@@ -14,6 +14,7 @@
 #include "MockBuzzerController.h"
 #include "Logger.h"
 #include "DoorController.h"
+#include "WeatherManager.h"
 #include "mocks/MockSunriseSunsetCalculator.h"
 #include "SettingsManager.h"
 
@@ -813,6 +814,58 @@ TEST_F(DoorControllerTest, DoorLockout_InJson) {
 
     EXPECT_TRUE(!json["lockout_enabled"].isNull());
     EXPECT_EQ(json["lockout_enabled"], true);
+}
+
+// ============================================================================
+// Weather-Gated Auto-Open Tests
+// ============================================================================
+
+TEST_F(DoorControllerTest, Weather_NoManagerByDefault) {
+    // With no weather manager attached, nothing is postponed.
+    EXPECT_FALSE(doorController->isWeatherPostponed());
+}
+
+TEST_F(DoorControllerTest, Weather_PostponedFieldInJson) {
+    JsonDocument doc;
+    JsonObject json = doc.to<JsonObject>();
+    doorController->toJson(json);
+    EXPECT_TRUE(!json["weather_postponed"].isNull());
+    EXPECT_EQ(json["weather_postponed"], false);
+}
+
+TEST_F(DoorControllerTest, Weather_NullManagerIsSafe) {
+    // Explicitly attaching nullptr must not crash schedule handling.
+    doorController->setWeatherManager(nullptr);
+    doorController->setAutoOpenEnabled(true);
+    for (int i = 0; i < 5; i++) {
+        doorController->update();
+        advanceTime(1000);
+    }
+    EXPECT_FALSE(doorController->isWeatherPostponed());
+}
+
+TEST_F(DoorControllerTest, Weather_InactiveGateDoesNotPostpone) {
+    // A weather manager that is attached but not enabled/configured must not
+    // gate the door — its gate is inactive, so behavior is schedule-only.
+    WeatherManager weather;
+    weather.begin(mockHal);
+    // Not enabled, no API key -> gate inactive
+    doorController->setWeatherManager(&weather);
+    doorController->setAutoOpenEnabled(true);
+
+    for (int i = 0; i < 5; i++) {
+        doorController->update();
+        advanceTime(1000);
+    }
+    EXPECT_FALSE(doorController->isWeatherPostponed());
+    EXPECT_TRUE(weather.isWeatherGoodForOpening()); // fallback-safe
+}
+
+TEST_F(DoorControllerTest, Weather_ToggleAutoOpenClearsPostpone) {
+    // Toggling auto-open resets any stale weather-postpone state.
+    doorController->setAutoOpenEnabled(true);
+    doorController->setAutoOpenEnabled(false);
+    EXPECT_FALSE(doorController->isWeatherPostponed());
 }
 
 // ============================================================================

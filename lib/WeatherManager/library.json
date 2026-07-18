@@ -1,0 +1,8 @@
+{
+    "name": "WeatherManager",
+    "version": "1.0.0",
+    "description": "OpenWeatherMap client for weather-gated door automation and status display",
+    "dependencies": {
+        "bblanchon/ArduinoJson": "^7.2.1"
+    }
+}

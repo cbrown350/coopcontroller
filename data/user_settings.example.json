@@ -102,5 +102,10 @@
   "mqtt_server": "",
   "mqtt_port": 1883,
   "mqtt_username": "",
-  "mqtt_password": ""
+  "mqtt_password": "",
+
+  "weather_enabled": false,
+  "weather_api_key": "",
+  "weather_units": "imperial",
+  "weather_update_interval_minutes": 10
 }

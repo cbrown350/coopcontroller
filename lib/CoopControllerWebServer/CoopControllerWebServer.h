@@ -17,6 +17,7 @@
 #include "NotificationManager.h"
 #include "TelegramBot.h"
 #include "MQTTManager.h"
+#include "WeatherManager.h"
 
 /**
  * @brief Web server for chicken coop controller
@@ -44,6 +45,7 @@ class CoopControllerWebServer
         NotificationManager* notificationManager_ = nullptr; ///< Notification manager (optional)
         TelegramBot* telegramBot_ = nullptr; ///< Telegram bot for command polling (optional)
         MQTTManager* mqttManager_ = nullptr; ///< MQTT manager for Home Assistant (optional)
+        WeatherManager* weatherManager_ = nullptr; ///< Weather manager for door gating (optional)
 
         /**
          * @brief Check if HTTP request has valid authentication credentials
@@ -137,6 +139,12 @@ class CoopControllerWebServer
      * @param mqttManager Pointer to MQTTManager instance
      */
     void setMQTTManager(MQTTManager* mqttManager) { mqttManager_ = mqttManager; }
+
+    /**
+     * @brief Set WeatherManager and register the /weather/status endpoint
+     * @param weatherManager Pointer to WeatherManager instance
+     */
+    void setWeatherManager(WeatherManager* weatherManager);
 
     /**
      * @brief Process web server events (call in main loop)

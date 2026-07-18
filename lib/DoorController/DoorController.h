@@ -4,6 +4,7 @@
 #include "BuzzerController.h"
 #include "SunriseSunset.h"
 #include "TriggerSource.h"
+#include "WeatherManager.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -68,6 +69,7 @@ class DoorController { // NOSONAR - complexity ok
 private:
     BuzzerController* buzzerController = nullptr;     ///< Buzzer for fault alerts
     SunriseSunsetCalculator* sunriseSunset = nullptr; ///< Sunrise/sunset time calculator
+    WeatherManager* weatherManager = nullptr;         ///< Optional weather gate for auto-open
 
     // State variables
     DoorState currentState;         ///< Current operational state
@@ -93,6 +95,12 @@ private:
     std::array<bool, 7> autoOpenDays;  ///< Days-of-week to auto-open (0=Sun..6=Sat)
     std::array<bool, 7> autoCloseDays; ///< Days-of-week to auto-close (0=Sun..6=Sat)
     bool lockoutEnabled;              ///< Prevents all door operations when true
+
+    // Weather-gated auto-open. When a WeatherManager is attached and reports
+    // inclement weather at auto-open time, opening is postponed and rechecked
+    // roughly hourly instead of every loop (avoids log spam / API pressure).
+    unsigned long weatherPostponeUntilMs; ///< millis() before which we skip the weather recheck (0 = check now)
+    bool weatherPostponedOpen;            ///< True while an auto-open is being held back by weather
 
     // Timeout auto-calculation
     static const int MAX_TIMING_HISTORY = 10; ///< Max entries in timing history
@@ -267,6 +275,25 @@ public:
      * @param sunriseSunset Pointer to sunrise/sunset calculator
      */
     void begin(BuzzerController* buzzerController, SunriseSunsetCalculator* sunriseSunset);
+
+    /**
+     * @brief Attach an optional weather gate for automatic opening
+     *
+     * When set and the WeatherManager's gate is active, auto-open is held
+     * back during inclement weather and rechecked about once an hour until
+     * either the weather clears or the daily open window ends. Passing
+     * nullptr disables weather gating (schedule-only behavior).
+     *
+     * @param weatherManager Pointer to WeatherManager (may be nullptr)
+     */
+    void setWeatherManager(WeatherManager* weatherManager);
+
+    /**
+     * @brief Check if an auto-open is currently postponed due to weather
+     *
+     * @return true if weather is holding back a scheduled open right now
+     */
+    bool isWeatherPostponed() const;
 
     // ========================================================================
     // MAIN UPDATE LOOP

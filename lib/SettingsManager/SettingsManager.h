@@ -205,6 +205,15 @@ struct user_settings // NOSONAR
     bool   notify_door_fault = true;               ///< Notify on door faults
     bool   notify_wifi_disconnect = false;         ///< Notify on WiFi disconnect
     bool   notify_system_error = true;             ///< Notify on system errors
+
+    // ========================================================================
+    // WEATHER (OpenWeatherMap) SETTINGS
+    // ========================================================================
+
+    bool     weather_enabled = false;              ///< Gate auto-open on weather + show status
+    String   weather_api_key = "";                 ///< OpenWeatherMap API key
+    String   weather_units = "imperial";           ///< "imperial", "metric", or "standard"
+    unsigned int weather_update_interval_minutes = 10; ///< Fetch interval (5-360, keeps under free tier)
 };
 
 /**
@@ -527,6 +536,18 @@ class SettingsManager // NOSONAR
     void setNotifyDoorFault(bool enabled);
     void setNotifyWifiDisconnect(bool enabled);
     void setNotifySystemError(bool enabled);
+
+    // Weather (OpenWeatherMap) getters
+    bool         getWeatherEnabled() const;
+    String       getWeatherApiKey() const;
+    String       getWeatherUnits() const;
+    unsigned int getWeatherUpdateIntervalMinutes() const;
+
+    // Weather (OpenWeatherMap) setters
+    void setWeatherEnabled(bool enabled);
+    void setWeatherApiKey(const String& key);
+    void setWeatherUnits(const String& units);
+    void setWeatherUpdateIntervalMinutes(unsigned int minutes);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);
