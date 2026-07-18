@@ -83,6 +83,12 @@ function Settings() {
   const [timezonePosix, setTimezonePosix] = createSignal<string>("")
 
   // Sunrise/sunset data for preview
+  // Door auto-open/close offset bounds (mirror DoorController::DOOR_OFFSET_*).
+  const DOOR_OFFSET_MIN = -240
+  const DOOR_OFFSET_MAX = 780
+  const clampOffset = (v: number) =>
+    isNaN(v) ? 0 : Math.max(DOOR_OFFSET_MIN, Math.min(DOOR_OFFSET_MAX, v))
+
   // Helper function to get timezone display
   const getTimezoneDisplay = () => {
     const tz = timezonePosix();
@@ -1313,12 +1319,12 @@ function Settings() {
               <fieldset class="fieldset">
                 <legend class="fieldset-legend">Sunrise Offset (minutes)</legend>
                 <Show when={loaded()}>
-                  <input type="number" value={doorAutoOpenOffsetMinutes()!} onInput={(e) => setDoorAutoOpenOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-120" max="120" class="input" />
+                  <input type="number" value={doorAutoOpenOffsetMinutes()!} onInput={(e) => setDoorAutoOpenOffsetMinutes(clampOffset(parseInt(e.target.value)))} placeholder="0" step="1" min="-240" max="780" class="input" />
                 </Show>
                 <Show when={!loaded()}>
                   <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
                 </Show>
-                <div class="fieldset-label">Minutes after (+) / before (-) sunrise to open door (default: 0)</div>
+                <div class="fieldset-label">Minutes after (+) / before (-) sunrise to open door (range -240 to 780, default: 0). The door never opens at or after sunset.</div>
               </fieldset>
 
               <fieldset class="fieldset">
@@ -1369,12 +1375,12 @@ function Settings() {
               <fieldset class="fieldset">
                 <legend class="fieldset-legend">Sunset Offset (minutes)</legend>
                 <Show when={loaded()}>
-                  <input type="number" value={doorAutoCloseOffsetMinutes()!} onInput={(e) => setDoorAutoCloseOffsetMinutes(parseInt(e.target.value))} placeholder="0" step="1" min="-120" max="120" class="input" />
+                  <input type="number" value={doorAutoCloseOffsetMinutes()!} onInput={(e) => setDoorAutoCloseOffsetMinutes(clampOffset(parseInt(e.target.value)))} placeholder="0" step="1" min="-240" max="780" class="input" />
                 </Show>
                 <Show when={!loaded()}>
                   <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
                 </Show>
-                <div class="fieldset-label">Minutes after (+) / before (-) sunset to close door (default: 0)</div>
+                <div class="fieldset-label">Minutes after (+) / before (-) sunset to close door (range -240 to 780, default: 0)</div>
               </fieldset>
 
               <fieldset class="fieldset">

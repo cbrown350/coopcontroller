@@ -66,6 +66,15 @@ enum class DoorPosition {
  * - Buzzer alerts on faults
  */
 class DoorController { // NOSONAR - complexity ok
+public:
+    // Allowed range for auto-open/close offsets (minutes, signed). Asymmetric:
+    // up to 4h before the sun event (pre-dawn open / pre-dusk close) and up to
+    // 13h after (mid/late-day open). Enforced in the setters and mirrored by
+    // the web UI inputs. The sunset ceiling still prevents opening at/after
+    // sunset regardless of a large positive open offset.
+    static constexpr int DOOR_OFFSET_MIN_MINUTES = -240;
+    static constexpr int DOOR_OFFSET_MAX_MINUTES = 780;
+
 private:
     BuzzerController* buzzerController = nullptr;     ///< Buzzer for fault alerts
     SunriseSunsetCalculator* sunriseSunset = nullptr; ///< Sunrise/sunset time calculator
@@ -210,6 +219,32 @@ private:
      * @return true if current time is past sunrise + offset
      */
     bool shouldOpenBySchedule() const;
+
+public:
+    /**
+     * @brief Pure decision: is `nowMinutes` inside today's auto-open window?
+     *
+     * Window = [openTime, closeCeiling) where openTime = sunrise + openOffset
+     * and closeCeiling = min(sunset, autoClose ? sunset+closeOffset : sunset).
+     * All times are minutes-since-local-midnight.
+     *
+     * Guarantees the door NEVER auto-opens at/after sunset (hard ceiling) and
+     * NEVER re-opens once the day's auto-close point has passed. Stateless and
+     * static so it can be unit-tested exhaustively without a system clock.
+     *
+     * @param nowMinutes        Current local time (minutes since midnight)
+     * @param sunriseMinutes    Sunrise (minutes since midnight)
+     * @param sunsetMinutes     Sunset (minutes since midnight)
+     * @param openOffsetMinutes Signed minutes after/before sunrise to open
+     * @param closeOffsetMinutes Signed minutes after/before sunset to close
+     * @param autoCloseEnabled  Whether auto-close is active (tightens ceiling)
+     * @return true if nowMinutes is within the open window
+     */
+    static bool isWithinOpenWindow(int nowMinutes, int sunriseMinutes, int sunsetMinutes,
+                                   int openOffsetMinutes, int closeOffsetMinutes,
+                                   bool autoCloseEnabled);
+
+private:
 
     /**
      * @brief Check if door should close by schedule

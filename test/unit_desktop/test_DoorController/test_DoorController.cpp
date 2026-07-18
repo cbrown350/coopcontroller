@@ -512,17 +512,82 @@ TEST_F(DoorControllerTest, TimeoutValuesClamped) {
 }
 
 TEST_F(DoorControllerTest, OffsetValuesClamped) {
-    doorController->setAutoOpenOffsetMinutes(200); // Too high
-    EXPECT_LE(doorController->getAutoOpenOffsetMinutes(), 120);
+    // Offsets allowed range is -240..+780 minutes. Values within range are
+    // preserved exactly (regression: 400 was silently clamped to 120, opening
+    // the door 2h after sunrise instead of 6h40m).
+    doorController->setAutoOpenOffsetMinutes(400);
+    EXPECT_EQ(doorController->getAutoOpenOffsetMinutes(), 400);
 
-    doorController->setAutoOpenOffsetMinutes(-200); // Too low
-    EXPECT_GE(doorController->getAutoOpenOffsetMinutes(), -120);
+    doorController->setAutoOpenOffsetMinutes(1000); // Too high -> clamp to 780
+    EXPECT_EQ(doorController->getAutoOpenOffsetMinutes(), 780);
 
-    doorController->setAutoCloseOffsetMinutes(200);
-    EXPECT_LE(doorController->getAutoCloseOffsetMinutes(), 120);
+    doorController->setAutoOpenOffsetMinutes(-1000); // Too low -> clamp to -240
+    EXPECT_EQ(doorController->getAutoOpenOffsetMinutes(), -240);
 
-    doorController->setAutoCloseOffsetMinutes(-200);
-    EXPECT_GE(doorController->getAutoCloseOffsetMinutes(), -120);
+    doorController->setAutoCloseOffsetMinutes(400);
+    EXPECT_EQ(doorController->getAutoCloseOffsetMinutes(), 400);
+
+    doorController->setAutoCloseOffsetMinutes(1000);
+    EXPECT_EQ(doorController->getAutoCloseOffsetMinutes(), 780);
+
+    doorController->setAutoCloseOffsetMinutes(-1000);
+    EXPECT_EQ(doorController->getAutoCloseOffsetMinutes(), -240);
+}
+
+// ============================================================================
+// Auto-Open Window Tests (isWithinOpenWindow pure logic)
+// ============================================================================
+// Fixed reference times: sunrise 06:00 (360), sunset 20:00 (1200).
+
+TEST_F(DoorControllerTest, OpenWindow_LargeOffsetNotClamped) {
+    // Regression for the production bug: 400-min offset opened at sunrise+120
+    // (clamped) instead of sunrise+400. With sunrise=360, open time = 760 (12:40).
+    // Before 760 -> closed; at/after 760 (and before sunset) -> open.
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(759, 360, 1200, 400, 0, false));
+    EXPECT_TRUE(DoorController::isWithinOpenWindow(760, 360, 1200, 400, 0, false));
+    EXPECT_TRUE(DoorController::isWithinOpenWindow(900, 360, 1200, 400, 0, false));
+}
+
+TEST_F(DoorControllerTest, OpenWindow_BasicOffsetZero) {
+    // openTime = sunrise (360). Opens from 360 up to (not incl.) sunset 1200.
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(359, 360, 1200, 0, 0, false));
+    EXPECT_TRUE(DoorController::isWithinOpenWindow(360, 360, 1200, 0, 0, false));
+    EXPECT_TRUE(DoorController::isWithinOpenWindow(1199, 360, 1200, 0, 0, false));
+}
+
+TEST_F(DoorControllerTest, OpenWindow_NeverOpensAtOrAfterSunset_NoAutoClose) {
+    // Requirement: never auto-open after sunset, even with auto-close disabled.
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1200, 360, 1200, 0, 0, false)); // exactly sunset
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1201, 360, 1200, 0, 0, false)); // after sunset
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1400, 360, 1200, 0, 0, false)); // evening
+}
+
+TEST_F(DoorControllerTest, OpenWindow_LargeOffsetPastSunsetNeverOpens) {
+    // openTime = sunrise + 900 = 1260 > sunset 1200 -> empty window, never opens.
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1260, 360, 1200, 900, 0, false));
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1199, 360, 1200, 900, 0, false));
+}
+
+TEST_F(DoorControllerTest, OpenWindow_AutoCloseTightensCeiling) {
+    // Auto-close enabled with -120 offset -> close at sunset-120 = 1080 (18:00).
+    // Window must end before 1080, not at sunset.
+    EXPECT_TRUE(DoorController::isWithinOpenWindow(1079, 360, 1200, 0, -120, true));
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1080, 360, 1200, 0, -120, true)); // at close time
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1150, 360, 1200, 0, -120, true)); // after close, before sunset
+}
+
+TEST_F(DoorControllerTest, OpenWindow_AutoCloseAfterSunsetStillCappedBySunset) {
+    // Even if auto-close offset pushes close past sunset (+120 -> 1320), the
+    // hard sunset ceiling (1200) still applies: never open at/after sunset.
+    EXPECT_TRUE(DoorController::isWithinOpenWindow(1199, 360, 1200, 0, 120, true));
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1200, 360, 1200, 0, 120, true));
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(1260, 360, 1200, 0, 120, true));
+}
+
+TEST_F(DoorControllerTest, OpenWindow_NegativeOffsetOpensBeforeSunrise) {
+    // openTime = sunrise - 30 = 330 (05:30).
+    EXPECT_FALSE(DoorController::isWithinOpenWindow(329, 360, 1200, -30, 0, false));
+    EXPECT_TRUE(DoorController::isWithinOpenWindow(330, 360, 1200, -30, 0, false));
 }
 
 // ============================================================================

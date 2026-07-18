@@ -671,7 +671,12 @@ int DoorController::getAutoOpenOffsetMinutes() const {
 }
 
 void DoorController::setAutoOpenOffsetMinutes(int minutes) {
-    autoOpenOffsetMinutes = std::max(-120, std::min(120, minutes));
+    // Range -240..+780: open up to 4h before sunrise (pre-dawn) or up to 13h
+    // after (mid/late day). The sunset ceiling in isWithinOpenWindow() still
+    // prevents opening at/after sunset, so a large positive offset simply
+    // narrows (or empties) the window rather than opening in the evening.
+    autoOpenOffsetMinutes = std::max(DOOR_OFFSET_MIN_MINUTES,
+                                     std::min(DOOR_OFFSET_MAX_MINUTES, minutes));
     logger.logfDebug("Door auto-open offset: %d minutes", autoOpenOffsetMinutes);
 }
 
@@ -680,7 +685,10 @@ int DoorController::getAutoCloseOffsetMinutes() const {
 }
 
 void DoorController::setAutoCloseOffsetMinutes(int minutes) {
-    autoCloseOffsetMinutes = std::max(-120, std::min(120, minutes));
+    // Same range as the open offset (-240..+780): close up to 4h before sunset
+    // or well after.
+    autoCloseOffsetMinutes = std::max(DOOR_OFFSET_MIN_MINUTES,
+                                      std::min(DOOR_OFFSET_MAX_MINUTES, minutes));
     logger.logfDebug("Door auto-close offset: %d minutes", autoCloseOffsetMinutes);
 }
 
@@ -858,25 +866,42 @@ int DoorController::getTodayDayOfWeek() const {
     return timeinfo.tm_wday;
 }
 
+// Pure open-window decision (stateless, static, unit-testable).
+bool DoorController::isWithinOpenWindow(int nowMinutes, int sunriseMinutes, int sunsetMinutes,
+                                        int openOffsetMinutes, int closeOffsetMinutes,
+                                        bool autoCloseEnabled) {
+    int openTime = sunriseMinutes + openOffsetMinutes;
+
+    // Upper bound of the daily open window. The door must NEVER auto-open once
+    // the day's closing point has passed:
+    //   - sunset is always a hard ceiling (never auto-open at/after sunset), and
+    //   - if auto-close is enabled, its (possibly earlier) close time also caps
+    //     the window so auto-open can't re-open the door after auto-close fires.
+    // Use the earlier of the two so both conditions hold regardless of offsets.
+    int closeCeiling = sunsetMinutes;
+    if (autoCloseEnabled) {
+        int autoCloseTime = sunsetMinutes + closeOffsetMinutes;
+        if (autoCloseTime < closeCeiling) closeCeiling = autoCloseTime;
+    }
+
+    // Open only during the daytime window: at/after the open time and strictly
+    // before the close ceiling. If the offsets make the window empty
+    // (openTime >= closeCeiling), this correctly never opens.
+    return (nowMinutes >= openTime && nowMinutes < closeCeiling);
+}
+
 // Schedule helpers using sunrise/sunset calculations
 bool DoorController::shouldOpenBySchedule() const {
     int currentMinutes = getCurrentLocalMinutes();
     if (currentMinutes < 0) return false;
+    if (currentPosition == DoorPosition::OPEN) return false;
 
-    int openTime = sunriseSunset->getSunriseMinutes() + autoOpenOffsetMinutes;
-
-    // Calculate the close time (must match shouldCloseBySchedule logic).
-    // Used as the upper bound of the daytime open window so that auto-open
-    // does not re-open the door after auto-close fires, which would create
-    // an open/close loop. Only apply this guard when auto-close is enabled.
-    int closeTime = sunriseSunset->getSunsetMinutes() + autoCloseOffsetMinutes;
-
-    if (autoCloseEnabled) {
-        // Only open during the daytime window: after sunrise but before close time
-        return (currentMinutes >= openTime && currentMinutes < closeTime && currentPosition != DoorPosition::OPEN);
-    }
-    // No auto-close enabled: only the lower bound applies
-    return (currentMinutes >= openTime && currentPosition != DoorPosition::OPEN);
+    return isWithinOpenWindow(currentMinutes,
+                              sunriseSunset->getSunriseMinutes(),
+                              sunriseSunset->getSunsetMinutes(),
+                              autoOpenOffsetMinutes,
+                              autoCloseOffsetMinutes,
+                              autoCloseEnabled);
 }
 
 bool DoorController::shouldCloseBySchedule() const {
