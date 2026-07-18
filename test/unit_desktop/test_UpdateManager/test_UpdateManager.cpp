@@ -423,6 +423,74 @@ TEST_F(UpdateManagerTest, InstallUpdate_HalNotInitialized) {
     EXPECT_EQ(status.status, UpdateStatus::ERROR);
 }
 
+// Regression: a manifest was fetched successfully, then a later re-check's
+// network fetch failed (intermittent GitHub redirect), setting status_ to
+// ERROR while leaving the parsed manifest intact. Force install must still
+// proceed — the gate is on the loaded manifest, not the volatile status_.
+// This is the production "No manifest available - check for updates first"
+// bug when clicking Force Reinstall.
+TEST_F(UpdateManagerTest, InstallUpdate_ForceSucceedsAfterFailedRecheck) {
+    setupAvailableUpdate();               // manifest 2.0.0 loaded, status AVAILABLE
+    auto data = makeDummyData(1048576);
+    mockHal.setStreamData(data.data(), data.size());
+    mockHal.setHttpGetStreamResult(true);
+    mockHal.setOtaBeginResult(true);
+    mockHal.setOtaWriteResult(true);
+    mockHal.setOtaEndResult(true);
+
+    // Simulate a failed re-check: empty manifest response -> status becomes ERROR
+    mockHal.setHttpGetResponse("");
+    um.checkForUpdates();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::ERROR);
+
+    // Force install should still work because the manifest is still loaded
+    um.installUpdate(true, /*force=*/true);
+
+    EXPECT_TRUE(mockHal.getOtaBeginCalled());
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::COMPLETE);
+}
+
+// Force reinstall of the SAME version (device already current) must be allowed.
+TEST_F(UpdateManagerTest, InstallUpdate_ForceReinstallSameVersion) {
+    beginWithUrl();
+    um.setDeviceVersionForTesting("2.0.0");   // same as manifest -> CURRENT, not newer
+    mockHal.setHttpGetResponse(VALID_MANIFEST);
+    um.checkForUpdates();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::CURRENT);
+
+    auto data = makeDummyData(1048576);
+    mockHal.setStreamData(data.data(), data.size());
+    mockHal.setHttpGetStreamResult(true);
+    mockHal.setOtaBeginResult(true);
+    mockHal.setOtaWriteResult(true);
+    mockHal.setOtaEndResult(true);
+
+    um.installUpdate(true, /*force=*/true);
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::COMPLETE);
+}
+
+// Non-force install must be rejected when the manifest is not a newer version.
+TEST_F(UpdateManagerTest, InstallUpdate_NonForceRejectsSameVersion) {
+    beginWithUrl();
+    um.setDeviceVersionForTesting("2.0.0");
+    mockHal.setHttpGetResponse(VALID_MANIFEST);
+    um.checkForUpdates();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::CURRENT);
+
+    um.installUpdate(true, /*force=*/false);
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::ERROR);
+    EXPECT_FALSE(mockHal.getOtaBeginCalled());
+}
+
+// Force install with NO manifest ever loaded must still be rejected.
+TEST_F(UpdateManagerTest, InstallUpdate_ForceWithoutManifestRejected) {
+    beginWithUrl();
+    // never checked -> no manifest loaded
+    um.installUpdate(true, /*force=*/true);
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::ERROR);
+    EXPECT_FALSE(mockHal.getOtaBeginCalled());
+}
+
 TEST_F(UpdateManagerTest, InstallUpdate_OtaBeginFailure) {
     setupAvailableUpdate();
     mockHal.setOtaBeginResult(false);

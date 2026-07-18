@@ -185,14 +185,27 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         return;
     }
 
+    // Whether a usable manifest is currently loaded. Gate on the actual data
+    // (firmware URL + size), NOT on status_: a transient re-check whose network
+    // fetch failed sets status_ to ERROR via setError() while leaving the
+    // previously-parsed manifest_ intact. Gating force-install on status_ then
+    // wrongly reported "No manifest available" even though a good manifest was
+    // loaded and shown in the UI. (The intermittent GitHub redirect fetch made
+    // such a failed re-check common.)
+    bool manifestLoaded = manifest_.latest_version.length() > 0 &&
+                          manifest_.firmware.url.length() > 0 &&
+                          manifest_.firmware.size_bytes > 0;
+
     if (force) {
-        // Force mode: allow install if manifest has been fetched (AVAILABLE or CURRENT)
-        if (status_ != UpdateStatus::AVAILABLE && status_ != UpdateStatus::CURRENT) {
+        // Force mode: allow install whenever a manifest has been fetched, even
+        // if the current version already matches (reinstall / recover bad flash).
+        if (!manifestLoaded) {
             setError(UpdateError::MANIFEST_PARSE, "No manifest available - check for updates first");
             return;
         }
     } else {
-        if (status_ != UpdateStatus::AVAILABLE) {
+        // Non-force: only install when the manifest is a genuinely newer version.
+        if (!manifestLoaded || !isVersionNewer(device_version_, manifest_.latest_version)) {
             setError(UpdateError::MANIFEST_PARSE, "No update available to install");
             return;
         }
