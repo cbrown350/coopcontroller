@@ -10,15 +10,7 @@
 void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
     hal_ = hal;
 
-    // If manifest_url is provided, use it; otherwise construct from GITHUB_REPO
-    if (manifest_url.length() > 0) {
-        manifest_url_ = manifest_url;
-    } else {
-        String repo = githubRepo;
-        if (repo.length() > 0) {
-            manifest_url_ = "https://github.com/" + repo + "/releases/latest/download/version_manifest.json";
-        }
-    }
+    setManifestUrl(manifest_url);
 
     status_ = UpdateStatus::IDLE;
     error_ = UpdateError::NONE;
@@ -40,6 +32,19 @@ void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
 
     logger.logDebug("UpdateManager initialized with version: " + device_version_);
     logger.logDebug("Manifest URL: " + manifest_url_);
+}
+
+void UpdateManager::setManifestUrl(const String& manifest_url) {
+    // Use the provided URL, or build the default GitHub releases/latest URL
+    // from the compiled-in repo when empty.
+    if (manifest_url.length() > 0) {
+        manifest_url_ = manifest_url;
+    } else {
+        String repo = githubRepo;
+        manifest_url_ = repo.length() > 0
+            ? "https://github.com/" + repo + "/releases/latest/download/version_manifest.json"
+            : "";
+    }
 }
 
 bool UpdateManager::parseVersion(const String& version, int& major, int& minor, int& patch) const {
@@ -124,6 +129,7 @@ void UpdateManager::checkForUpdates() {
 
     setStatus(UpdateStatus::CHECKING, true);
     current_operation_start_ = hal_->millis();
+    last_check_ok_ = false;  // set true only after a successful fetch+parse below
 
     logger.logInfo("Checking for updates from: " + manifest_url_);
 
@@ -169,6 +175,9 @@ void UpdateManager::checkForUpdates() {
         setError(UpdateError::MANIFEST_PARSE, "Manifest missing latest_version field");
         return;
     }
+
+    // Reached here => manifest fetched and parsed successfully.
+    last_check_ok_ = true;
 
     if (isVersionNewer(device_version_, manifest_.latest_version)) {
         setStatus(UpdateStatus::AVAILABLE, true);
@@ -526,6 +535,18 @@ JsonDocument UpdateManager::getCheckResponseJson() const {
     doc["current_version"] = device_version_;
     doc["available_version"] = manifest_.latest_version;
     doc["update_available"] = isUpdateAvailable();
+
+    // Surface whether the MOST RECENT check actually fetched+parsed a manifest
+    // so the UI can distinguish "up to date" (check ok, no newer version) from
+    // "check failed" (fetch/parse error). Uses last_check_ok_ rather than the
+    // presence of manifest_ data, because a failed re-check leaves a stale
+    // manifest_ populated from a prior success. Without this the UI wrongly
+    // showed "Firmware is up to date" with a blank version whenever the fetch
+    // failed.
+    doc["check_ok"] = last_check_ok_;
+    if (!last_check_ok_ && last_error_message_.length() > 0) {
+        doc["error"] = last_error_message_;
+    }
 
     JsonObject firmware = doc["firmware"].to<JsonObject>();
     firmware["version"] = manifest_.firmware.version;

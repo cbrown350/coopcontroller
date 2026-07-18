@@ -627,6 +627,52 @@ TEST_F(UpdateManagerTest, GetCheckResponseJson_Format) {
     EXPECT_FALSE(doc["filesystem"].isNull());
 }
 
+// A successful check reports check_ok=true and no error, with the version set.
+TEST_F(UpdateManagerTest, GetCheckResponseJson_SuccessReportsCheckOk) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(VALID_MANIFEST);
+    um.checkForUpdates();
+
+    auto doc = um.getCheckResponseJson();
+    EXPECT_TRUE(doc["check_ok"].as<bool>());
+    EXPECT_TRUE(doc["error"].isNull());
+    EXPECT_EQ(doc["available_version"].as<String>(), String("2.0.0"));
+}
+
+// Regression: when the manifest fetch fails, check_ok=false and an error is
+// surfaced so the UI shows an error instead of a blank version + false
+// "Firmware is up to date".
+TEST_F(UpdateManagerTest, GetCheckResponseJson_FetchFailureReportsCheckNotOk) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(""); // empty -> fetch failure
+    um.checkForUpdates();
+
+    auto doc = um.getCheckResponseJson();
+    EXPECT_FALSE(doc["check_ok"].as<bool>());
+    EXPECT_FALSE(doc["error"].isNull());              // error message present
+    EXPECT_EQ(doc["available_version"].as<String>(), String("")); // blank version
+    EXPECT_FALSE(doc["update_available"].as<bool>());
+}
+
+// Regression for the exact production scenario: a check succeeds (manifest_
+// populated), then a later check fails. check_ok must be false even though a
+// stale manifest_ is still loaded — otherwise the UI shows a version and a
+// false "up to date" for a failed check.
+TEST_F(UpdateManagerTest, GetCheckResponseJson_FailedRecheckReportsCheckNotOk) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(VALID_MANIFEST);
+    um.checkForUpdates();
+    EXPECT_TRUE(um.getCheckResponseJson()["check_ok"].as<bool>());
+
+    // Now a re-check fails (empty response)
+    mockHal.setHttpGetResponse("");
+    um.checkForUpdates();
+
+    auto doc = um.getCheckResponseJson();
+    EXPECT_FALSE(doc["check_ok"].as<bool>());   // not ok despite stale manifest_
+    EXPECT_FALSE(doc["error"].isNull());
+}
+
 TEST_F(UpdateManagerTest, GetStatusResponseJson_Format) {
     beginWithUrl();
     auto doc = um.getStatusResponseJson();

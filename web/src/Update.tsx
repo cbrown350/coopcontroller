@@ -22,6 +22,8 @@ interface UpdateCheckResult {
   filesystem: { version: string; url: string; size_bytes: number };
   release_date?: string;
   github_repo?: string;
+  check_ok?: boolean;
+  error?: string;
 }
 
 interface UpdateStatus {
@@ -234,6 +236,23 @@ function Update() {
             <div class="card bg-base-200 card-sm shadow-sm mb-4">
               <div class="card-body">
                 <p>Current Version: <span class="font-mono">{checkResult()!.current_version}</span></p>
+
+                {/* Check failed: the manifest could not be fetched/parsed. Show
+                    an error instead of a blank version + false "up to date". */}
+                <Show when={checkResult()!.check_ok === false}>
+                  <div role="alert" class="alert alert-error mt-2">
+                    <span>
+                      Update check failed — could not reach the update server.
+                      <Show when={checkResult()!.error}>
+                        {' '}({checkResult()!.error})
+                      </Show>
+                      <br />Check your internet connection and try again.
+                    </span>
+                  </div>
+                </Show>
+
+                {/* Only show version + update actions when the check succeeded. */}
+                <Show when={checkResult()!.check_ok !== false}>
                 <p>Available Version:{' '}
                   <Show when={checkResult()?.github_repo || versionInfo()?.github_repo} fallback={<span class="font-mono">{checkResult()!.available_version}</span>}>
                     <a
@@ -318,6 +337,7 @@ function Update() {
                       </button>
                     </div>
                   </details>
+                </Show>
                 </Show>
               </div>
             </div>

@@ -420,6 +420,8 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   }
                   if (jsonObj["manifest_url"].is<String>()) {
                       settingsManager.setManifestUrl(jsonObj["manifest_url"].as<String>());
+                      // Apply at runtime so it takes effect without a reboot.
+                      if (updateManager_) updateManager_->setManifestUrl(settingsManager.getManifestUrl());
                   }
 
                   // Handle MQTT settings

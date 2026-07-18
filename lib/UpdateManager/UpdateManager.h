@@ -113,6 +113,12 @@ private:
     unsigned long last_check_time_;
     unsigned long current_operation_start_;
 
+    // Whether the most recent checkForUpdates() actually fetched+parsed a
+    // manifest. Distinct from having a (possibly stale) manifest_ loaded, so a
+    // failed re-check reports check_ok=false even though a prior check left
+    // manifest_ populated. Drives the UI's "check failed" vs "up to date".
+    bool last_check_ok_ = false;
+
     // Error tracking
     String last_error_message_;
 
@@ -180,6 +186,17 @@ public:
      * @param manifest_url URL to version_manifest.json
      */
     void begin(IHAL* hal, const String& manifest_url);
+
+    /**
+     * @brief Update the manifest URL at runtime
+     *
+     * Applies a new manifest URL without a reboot (e.g. when the user changes
+     * it in Settings). An empty string reverts to the default GitHub
+     * releases/latest URL built from the repo.
+     *
+     * @param manifest_url New manifest URL, or empty for the default
+     */
+    void setManifestUrl(const String& manifest_url);
 
     /**
      * @brief Check for available updates
