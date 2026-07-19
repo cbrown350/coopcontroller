@@ -170,6 +170,23 @@ void DoorController::update() {
     // each is gated by its own enable flag and day-of-week list.
     if (currentState == DoorState::IDLE || currentState == DoorState::OPEN || currentState == DoorState::CLOSED) {
         if (autoOpenEnabled || autoCloseEnabled) {
+            // Keep the weather manager informed of today's actual door open
+            // window so an LLM decider can judge conditions for the period the
+            // chickens will be outside, not the whole forecast. Cheap int push;
+            // only meaningful when weather gating + sunrise/sunset are valid.
+            if (weatherManager != nullptr && sunriseSunset != nullptr && autoOpenEnabled) {
+                int sunriseMin = sunriseSunset->getSunriseMinutes();
+                int sunsetMin = sunriseSunset->getSunsetMinutes();
+                if (sunriseMin >= 0 && sunsetMin >= 0) {
+                    int openMin = sunriseMin + autoOpenOffsetMinutes;
+                    int closeCeiling = sunsetMin;
+                    if (autoCloseEnabled) {
+                        int autoCloseTime = sunsetMin + autoCloseOffsetMinutes;
+                        if (autoCloseTime < closeCeiling) closeCeiling = autoCloseTime;
+                    }
+                    weatherManager->setOpenWindowMinutes(openMin, closeCeiling);
+                }
+            }
             if (autoOpenEnabled) checkAutoOpenSchedule();
             if (autoCloseEnabled) checkAutoCloseSchedule();
         }

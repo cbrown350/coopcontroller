@@ -982,6 +982,14 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     if (doc["weather_api_key"].is<const char*>()) settings.weather_api_key = doc["weather_api_key"].as<String>();
     if (doc["weather_units"].is<const char*>()) settings.weather_units = doc["weather_units"].as<String>();
     settings.weather_update_interval_minutes = doc["weather_update_interval_minutes"] | defaultSettings.weather_update_interval_minutes;
+
+    // Load LLM weather-decider settings (issue #6)
+    settings.llm_enabled = doc["llm_enabled"] | defaultSettings.llm_enabled;
+    if (doc["llm_provider_type"].is<const char*>()) settings.llm_provider_type = doc["llm_provider_type"].as<String>();
+    if (doc["llm_base_url"].is<const char*>()) settings.llm_base_url = doc["llm_base_url"].as<String>();
+    if (doc["llm_api_key"].is<const char*>()) settings.llm_api_key = doc["llm_api_key"].as<String>();
+    if (doc["llm_model"].is<const char*>()) settings.llm_model = doc["llm_model"].as<String>();
+    settings.llm_timeout_seconds = doc["llm_timeout_seconds"] | defaultSettings.llm_timeout_seconds;
 }
 
 JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
@@ -1133,6 +1141,17 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     doc["weather_units"] = settings.weather_units;
     doc["weather_update_interval_minutes"] = settings.weather_update_interval_minutes;
 
+    // LLM weather-decider settings (issue #6). API key is a secret — only
+    // serialized with passwords (NVS backup), never to the web UI.
+    doc["llm_enabled"] = settings.llm_enabled;
+    doc["llm_provider_type"] = settings.llm_provider_type;
+    doc["llm_base_url"] = settings.llm_base_url;
+    if (includePassword && settings.llm_api_key.length() != 0) {
+        doc["llm_api_key"] = settings.llm_api_key;
+    }
+    doc["llm_model"] = settings.llm_model;
+    doc["llm_timeout_seconds"] = settings.llm_timeout_seconds;
+
     return doc;
 }
 
@@ -1272,4 +1291,28 @@ void SettingsManager::setWeatherUnits(const String& units) {
 }
 void SettingsManager::setWeatherUpdateIntervalMinutes(unsigned int minutes) {
     settings.weather_update_interval_minutes = constrain(minutes, 5, 360);
+}
+
+// LLM weather-decider getters (issue #6)
+bool         SettingsManager::getLlmEnabled() const { return settings.llm_enabled; }
+String       SettingsManager::getLlmProviderType() const { return settings.llm_provider_type; }
+String       SettingsManager::getLlmBaseUrl() const { return settings.llm_base_url; }
+String       SettingsManager::getLlmApiKey() const { return settings.llm_api_key; }
+String       SettingsManager::getLlmModel() const { return settings.llm_model; }
+unsigned int SettingsManager::getLlmTimeoutSeconds() const { return settings.llm_timeout_seconds; }
+
+// LLM weather-decider setters (issue #6)
+void SettingsManager::setLlmEnabled(bool enabled) { settings.llm_enabled = enabled; }
+void SettingsManager::setLlmProviderType(const String& type) {
+    // Only accept the known wire formats; ignore anything else so a bad value
+    // can't point the decider at a garbage URL path.
+    if (type == "openai_compatible" || type == "ollama_native" || type == "ollama_cloud") {
+        settings.llm_provider_type = type;
+    }
+}
+void SettingsManager::setLlmBaseUrl(const String& url) { settings.llm_base_url = url; }
+void SettingsManager::setLlmApiKey(const String& key) { settings.llm_api_key = key; }
+void SettingsManager::setLlmModel(const String& model) { settings.llm_model = model; }
+void SettingsManager::setLlmTimeoutSeconds(unsigned int seconds) {
+    settings.llm_timeout_seconds = constrain(seconds, 5, 60);
 }

@@ -82,8 +82,11 @@ public:
 
     void send(int code, const char* contentType, const char* body) override {
         lastCode = code;
-        lastContentType = contentType;
-        lastBody = body;
+        lastContentTypeStr = contentType;
+        // Own a copy: callers often pass a temporary's .c_str() (e.g. a local
+        // String built to serialize JSON), which would otherwise dangle once
+        // the handler returns and the temporary is destroyed.
+        lastBodyStr = body;
     }
 
     void sendFile(const char* path, const char* contentType) override {
@@ -104,9 +107,9 @@ public:
 
     void sendChunked(int code, const char* contentType, ChunkedFillCallback callback) override {
         lastCode = code;
-        lastContentType = contentType;
+        lastContentTypeStr = contentType;
         // Simulate chunked response by calling callback to collect all data
-        chunkedBody = "";
+        String chunkedBody = "";
         uint8_t buf[1024];
         size_t idx = 0;
         size_t bytesRead;
@@ -120,21 +123,20 @@ public:
                 idx += bytesRead;
             }
         } while (bytesRead > 0);
-        lastBody = chunkedBody.c_str();
+        lastBodyStr = chunkedBody;
     }
 
     // Test helpers
     int getLastCode() const { return lastCode; }
-    const char* getLastContentType() const { return lastContentType; }
-    const char* getLastBody() const { return lastBody; }
+    const char* getLastContentType() const { return lastContentTypeStr.c_str(); }
+    const char* getLastBody() const { return lastBodyStr.c_str(); }
     const std::map<String, String>& getResponseHeaders() const { return responseHeaders; }
 
 private:
     std::map<String, String> responseHeaders;
     int lastCode = 200;
-    const char* lastContentType = "";
-    const char* lastBody = "";
-    String chunkedBody;
+    String lastContentTypeStr = "";
+    String lastBodyStr = "";
 };
 
 // ============================================================================
@@ -562,6 +564,17 @@ public:
         return mockHttpPostResponse;
     }
 
+    String httpPostAuth(const String& url, const String& jsonBody,
+                        const String& bearerToken, const String& extraHeaders,
+                        unsigned long timeout_ms = 15000) override {
+        (void)timeout_ms;
+        lastHttpPostAuthUrl = url;
+        lastHttpPostAuthBody = jsonBody;
+        lastHttpPostAuthToken = bearerToken;
+        lastHttpPostAuthExtraHeaders = extraHeaders;
+        return mockHttpPostAuthResponse;
+    }
+
     String smtpSend(const String& host, uint16_t port,
                      const String& username, const String& password,
                      const String& from, const String& to,
@@ -673,6 +686,11 @@ public:
         mockHttpPostResponse = "";
         lastHttpPostUrl = "";
         lastHttpPostBody = "";
+        mockHttpPostAuthResponse = "";
+        lastHttpPostAuthUrl = "";
+        lastHttpPostAuthBody = "";
+        lastHttpPostAuthToken = "";
+        lastHttpPostAuthExtraHeaders = "";
         mockSmtpResult = "";
         lastSmtpHost = "";
         lastSmtpPort = 0;
@@ -770,6 +788,17 @@ public:
     String getLastHttpPostUrl() const { return lastHttpPostUrl; }
     String getLastHttpPostBody() const { return lastHttpPostBody; }
     void resetHttpPost() { lastHttpPostUrl = ""; lastHttpPostBody = ""; }
+
+    void setHttpPostAuthResponse(const String& response) { mockHttpPostAuthResponse = response; }
+    String getLastHttpPostAuthUrl() const { return lastHttpPostAuthUrl; }
+    String getLastHttpPostAuthBody() const { return lastHttpPostAuthBody; }
+    String getLastHttpPostAuthToken() const { return lastHttpPostAuthToken; }
+    void resetHttpPostAuth() {
+        lastHttpPostAuthUrl = "";
+        lastHttpPostAuthBody = "";
+        lastHttpPostAuthToken = "";
+        lastHttpPostAuthExtraHeaders = "";
+    }
     void resetHttpGet() { lastHttpGetUrl = ""; mockHttpGetResponse = ""; }
     void setSmtpResult(const String& result) { mockSmtpResult = result; }
     String getLastSmtpHost() const { return lastSmtpHost; }
@@ -872,6 +901,11 @@ private:
     String mockHttpPostResponse = "";
     String lastHttpPostUrl = "";
     String lastHttpPostBody = "";
+    String mockHttpPostAuthResponse = "";
+    String lastHttpPostAuthUrl = "";
+    String lastHttpPostAuthBody = "";
+    String lastHttpPostAuthToken = "";
+    String lastHttpPostAuthExtraHeaders = "";
     String mockSmtpResult = "";
     String lastSmtpHost = "";
     uint16_t lastSmtpPort = 0;

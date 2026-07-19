@@ -1416,6 +1416,88 @@ TEST_F(SettingsManagerTest, OTASettingsLoadedFromJson) {
 }
 
 // ============================================================================
+// LLM Weather-Decider Settings Tests (issue #6)
+// ============================================================================
+
+TEST_F(SettingsManagerTest, LlmEnabledDefaultFalse) {
+    EXPECT_FALSE(sm.getLlmEnabled());
+}
+
+TEST_F(SettingsManagerTest, LlmSettersAndGetters) {
+    sm.setLlmEnabled(true);
+    sm.setLlmProviderType("ollama_native");
+    sm.setLlmBaseUrl("http://192.168.1.5:11434");
+    sm.setLlmApiKey("secret-token");
+    sm.setLlmModel("llama3.1");
+    sm.setLlmTimeoutSeconds(20);
+
+    EXPECT_TRUE(sm.getLlmEnabled());
+    EXPECT_STREQ(sm.getLlmProviderType().c_str(), "ollama_native");
+    EXPECT_STREQ(sm.getLlmBaseUrl().c_str(), "http://192.168.1.5:11434");
+    EXPECT_STREQ(sm.getLlmApiKey().c_str(), "secret-token");
+    EXPECT_STREQ(sm.getLlmModel().c_str(), "llama3.1");
+    EXPECT_EQ(sm.getLlmTimeoutSeconds(), 20u);
+}
+
+TEST_F(SettingsManagerTest, LlmProviderTypeRejectsUnknownValues) {
+    sm.setLlmProviderType("openai_compatible");
+    sm.setLlmProviderType("not_a_real_provider");
+    EXPECT_STREQ(sm.getLlmProviderType().c_str(), "openai_compatible");  // unchanged
+}
+
+TEST_F(SettingsManagerTest, LlmTimeoutSecondsClamps) {
+    sm.setLlmTimeoutSeconds(1);
+    EXPECT_EQ(sm.getLlmTimeoutSeconds(), 5u);
+    sm.setLlmTimeoutSeconds(999);
+    EXPECT_EQ(sm.getLlmTimeoutSeconds(), 60u);
+}
+
+TEST_F(SettingsManagerTest, LlmApiKeyOnlySerializedWithIncludePassword) {
+    sm.setLlmApiKey("secret-token");
+    String withPassword = sm.toJson(true);
+    String withoutPassword = sm.toJson(false);
+    EXPECT_TRUE(withPassword.indexOf("secret-token") >= 0);
+    EXPECT_TRUE(withoutPassword.indexOf("secret-token") < 0);
+}
+
+TEST_F(SettingsManagerTest, LlmSettingsSerializedInJson) {
+    sm.setLlmEnabled(true);
+    sm.setLlmProviderType("ollama_cloud");
+    sm.setLlmBaseUrl("https://ollama.com");
+    sm.setLlmModel("gpt-oss:20b");
+    sm.setLlmTimeoutSeconds(30);
+
+    String json = sm.toJson();
+    EXPECT_TRUE(json.indexOf("llm_enabled") >= 0);
+    EXPECT_TRUE(json.indexOf("llm_provider_type") >= 0);
+    EXPECT_TRUE(json.indexOf("llm_base_url") >= 0);
+    EXPECT_TRUE(json.indexOf("llm_model") >= 0);
+    EXPECT_TRUE(json.indexOf("llm_timeout_seconds") >= 0);
+}
+
+TEST_F(SettingsManagerTest, LlmSettingsLoadedFromJson) {
+    sm.markAsNotLoadedForTesting();
+
+    String json = R"({
+        "llm_enabled": true,
+        "llm_provider_type": "openai_compatible",
+        "llm_base_url": "http://localhost:8000",
+        "llm_api_key": "kO7dkihVsUVeb",
+        "llm_model": "mlx-community/Qwen3.6-35B-A3B-6bit",
+        "llm_timeout_seconds": 15
+    })";
+    mockHal.setFileContent(json.c_str(), json.length());
+
+    EXPECT_TRUE(sm.load());
+    EXPECT_TRUE(sm.getLlmEnabled());
+    EXPECT_STREQ(sm.getLlmProviderType().c_str(), "openai_compatible");
+    EXPECT_STREQ(sm.getLlmBaseUrl().c_str(), "http://localhost:8000");
+    EXPECT_STREQ(sm.getLlmApiKey().c_str(), "kO7dkihVsUVeb");
+    EXPECT_STREQ(sm.getLlmModel().c_str(), "mlx-community/Qwen3.6-35B-A3B-6bit");
+    EXPECT_EQ(sm.getLlmTimeoutSeconds(), 15u);
+}
+
+// ============================================================================
 // NVS Backup/Restore Tests
 // ============================================================================
 

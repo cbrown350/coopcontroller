@@ -438,3 +438,111 @@ TEST_F(WeatherManagerTest, ResetToDefaultDecider) {
     weather.setDecider(nullptr);
     EXPECT_STREQ(weather.getDeciderName(), "rules");
 }
+
+// ============================================================================
+// Open-Window Plumbing Tests (issue #6)
+// ============================================================================
+
+// Decider that records the window minutes it was given, to verify plumbing
+// from setOpenWindowMinutes() through to the decision input.
+class WindowRecordingDecider : public IWeatherDecider {
+public:
+    int lastOpenMin = -999;
+    int lastCloseMin = -999;
+    WeatherDecision decide(const WeatherDecisionInput& input) override {
+        lastOpenMin = input.window_open_minutes;
+        lastCloseMin = input.window_close_minutes;
+        return {true, "recorded"};
+    }
+    const char* name() const override { return "window-recorder"; }
+};
+
+TEST_F(WeatherManagerTest, OpenWindowMinutesDefaultUnknown) {
+    configureWeather();
+    WindowRecordingDecider stub;
+    weather.setDecider(&stub);
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 72.0f, 5.0f));
+    weather.update();
+
+    EXPECT_EQ(stub.lastOpenMin, -1);
+    EXPECT_EQ(stub.lastCloseMin, -1);
+}
+
+TEST_F(WeatherManagerTest, OpenWindowMinutesPropagatedToDecider) {
+    configureWeather();
+    WindowRecordingDecider stub;
+    weather.setDecider(&stub);
+    weather.setOpenWindowMinutes(390, 1140);  // 06:30 - 19:00
+
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 72.0f, 5.0f));
+    weather.update();
+
+    EXPECT_EQ(stub.lastOpenMin, 390);
+    EXPECT_EQ(stub.lastCloseMin, 1140);
+}
+
+TEST_F(WeatherManagerTest, RuleBasedDeciderIgnoresOpenWindow) {
+    // The rule-based decider must not change behavior when window minutes are
+    // set — it only looks at current.condition + forecast, per its contract.
+    configureWeather();
+    weather.setOpenWindowMinutes(390, 1140);
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 72.0f, 5.0f));
+    weather.update();
+
+    EXPECT_TRUE(weather.isWeatherGoodForOpening());
+}
+
+// ============================================================================
+// LLM Decider Configuration Tests (issue #6)
+// ============================================================================
+
+TEST_F(WeatherManagerTest, ConfigureLlmDeciderDisabledKeepsRuleBased) {
+    weather.configureLlmDecider(false, "http://localhost:8000", "key", "model",
+                                "openai_compatible", 15);
+    EXPECT_STREQ(weather.getDeciderName(), "rules");
+}
+
+TEST_F(WeatherManagerTest, ConfigureLlmDeciderEnabledInstallsLlmDecider) {
+    weather.configureLlmDecider(true, "http://localhost:8000", "kO7dkihVsUVeb",
+                                "qwen3", "openai_compatible", 15);
+    EXPECT_STREQ(weather.getDeciderName(), "llm");
+}
+
+TEST_F(WeatherManagerTest, ConfigureLlmDeciderCanBeToggledOffAgain) {
+    weather.configureLlmDecider(true, "http://localhost:8000", "key", "model",
+                                "openai_compatible", 15);
+    EXPECT_STREQ(weather.getDeciderName(), "llm");
+
+    weather.configureLlmDecider(false, "", "", "", "openai_compatible", 15);
+    EXPECT_STREQ(weather.getDeciderName(), "rules");
+}
+
+TEST_F(WeatherManagerTest, ConfigureLlmDeciderUsedInFetchCycle) {
+    configureWeather();
+    weather.configureLlmDecider(true, "http://localhost:8000", "kO7dkihVsUVeb",
+                                "qwen3", "openai_compatible", 15);
+
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 72.0f, 5.0f));
+    mockHal->setHttpPostAuthResponse(
+        R"({"choices":[{"message":{"content":"{\"open\": false, \"reason\": \"llm says no\"}"}}]})");
+
+    weather.update();
+
+    EXPECT_STREQ(weather.getDeciderName(), "llm");
+    EXPECT_FALSE(weather.isWeatherGoodForOpening());
+    EXPECT_EQ(weather.getDecisionReason(), String("llm says no"));
+}
+
+TEST_F(WeatherManagerTest, TestLlmConnectionSuccess) {
+    mockHal->setHttpPostAuthResponse(R"({"choices":[{"message":{"content":"OK"}}]})");
+    String err = weather.testLlmConnection("http://localhost:8000", "kO7dkihVsUVeb",
+                                           "qwen3", "openai_compatible", 15);
+    EXPECT_EQ(err, "");
+}
+
+TEST_F(WeatherManagerTest, TestLlmConnectionFailure) {
+    mockHal->setHttpPostAuthResponse("");
+    String err = weather.testLlmConnection("http://localhost:8000", "kO7dkihVsUVeb",
+                                           "qwen3", "openai_compatible", 15);
+    EXPECT_NE(err, "");
+}

@@ -698,6 +698,30 @@ public:
   virtual String httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms = 10000) = 0;
 
   /**
+   * @brief Perform HTTP POST request with JSON body + Bearer auth, supporting
+   *        plain HTTP (http://) and HTTPS (https://).
+   *
+   * Used by the LLM weather-decider to reach an OpenAI-compatible provider
+   * (Ollama local/LAN, Ollama Cloud, Rapid-MLX, etc.). Unlike httpPost(), the
+   * scheme is honored: plain HTTP uses a non-TLS client so LAN endpoints like
+   * http://192.168.x.x:11434 or http://host:8000 work; HTTPS keeps TLS.
+   * When `bearerToken` is non-empty, an `Authorization: Bearer <token>` header
+   * is added.
+   *
+   * @param url Full URL to request (scheme selects plain vs TLS)
+   * @param jsonBody JSON body as string
+   * @param bearerToken Bearer token (empty = no Authorization header)
+   * @param extraHeaders Optional extra request headers (newline-terminated
+   *                     "Key: Value\r\n" lines; empty = none)
+   * @param timeout_ms Request timeout in milliseconds
+   * @return Response body as string, empty string on failure
+   */
+  virtual String httpPostAuth(const String& url, const String& jsonBody,
+                              const String& bearerToken,
+                              const String& extraHeaders,
+                              unsigned long timeout_ms = 15000) = 0;
+
+  /**
    * @brief Send email via SMTP with STARTTLS
    *
    * Connects to an SMTP server, performs STARTTLS upgrade, authenticates,

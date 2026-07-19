@@ -186,6 +186,9 @@ public:
   bool httpGetStream(const String& url, HttpDataCallback on_data,
                      unsigned long timeout_ms = 60000) override;
   String httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms = 10000) override;
+  String httpPostAuth(const String& url, const String& jsonBody,
+                      const String& bearerToken, const String& extraHeaders,
+                      unsigned long timeout_ms = 15000) override;
   String smtpSend(const String& host, uint16_t port,
                    const String& username, const String& password,
                    const String& from, const String& to,

@@ -261,6 +261,15 @@ void setup() // NOSONAR - complexity ok
     weatherManager.setUnits(settingsManager.getWeatherUnits());
     weatherManager.setUpdateIntervalMinutes(settingsManager.getWeatherUpdateIntervalMinutes());
     weatherManager.setLocation(settingsManager.getLatitude(), settingsManager.getLongitude());
+    // Configure the optional LLM weather-decider (issue #6). When enabled, it
+    // replaces the rule-based decider; any failure falls back to rule-based.
+    weatherManager.configureLlmDecider(
+        settingsManager.getLlmEnabled(),
+        settingsManager.getLlmBaseUrl(),
+        settingsManager.getLlmApiKey(),
+        settingsManager.getLlmModel(),
+        settingsManager.getLlmProviderType(),
+        settingsManager.getLlmTimeoutSeconds());
     doorController.setWeatherManager(&weatherManager);
 
     lightController.begin(&hal, &sunriseSunset);

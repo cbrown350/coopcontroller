@@ -490,6 +490,61 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       (void)weatherChanged;
                   }
 
+                  // Handle LLM weather-decider settings (issue #6)
+                  {
+                      bool llmChanged = false;
+                      bool llmEnabled = settingsManager.getLlmEnabled();
+                      String llmBaseUrl = settingsManager.getLlmBaseUrl();
+                      String llmApiKey = settingsManager.getLlmApiKey();
+                      String llmModel = settingsManager.getLlmModel();
+                      String llmType = settingsManager.getLlmProviderType();
+                      unsigned int llmTimeout = settingsManager.getLlmTimeoutSeconds();
+                      if (jsonObj["llm_enabled"].is<bool>()) {
+                          llmEnabled = jsonObj["llm_enabled"].as<bool>();
+                          settingsManager.setLlmEnabled(llmEnabled);
+                          llmChanged = true;
+                      }
+                      if (jsonObj["llm_provider_type"].is<String>()) {
+                          llmType = jsonObj["llm_provider_type"].as<String>();
+                          settingsManager.setLlmProviderType(llmType);
+                          llmChanged = true;
+                      }
+                      if (jsonObj["llm_base_url"].is<String>()) {
+                          llmBaseUrl = jsonObj["llm_base_url"].as<String>();
+                          settingsManager.setLlmBaseUrl(llmBaseUrl);
+                          llmChanged = true;
+                      }
+                      if (jsonObj["llm_api_key"].is<String>()) {
+                          String key = jsonObj["llm_api_key"].as<String>();
+                          // Empty string from UI means "keep existing" — only
+                          // overwrite when a real value is sent (matches the
+                          // weather_api_key convention above).
+                          if (key.length() > 0) {
+                              llmApiKey = key;
+                              settingsManager.setLlmApiKey(key);
+                              llmChanged = true;
+                          }
+                      }
+                      if (jsonObj["llm_model"].is<String>()) {
+                          llmModel = jsonObj["llm_model"].as<String>();
+                          settingsManager.setLlmModel(llmModel);
+                          llmChanged = true;
+                      }
+                      if (jsonObj["llm_timeout_seconds"].is<int>()) {
+                          llmTimeout = jsonObj["llm_timeout_seconds"].as<unsigned int>();
+                          settingsManager.setLlmTimeoutSeconds(llmTimeout);
+                          llmChanged = true;
+                      }
+                      // Reconfigure the active decider immediately on change.
+                      // configureLlmDecider() runs entirely on this async task
+                      // but only does string copies + a unique_ptr swap (no
+                      // TLS/JSON work), so it's safe here, unlike forceRefresh().
+                      if (weatherManager_ && llmChanged) {
+                          weatherManager_->configureLlmDecider(llmEnabled, llmBaseUrl, llmApiKey,
+                                                               llmModel, llmType, llmTimeout);
+                      }
+                  }
+
                   // Handle notification settings - Telegram
                   if (jsonObj["telegram_enabled"].is<bool>()) {
                       settingsManager.setTelegramEnabled(jsonObj["telegram_enabled"].as<bool>());
@@ -1943,6 +1998,97 @@ void CoopControllerWebServer::setWeatherManager(WeatherManager* weatherManager) 
             String output;
             serializeJson(doc, output);
             response->send(200, "application/json", output.c_str());
+        });
+
+    // LLM provider test-connection endpoint (issue #6). Accepts an optional
+    // JSON body with unsaved provider config so the UI can test before saving.
+    hal->webServerOn("/weather/llm/test_connection", HAL_WebRequestMethod::HTTP_POST,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!isAuthenticated(request)) {
+                sendAuthRequired(response);
+                return;
+            }
+            if (!weatherManager_) {
+                response->send(500, "application/json", R"({"success":false,"error":"WeatherManager not initialized"})");
+                return;
+            }
+            // Defaults to the saved settings; JSON body overrides individual fields.
+            String baseUrl = settingsManager.getLlmBaseUrl();
+            String apiKey = settingsManager.getLlmApiKey();
+            String model = settingsManager.getLlmModel();
+            String type = settingsManager.getLlmProviderType();
+            unsigned int timeout = settingsManager.getLlmTimeoutSeconds();
+
+            String body = request->body();
+            if (body.length() > 0) {
+                JsonDocument bodyDoc;
+                if (deserializeJson(bodyDoc, body) == DeserializationError::Ok) {
+                    JsonObject cfg = bodyDoc.as<JsonObject>();
+                    if (cfg["llm_base_url"].is<const char*>()) baseUrl = cfg["llm_base_url"].as<String>();
+                    if (cfg["llm_api_key"].is<const char*>()) apiKey = cfg["llm_api_key"].as<String>();
+                    if (cfg["llm_model"].is<const char*>()) model = cfg["llm_model"].as<String>();
+                    if (cfg["llm_provider_type"].is<const char*>()) type = cfg["llm_provider_type"].as<String>();
+                    if (cfg["llm_timeout_seconds"].is<int>()) timeout = cfg["llm_timeout_seconds"].as<unsigned int>();
+                }
+            }
+
+            String err = weatherManager_->testLlmConnection(baseUrl, apiKey, model, type, timeout);
+            JsonDocument doc;
+            doc["success"] = (err.length() == 0);
+            if (err.length() > 0) doc["error"] = err;
+            String output;
+            serializeJson(doc, output);
+            response->send(err.length() == 0 ? 200 : 400, "application/json", output.c_str());
+        });
+
+    // Weather (OpenWeatherMap) test endpoint (issue #6). Triggers one fetch
+    // cycle with optional API-key override so the user can verify the key
+    // before saving. The fetch happens on the loop task via forceRefresh() —
+    // but forceRefresh() blocks this handler for up to the HTTP timeout, which
+    // is acceptable for an explicit user-initiated test (not a hot path).
+    hal->webServerOn("/weather/test", HAL_WebRequestMethod::HTTP_POST,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!isAuthenticated(request)) {
+                sendAuthRequired(response);
+                return;
+            }
+            if (!weatherManager_) {
+                response->send(500, "application/json", R"({"success":false,"error":"WeatherManager not initialized"})");
+                return;
+            }
+            // Optional unsaved API key override.
+            String body = request->body();
+            if (body.length() > 0) {
+                JsonDocument bodyDoc;
+                if (deserializeJson(bodyDoc, body) == DeserializationError::Ok) {
+                    JsonObject cfg = bodyDoc.as<JsonObject>();
+                    if (cfg["weather_api_key"].is<const char*>()) {
+                        String k = cfg["weather_api_key"].as<String>();
+                        if (k.length() > 0) weatherManager_->setApiKey(k);
+                    }
+                }
+            }
+            // Snapshot fetch stats before/after to detect a successful fetch.
+            unsigned int beforeFail = weatherManager_->getFailedFetches();
+            unsigned int beforeOk = weatherManager_->getSuccessfulFetches();
+            weatherManager_->forceRefresh();
+            bool success = (weatherManager_->getSuccessfulFetches() > beforeOk) &&
+                           (weatherManager_->getFailedFetches() == beforeFail);
+
+            JsonDocument doc;
+            doc["success"] = success;
+            if (!success) {
+                String e = weatherManager_->getLastError();
+                doc["error"] = e.length() > 0 ? e : String("Weather fetch failed");
+            }
+            // Include the current snapshot on success for the UI to show.
+            if (success) {
+                JsonObject status = doc["status"].to<JsonObject>();
+                weatherManager_->toJson(status);
+            }
+            String output;
+            serializeJson(doc, output);
+            response->send(success ? 200 : 400, "application/json", output.c_str());
         });
 
     logger.logInfo("Weather endpoint registered");

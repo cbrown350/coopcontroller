@@ -10,6 +10,7 @@
 #include "WifiController.h"
 #include "HistoricalDataManager.h"
 #include "SettingsManager.h"
+#include "WeatherManager.h"
 #include "Logger.h"
 #include "IHAL.h"
 #include "MockHAL.h"
@@ -272,6 +273,94 @@ TEST_F(CoopControllerWebServerIntegrationTest, LoopCallsOTAHandlers) {
     server.loop();
     server.loop();
     SUCCEED();
+}
+
+// Weather + LLM decider endpoints (issue #6)
+TEST_F(CoopControllerWebServerIntegrationTest, WeatherManagerEndpointsRegisterWithoutCrash) {
+    WeatherManager weatherManager;
+    weatherManager.begin(mockHal);
+
+    CoopControllerWebServer server(mockHal, 8080);
+    server.begin(sensorManager, pumpController, buzzerController,
+              doorController, lightController, wifiController,
+              sunriseSunset, historyManager);
+    server.setWeatherManager(&weatherManager);
+    server.loop();
+    SUCCEED();
+}
+
+TEST_F(CoopControllerWebServerIntegrationTest, WeatherManagerNullDeciderDoesNotCrashHandlerRegistration) {
+    // setWeatherManager(nullptr) should be a safe no-op (guarded in the impl).
+    CoopControllerWebServer server(mockHal, 8080);
+    server.begin(sensorManager, pumpController, buzzerController,
+              doorController, lightController, wifiController,
+              sunriseSunset, historyManager);
+    server.setWeatherManager(nullptr);
+    SUCCEED();
+}
+
+// MockHAL::webServerOn only retains the single most-recently-registered
+// handler (no per-URI map), so only the last endpoint setWeatherManager()
+// registers (/weather/test) is directly invokable here. This matches the
+// existing coverage convention in this file for other test-button endpoints.
+TEST_F(CoopControllerWebServerIntegrationTest, WeatherTestEndpointReturnsSuccessOnGoodFetch) {
+    WeatherManager weatherManager;
+    weatherManager.begin(mockHal);
+    weatherManager.setEnabled(true);
+    weatherManager.setApiKey("testkey");
+    weatherManager.setUnits("imperial");
+
+    CoopControllerWebServer server(mockHal, 8080);
+    server.begin(sensorManager, pumpController, buzzerController,
+              doorController, lightController, wifiController,
+              sunriseSunset, historyManager);
+    server.setWeatherManager(&weatherManager);
+
+    mockHal->setWiFiConnected(true);
+    mockHal->setFreeHeap(200000);
+    mockHal->setHttpGetResponse(
+        R"({"weather":[{"id":800,"main":"Clear","description":"clear","icon":"01d"}],)"
+        R"("main":{"temp":72.0,"feels_like":71.0,"humidity":40,"pressure":1015},)"
+        R"("wind":{"speed":5.0},"clouds":{"all":10},"dt":1721234567,"cod":200})");
+
+    WebServerHandler handler = mockHal->getWebServerHandler();
+    ASSERT_NE(handler, nullptr);
+
+    MockWebRequest request;
+    request.setMethod(HAL_WebRequestMethod::HTTP_POST);
+    MockWebResponse response;
+    handler(&request, &response);
+
+    EXPECT_EQ(response.getLastCode(), 200);
+    EXPECT_TRUE(String(response.getLastBody()).indexOf("\"success\":true") >= 0);
+}
+
+TEST_F(CoopControllerWebServerIntegrationTest, WeatherTestEndpointReturnsErrorOnFailedFetch) {
+    WeatherManager weatherManager;
+    weatherManager.begin(mockHal);
+    weatherManager.setEnabled(true);
+    weatherManager.setApiKey("testkey");
+
+    CoopControllerWebServer server(mockHal, 8080);
+    server.begin(sensorManager, pumpController, buzzerController,
+              doorController, lightController, wifiController,
+              sunriseSunset, historyManager);
+    server.setWeatherManager(&weatherManager);
+
+    mockHal->setWiFiConnected(true);
+    mockHal->setFreeHeap(200000);
+    mockHal->setHttpGetResponse("");  // Simulate fetch failure
+
+    WebServerHandler handler = mockHal->getWebServerHandler();
+    ASSERT_NE(handler, nullptr);
+
+    MockWebRequest request;
+    request.setMethod(HAL_WebRequestMethod::HTTP_POST);
+    MockWebResponse response;
+    handler(&request, &response);
+
+    EXPECT_EQ(response.getLastCode(), 400);
+    EXPECT_TRUE(String(response.getLastBody()).indexOf("\"success\":false") >= 0);
 }
 
 // Note: main function is provided by desktop_main.cpp

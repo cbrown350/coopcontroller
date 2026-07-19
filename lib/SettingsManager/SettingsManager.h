@@ -214,6 +214,17 @@ struct user_settings // NOSONAR
     String   weather_api_key = "";                 ///< OpenWeatherMap API key
     String   weather_units = "imperial";           ///< "imperial", "metric", or "standard"
     unsigned int weather_update_interval_minutes = 10; ///< Fetch interval (5-360, keeps under free tier)
+
+    // ========================================================================
+    // LLM WEATHER DECIDER SETTINGS (issue #6)
+    // ========================================================================
+
+    bool     llm_enabled = false;                  ///< Use LLM decider instead of (over) rule-based
+    String   llm_provider_type = "openai_compatible"; ///< "openai_compatible" | "ollama_native" | "ollama_cloud"
+    String   llm_base_url = "";                    ///< Provider base URL (e.g. http://192.168.1.5:11434, https://api.host)
+    String   llm_api_key = "";                     ///< Bearer token (empty = no auth, for LAN Ollama)
+    String   llm_model = "";                       ///< Model name (e.g. "llama3.1", "gpt-4o-mini")
+    unsigned int llm_timeout_seconds = 15;         ///< Per-request timeout (5-60s)
 };
 
 /**
@@ -548,6 +559,22 @@ class SettingsManager // NOSONAR
     void setWeatherApiKey(const String& key);
     void setWeatherUnits(const String& units);
     void setWeatherUpdateIntervalMinutes(unsigned int minutes);
+
+    // LLM weather-decider getters (issue #6)
+    bool         getLlmEnabled() const;
+    String       getLlmProviderType() const;
+    String       getLlmBaseUrl() const;
+    String       getLlmApiKey() const;
+    String       getLlmModel() const;
+    unsigned int getLlmTimeoutSeconds() const;
+
+    // LLM weather-decider setters (issue #6)
+    void setLlmEnabled(bool enabled);
+    void setLlmProviderType(const String& type);
+    void setLlmBaseUrl(const String& url);
+    void setLlmApiKey(const String& key);
+    void setLlmModel(const String& model);
+    void setLlmTimeoutSeconds(unsigned int seconds);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);

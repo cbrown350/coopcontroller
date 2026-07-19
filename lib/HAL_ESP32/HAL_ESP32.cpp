@@ -1172,9 +1172,125 @@ String HAL_ESP32::httpPost(const String& url, const String& jsonBody, unsigned l
   return response;
 }
 
-// ========================================================================
-// SMTP EMAIL FUNCTIONS
-// ========================================================================
+String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
+                               const String& bearerToken, const String& extraHeaders,
+                               unsigned long timeout_ms) {
+  if (url.length() == 0) return "";
+
+  bool useTls = !url.startsWith("http://");  // https:// (or anything non-plain) => TLS
+
+  // Parse host/path/port from the URL.
+  String host = url;
+  String path = "/";
+  int slashIndex = url.indexOf("://");
+  if (slashIndex != -1) host = url.substring(slashIndex + 3);
+  int pathIndex = host.indexOf("/");
+  if (pathIndex != -1) { path = host.substring(pathIndex); host = host.substring(0, pathIndex); }
+  int port = useTls ? 443 : 80;
+  int portIndex = host.indexOf(":");
+  if (portIndex != -1) { port = host.substring(portIndex + 1).toInt(); host = host.substring(0, portIndex); }
+
+  unsigned long startTime = ::millis();
+
+  // Plain HTTP path uses a non-TLS WiFiClient so LAN endpoints (Rapid-MLX on
+  // :8000, local Ollama on :11434) work — httpPost() above is TLS-only.
+  std::unique_ptr<WiFiClient> plainHolder;
+  std::unique_ptr<WiFiClientSecure> tlsHolder;
+  if (useTls) {
+    tlsHolder = createSecureClient(timeout_ms);
+    if (tlsHolder == nullptr) {
+      Serial.println("[HAL_ESP32] httpPostAuth: TLS client unavailable (low memory), aborting");
+      return "";
+    }
+    if (!tlsHolder->connect(host.c_str(), port, timeout_ms)) return "";
+  } else {
+    // Same low-heap guard as the TLS path: a connection that can't even buffer
+    // its request line is not worth attempting.
+    if (ESP.getFreeHeap() < TLS_CLIENT_MIN_FREE_HEAP) {
+      return "";
+    }
+    try {
+      plainHolder = std::make_unique<WiFiClient>();
+    } catch (const std::exception&) {
+      return "";
+    }
+    if (!plainHolder->connect(host.c_str(), port, timeout_ms)) return "";
+  }
+
+  // Build the request. Both client types expose the same print/stop API.
+  String request = "POST " + path + " HTTP/1.1\r\n";
+  request += "Host: " + host + "\r\n";
+  request += "Content-Type: application/json\r\n";
+  request += "Content-Length: " + String(jsonBody.length()) + "\r\n";
+  if (bearerToken.length() > 0) {
+    request += "Authorization: Bearer " + bearerToken + "\r\n";
+  }
+  if (extraHeaders.length() > 0) request += extraHeaders;
+  request += "Connection: close\r\n\r\n";
+  request += jsonBody;
+
+  if (useTls) {
+    tlsHolder->print(request);
+  } else {
+    plainHolder->print(request);
+  }
+
+  // Helper lambda to read "a line or until deadline", independent of client type.
+  auto readLine = [&](auto& client) -> String {
+    String line;
+    unsigned long deadline = startTime + timeout_ms;
+    while (::millis() < deadline) {
+      int c = client->read();
+      if (c < 0) {
+        if (!client->connected() && client->available() == 0) break;
+        delay(1);
+        continue;
+      }
+      if (c == '\n') break;
+      if (c != '\r') { line += (char)c; if (line.length() > 8192) break; }
+    }
+    return line;
+  };
+
+  // Status line + headers
+  String statusLine = useTls ? readLine(tlsHolder) : readLine(plainHolder);
+  int statusCode = 0;
+  int spaceIdx = statusLine.indexOf(' ');
+  if (spaceIdx > 0) statusCode = statusLine.substring(spaceIdx + 1).toInt();
+
+  unsigned long deadline = startTime + timeout_ms;
+  while (::millis() < deadline) {
+    String line = useTls ? readLine(tlsHolder) : readLine(plainHolder);
+    line.trim();
+    if (line.length() == 0) break;  // end of headers
+  }
+
+  if (statusCode < 200 || statusCode >= 300) {
+    if (useTls) tlsHolder->stop(); else plainHolder->stop();
+    return "";
+  }
+
+  // Body
+  String response;
+  unsigned long lastActivity = ::millis();
+  while (::millis() < deadline) {
+    int c = (useTls ? tlsHolder->read() : plainHolder->read());
+    if (c < 0) {
+      bool connected = useTls ? tlsHolder->connected() : plainHolder->connected();
+      int avail = useTls ? tlsHolder->available() : plainHolder->available();
+      if (!connected && avail == 0) break;
+      if (::millis() - lastActivity > 1000) break;
+      delay(1);
+      continue;
+    }
+    response += (char)c;
+    lastActivity = ::millis();
+    if (response.length() > 16384) break;  // cap: don't let a huge reply eat RAM
+  }
+
+  if (useTls) tlsHolder->stop(); else plainHolder->stop();
+  return response;
+}
 
 #include "mbedtls/ssl.h"
 #include "mbedtls/net_sockets.h"

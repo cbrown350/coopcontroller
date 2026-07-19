@@ -3,132 +3,11 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <memory>
 #include "IHAL.h"
+#include "IWeatherDecider.h"
 
-/**
- * @brief Weather condition category for door-opening decisions
- *
- * Distilled from OpenWeatherMap condition codes + wind/temperature.
- * GOOD means safe to open; INCLEMENT means postpone.
- */
-enum class WeatherCondition : uint8_t {
-    UNKNOWN = 0,    ///< No data yet / fetch failed
-    GOOD = 1,       ///< Clear, clouds, or light wind — safe to open
-    INCLEMENT = 2   ///< Rain, snow, thunderstorm, extreme temps, high wind
-};
-
-/**
- * @brief Lightweight snapshot of current weather for status display + door logic
- *
- * Keeps fixed-size numeric fields plus a short condition string. Avoids
- * persisting large strings to keep RAM footprint stable (issue #4: uncaught
- * allocations under heap pressure reboot the device).
- */
-struct WeatherSnapshot {
-    WeatherCondition condition = WeatherCondition::UNKNOWN;
-    int weather_code = 0;         ///< Raw OpenWeatherMap condition code (e.g. 800)
-    float temp = NAN;             ///< Current temperature (in selected units)
-    float feels_like = NAN;       ///< "Feels like" temperature (in selected units)
-    int humidity = -1;            ///< Relative humidity %
-    float wind_speed = -1.0f;     ///< Wind speed (mph or m/s per units)
-    int pressure_hpa = -1;        ///< Sea-level pressure
-    int cloudiness = -1;          ///< Cloud cover %
-    char main_description[24] = {0};  ///< e.g. "Clear", "Rain"
-    char icon_code[8] = {0};          ///< OWM icon code, e.g. "10d"
-    long fetch_time = 0;          ///< Unix epoch of last successful fetch
-    bool valid = false;           ///< True after first successful fetch
-};
-
-/**
- * @brief Short-term forecast entry (next few 3-hour blocks)
- */
-struct WeatherForecastEntry {
-    long dt = 0;                    ///< Forecast time (epoch)
-    float temp = NAN;
-    float wind_speed = -1.0f;
-    float precip_prob = -1.0f;      ///< 0.0 - 1.0
-    char main_description[24] = {0};
-};
-
-/**
- * @brief Immutable view of the weather data a decider gets to reason over
- *
- * Passed to IWeatherDecider so decision logic (rule-based today, LLM-based in
- * a future session) never touches WeatherManager internals. All fields are in
- * the configured display units; `units` says which system.
- */
-struct WeatherDecisionInput {
-    const WeatherSnapshot& current;
-    const WeatherForecastEntry* forecast;  ///< Array of `forecast_count` entries (may be empty)
-    size_t forecast_count;
-    String units;                          ///< "imperial" | "metric" | "standard"
-};
-
-/**
- * @brief Result of a door open/no-open decision
- */
-struct WeatherDecision {
-    bool open = true;         ///< True if it is safe to open the door
-    String reason;            ///< Short human-readable justification (shown in status)
-};
-
-/**
- * @brief Strategy interface for deciding whether weather permits opening
- *
- * WeatherManager owns data fetching; the *decision* is delegated here so it
- * can be swapped without touching the fetch/parse/cache machinery. The
- * built-in RuleBasedWeatherDecider ships today. A future LlmWeatherDecider
- * (e.g. Ollama) will implement this same interface: it receives the weather
- * data, sends it to the model in a prompt, and returns open/no-open.
- *
- * Contract:
- *  - decide() is called at most once per successful weather fetch (i.e. at the
- *    fetch interval, NOT every loop), so an implementation MAY perform a
- *    bounded network call. It runs on the loop task, so it must respect the
- *    same crash-safety rules (no uncaught exceptions; bounded timeouts).
- *  - On any failure an implementation should fall back to `open = true` so a
- *    provider outage never traps the chickens inside.
- */
-class IWeatherDecider {
-public:
-    virtual ~IWeatherDecider() = default;
-
-    /**
-     * @brief Decide whether the door may open given current weather
-     * @param input Immutable weather snapshot + short forecast
-     * @return Decision with open flag and a short reason
-     */
-    virtual WeatherDecision decide(const WeatherDecisionInput& input) = 0;
-
-    /**
-     * @brief Short identifier for the decider (e.g. "rules", "ollama")
-     * Surfaced in status JSON so the UI can show which engine decided.
-     */
-    virtual const char* name() const = 0;
-};
-
-/**
- * @brief Default rule-based decider (precipitation, wind, extreme cold)
- *
- * Classifies OpenWeatherMap condition codes plus wind/temperature thresholds.
- * This is the baseline that ships with the weather feature; the LLM decider is
- * a future drop-in replacement implementing IWeatherDecider.
- */
-class RuleBasedWeatherDecider : public IWeatherDecider {
-public:
-    WeatherDecision decide(const WeatherDecisionInput& input) override;
-    const char* name() const override { return "rules"; }
-
-    /**
-     * @brief Coarse GOOD/INCLEMENT classification of current conditions
-     *
-     * Public + static so WeatherManager can use it for the status-display
-     * label independent of which decider is installed. Considers OWM condition
-     * code, wind, and temperature (all in the given units).
-     */
-    static WeatherCondition classify(int owmWeatherCode, float wind,
-                                     float temp, const String& units);
-};
+class LlmWeatherDecider;  // Forward decl; full type pulled in via .cpp (avoids circular include)
 
 /**
  * @brief OpenWeatherMap client and weather-gate for door automation
@@ -148,7 +27,8 @@ public:
  */
 class WeatherManager {
 public:
-    WeatherManager() = default;
+    WeatherManager();
+    ~WeatherManager();  // Defined in .cpp so unique_ptr<LlmWeatherDecider> sees the full type
 
     /**
      * @brief Initialize the weather manager
@@ -168,6 +48,47 @@ public:
     void setUpdateIntervalMinutes(unsigned int minutes);
     unsigned int getUpdateIntervalMinutes() const { return update_interval_minutes_; }
     void setLocation(float latitude, float longitude);
+
+    /**
+     * @brief Tell the weather manager the door's open-window for today
+     *
+     * Pushed by DoorController whenever it recomputes its schedule (cheap int
+     * assignment). Surfaces to deciders via WeatherDecisionInput so an LLM
+     * decider can judge weather for the actual period the chickens are out,
+     * not the whole forecast. -1 in either field means "unknown" (decider
+     * falls back to whole-forecast reasoning).
+     */
+    void setOpenWindowMinutes(int openMin, int closeMin);
+
+    /**
+     * @brief Configure the optional built-in LLM decider and make it active
+     *
+     * Constructs (or reconfigures) the owned LlmWeatherDecider with the given
+     * provider settings and installs it via setDecider() when enabled. When
+     * disabled, restores the default rule-based decider. Safe to call at any
+     * time from the loop task (e.g. after settings change).
+     *
+     * @param enabled Activate the LLM decider (false => rule-based fallback)
+     * @param baseUrl Provider base URL
+     * @param apiKey Bearer token (empty for LAN Ollama with no auth)
+     * @param model Model name
+     * @param providerType "openai_compatible" | "ollama_native" | "ollama_cloud"
+     * @param timeoutSeconds Per-request timeout (clamped internally)
+     */
+    void configureLlmDecider(bool enabled, const String& baseUrl, const String& apiKey,
+                             const String& model, const String& providerType,
+                             unsigned int timeoutSeconds);
+
+    /**
+     * @brief Probe the LLM provider (used by the "Test Connection" button)
+     *
+     * Uses the LLM decider if one is configured; otherwise builds a temporary
+     * probe from the given override values (so the UI can test unsaved config).
+     * @return Empty string on success, error message on failure
+     */
+    String testLlmConnection(const String& baseUrl, const String& apiKey,
+                             const String& model, const String& providerType,
+                             unsigned int timeoutSeconds) const;
 
     /**
      * @brief Install the open/no-open decision strategy
@@ -250,10 +171,13 @@ private:
     unsigned int update_interval_minutes_ = 10;
     float latitude_ = 40.7128f;
     float longitude_ = -74.0060f;
+    int window_open_minutes_ = -1;    ///< Door's today open time (local min since midnight)
+    int window_close_minutes_ = -1;   ///< Door's today close ceiling (local min since midnight)
 
     // Decision strategy (rule-based default; LLM decider is a future drop-in)
     RuleBasedWeatherDecider default_decider_;
     IWeatherDecider* decider_ = nullptr;  ///< Falls back to default_decider_ when null
+    std::unique_ptr<LlmWeatherDecider> llm_decider_;  ///< Owned LLM decider (nullptr when disabled)
 
     // Cached state
     WeatherSnapshot current_;

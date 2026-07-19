@@ -1,6 +1,10 @@
 #include "WeatherManager.h"
+#include "LlmWeatherDecider.h"  // Complete type for the owned unique_ptr<LlmWeatherDecider>
 #include "Logger.h"
 #include <math.h>
+
+WeatherManager::WeatherManager() = default;
+WeatherManager::~WeatherManager() = default;  // Out-of-line: needs complete LlmWeatherDecider type
 
 void WeatherManager::begin(IHAL* hal) {
     hal_ = hal;
@@ -19,6 +23,46 @@ void WeatherManager::setUpdateIntervalMinutes(unsigned int minutes) {
 void WeatherManager::setLocation(float latitude, float longitude) {
     latitude_ = latitude;
     longitude_ = longitude;
+}
+
+void WeatherManager::setOpenWindowMinutes(int openMin, int closeMin) {
+    window_open_minutes_ = openMin;
+    window_close_minutes_ = closeMin;
+}
+
+static LlmProviderWire wireFromType(const String& providerType) {
+    if (providerType == "ollama_native") return LlmProviderWire::OLLAMA_NATIVE;
+    // "openai_compatible" and "ollama_cloud" both speak the OpenAI schema.
+    return LlmProviderWire::OPENAI_COMPATIBLE;
+}
+
+void WeatherManager::configureLlmDecider(bool enabled, const String& baseUrl, const String& apiKey,
+                                         const String& model, const String& providerType,
+                                         unsigned int timeoutSeconds) {
+    if (!enabled) {
+        llm_decider_.reset();
+        setDecider(nullptr);  // restores rule-based default
+        return;
+    }
+    LlmProviderWire wire = wireFromType(providerType);
+    auto decider = std::make_unique<LlmWeatherDecider>(
+        hal_, baseUrl, apiKey, model, wire,
+        static_cast<unsigned long>(timeoutSeconds) * 1000UL);
+    LlmWeatherDecider* raw = decider.get();
+    llm_decider_ = std::move(decider);
+    setDecider(raw);
+}
+
+String WeatherManager::testLlmConnection(const String& baseUrl, const String& apiKey,
+                                         const String& model, const String& providerType,
+                                         unsigned int timeoutSeconds) const {
+    // Prefer the configured decider when it already matches the requested
+    // provider; otherwise build a throwaway probe so the UI can test unsaved
+    // config without disturbing the active decider.
+    LlmProviderWire wire = wireFromType(providerType);
+    LlmWeatherDecider probe(hal_, baseUrl, apiKey, model, wire,
+                            static_cast<unsigned long>(timeoutSeconds) * 1000UL);
+    return probe.testConnection();
 }
 
 void WeatherManager::setDecider(IWeatherDecider* decider) {
@@ -130,7 +174,8 @@ void WeatherManager::recomputeDecision() {
         decision_reason_ = "";
         return;
     }
-    WeatherDecisionInput input{current_, forecast_, forecast_count_, units_};
+    WeatherDecisionInput input{current_, forecast_, forecast_count_, units_,
+                               window_open_minutes_, window_close_minutes_};
     WeatherDecision decision = activeDecider().decide(input);
     decision_open_ = decision.open;
     decision_reason_ = decision.reason;
