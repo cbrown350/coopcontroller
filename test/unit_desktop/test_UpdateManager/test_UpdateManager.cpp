@@ -131,6 +131,49 @@ TEST_F(UpdateManagerTest, RequestCheck_IsConsumedOnce) {
     EXPECT_NE(um.getStatus().status, UpdateStatus::ERROR);
 }
 
+// A GitHub API releases/latest response (single HTTP 200, no redirect chain).
+// Used so the device's repeated OTA checks don't follow github.com's 3-hop
+// redirect to release-assets.githubusercontent.com, which crashed Core 1
+// (LoadProhibited in mbedtls) ~15% of checks.
+static const char* GITHUB_API_RELEASE = R"({
+  "tag_name": "v2.0.0",
+  "published_at": "2026-07-18T19:49:46Z",
+  "assets": [
+    {"name": "firmware.bin", "browser_download_url": "https://github.com/test/repo/releases/download/v2.0.0/firmware.bin", "size": 1048576, "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+    {"name": "littlefs.bin", "browser_download_url": "https://github.com/test/repo/releases/download/v2.0.0/littlefs.bin", "size": 524288, "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+  ]
+})";
+
+// ============================================================================
+// GITHUB-API MANIFEST PARSING TESTS
+// ============================================================================
+
+TEST_F(UpdateManagerTest, ParsesGitHubApiReleaseResponse) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(GITHUB_API_RELEASE);
+    um.checkForUpdates();
+
+    EXPECT_EQ(um.getLatestVersion(), String("2.0.0"));
+    EXPECT_TRUE(um.isUpdateAvailable());
+}
+
+TEST_F(UpdateManagerTest, GitHubApiResponseYieldsFirmwareAssetUrl) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse(GITHUB_API_RELEASE);
+    um.checkForUpdates();
+
+    auto doc = um.getCheckResponseJson();
+    EXPECT_EQ(doc["available_version"].as<String>(), String("2.0.0"));
+    // Firmware asset URL + size extracted from the assets array
+    EXPECT_EQ(doc["firmware"]["url"].as<String>(),
+              String("https://github.com/test/repo/releases/download/v2.0.0/firmware.bin"));
+    EXPECT_EQ(doc["firmware"]["size_bytes"].as<uint32_t>(), 1048576u);
+    EXPECT_EQ(um.getManifest().firmware.sha256,
+              String("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    EXPECT_EQ(um.getManifest().filesystem.sha256,
+              String("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+}
+
 // ============================================================================
 // VERSION PARSING TESTS
 // ============================================================================
@@ -272,11 +315,14 @@ TEST_F(UpdateManagerTest, Begin_InitializesWithProvidedUrl) {
     EXPECT_EQ(status.status, UpdateStatus::IDLE);
 }
 
-TEST_F(UpdateManagerTest, Begin_AutoConstructsUrlFromGithubRepo) {
+TEST_F(UpdateManagerTest, Begin_AutoConstructsRedirectFreeGithubApiUrl) {
     um.begin(&mockHal, "");
-    // If GITHUB_REPO is set, URL should be auto-constructed
-    auto status = um.getStatus();
-    EXPECT_EQ(status.status, UpdateStatus::IDLE);
+    mockHal.setHttpGetResponse(GITHUB_API_RELEASE);
+
+    um.checkForUpdates();
+
+    EXPECT_EQ(mockHal.getLastHttpGetUrl(),
+              String("https://api.github.com/repos/cbrown350/coopcontroller/releases/latest"));
 }
 
 TEST_F(UpdateManagerTest, Begin_SetsInitialStateToIdle) {

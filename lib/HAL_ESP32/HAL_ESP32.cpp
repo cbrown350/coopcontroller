@@ -17,6 +17,7 @@
 #include <mbedtls/sha256.h>  // For SHA256 verification
 #include <freertos/semphr.h>  // For FreeRTOS mutex
 #include <exception>          // For std::exception in web-handler guards
+#include "HttpRequestBuilder.h"  // Shared GET request builder (adds User-Agent)
 
 /**
  * @brief Constructor
@@ -834,12 +835,7 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
       return "";
     }
 
-    String request = "GET " + path + " HTTP/1.1\r\n";
-    request += "Host: " + host + "\r\n";
-    request += "Connection: close\r\n";
-    request += "\r\n";
-
-    client.print(request);
+    client.print(buildHttpGetRequest(host, path));
 
     // Read status line (byte-by-byte; see readHttpLine for why not readStringUntil)
     unsigned long deadline = startTime + timeout_ms;
@@ -855,12 +851,16 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     String response = "";
     bool headerDone = false;
     String redirectLocation = "";
+    long contentLength = -1;  // -1 = header absent
 
     while (!headerDone && ::millis() < deadline) {
       String line = readHttpLine(client, deadline);
       if (line.startsWith("Location:") || line.startsWith("location:")) {
         redirectLocation = line.substring(9);
         redirectLocation.trim();
+      }
+      if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
+        contentLength = line.substring(15).toInt();
       }
       if (line.length() == 0) {
         headerDone = true;
@@ -883,17 +883,37 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
       return "";
     }
 
-    // Read body byte-by-byte, preserving all bytes (including newlines). The
-    // manifest is JSON; we must return it intact so the parser can read it.
-    while (::millis() < deadline) {
-      int c = client.read();
-      if (c >= 0) {
-        response += (char)c;
-        // Cap the response to a sane size (manifest/JSON payloads are small;
-        // OTA binaries use httpGetStream, not this path)
-        if (response.length() > 65535) break;
-      } else if (!client.connected() && client.available() == 0) {
-        break;  // Server closed the connection — body complete
+    // Read body in bulk chunks, mirroring the httpGetStream drain loop
+    // (`while connected() OR available()`). The old single-byte read had two
+    // defects on GitHub's ~14 KB releases/latest JSON (the old ~900-byte static
+    // manifest fit in one TLS record and dodged both):
+    //   1. Truncation: it broke on `!connected() && available()==0`, but over
+    //      TLS connected() can flip false while decrypted records are still
+    //      buffering, cutting the body short.
+    //   2. Heap churn: growing a String one char at a time repeatedly reallocates
+    //      the buffer. Reserving from Content-Length and appending chunks reduces
+    //      fragmentation on this memory-constrained device.
+    // Content-Length bounds the read exactly when present; the cap protects the
+    // loop-task heap for responses that omit it.
+    const size_t maxBody = 65535;  // JSON payloads are small; binaries use httpGetStream
+    if (contentLength > 0) {
+      response.reserve((size_t)contentLength < maxBody ? (size_t)contentLength : maxBody);
+    }
+    uint8_t buf[512];
+    while ((client.connected() || client.available()) && ::millis() < deadline) {
+      if (contentLength >= 0 && (long)response.length() >= contentLength) {
+        break;  // Full declared body received
+      }
+      int avail = client.available();
+      if (avail > 0) {
+        int want = avail < (int)sizeof(buf) ? avail : (int)sizeof(buf);
+        int n = client.read(buf, want);
+        if (n > 0) {
+          response.concat((const char*)buf, (size_t)n);
+          if (response.length() >= maxBody) break;
+        }
+      } else if (!client.connected()) {
+        break;  // Server closed and no buffered data remains — body complete
       } else {
         delay(1);
       }
@@ -951,12 +971,7 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
       return false;
     }
 
-    String request = "GET " + path + " HTTP/1.1\r\n";
-    request += "Host: " + host + "\r\n";
-    request += "Connection: close\r\n";
-    request += "\r\n";
-
-    client.print(request);
+    client.print(buildHttpGetRequest(host, path));
 
     // Read status line
     String statusLine = "";

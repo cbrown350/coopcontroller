@@ -88,7 +88,7 @@ struct UpdateStatusSnapshot {
  *
  * Features:
  * - Semantic version comparison (1.0.0, 1.0.1, 1.1.0, 2.0.0)
- * - Manifest parsing from version_manifest.json
+ * - Manifest parsing from version_manifest.json or GitHub's releases/latest API
  * - SHA256 checksum verification
  * - Configurable update intervals
  * - Automatic or manual update triggering
@@ -184,7 +184,7 @@ public:
      * @brief Initialize update manager
      *
      * @param hal Pointer to hardware abstraction layer
-     * @param manifest_url URL to version_manifest.json
+     * @param manifest_url URL to version_manifest.json or GitHub release API
      */
     void begin(IHAL* hal, const String& manifest_url);
 
@@ -193,7 +193,7 @@ public:
      *
      * Applies a new manifest URL without a reboot (e.g. when the user changes
      * it in Settings). An empty string reverts to the default GitHub
-     * releases/latest URL built from the repo.
+     * releases/latest API URL built from the repo.
      *
      * @param manifest_url New manifest URL, or empty for the default
      */

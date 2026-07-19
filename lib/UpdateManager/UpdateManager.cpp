@@ -36,14 +36,14 @@ void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
 }
 
 void UpdateManager::setManifestUrl(const String& manifest_url) {
-    // Use the provided URL, or build the default GitHub releases/latest URL
+    // Use the provided URL, or build the redirect-free GitHub releases API URL
     // from the compiled-in repo when empty.
     if (manifest_url.length() > 0) {
         manifest_url_ = manifest_url;
     } else {
         String repo = githubRepo;
         manifest_url_ = repo.length() > 0
-            ? "https://github.com/" + repo + "/releases/latest/download/version_manifest.json"
+            ? "https://api.github.com/repos/" + repo + "/releases/latest"
             : "";
     }
 }
@@ -151,22 +151,56 @@ void UpdateManager::checkForUpdates() {
         return;
     }
 
-    // Extract manifest data
-    manifest_.latest_version = doc["latest_version"].as<String>();
-    manifest_.release_date = doc["release_date"].as<String>();
+    // Extract either the project's version_manifest.json format or GitHub's
+    // releases/latest API format. Use isNull() rather than String length to
+    // distinguish an absent latest_version member: ArduinoJson converts a
+    // missing member to the literal String "null".
+    bool githubRelease = doc["latest_version"].isNull() && !doc["tag_name"].isNull();
 
-    if (doc["firmware"].is<JsonObject>()) {
-        manifest_.firmware.version = doc["firmware"]["version"].as<String>();
-        manifest_.firmware.url = doc["firmware"]["url"].as<String>();
-        manifest_.firmware.size_bytes = doc["firmware"]["size_bytes"].as<uint32_t>();
-        manifest_.firmware.sha256 = doc["firmware"]["sha256"].as<String>();
-    }
+    if (githubRelease) {
+        String tag = doc["tag_name"].as<String>();
+        if (tag.startsWith("v")) tag = tag.substring(1);
+        manifest_.latest_version = tag;
+        manifest_.release_date = doc["published_at"].as<String>();
 
-    if (doc["filesystem"].is<JsonObject>()) {
-        manifest_.filesystem.version = doc["filesystem"]["version"].as<String>();
-        manifest_.filesystem.url = doc["filesystem"]["url"].as<String>();
-        manifest_.filesystem.size_bytes = doc["filesystem"]["size_bytes"].as<uint32_t>();
-        manifest_.filesystem.sha256 = doc["filesystem"]["sha256"].as<String>();
+        JsonArray assets = doc["assets"].as<JsonArray>();
+        for (JsonObject asset : assets) {
+            String name = asset["name"].as<String>();
+            VersionInfo* target = nullptr;
+            if (name == "firmware.bin") {
+                target = &manifest_.firmware;
+            } else if (name == "littlefs.bin") {
+                target = &manifest_.filesystem;
+            }
+
+            if (target != nullptr) {
+                target->version = manifest_.latest_version;
+                target->url = asset["browser_download_url"].as<String>();
+                target->size_bytes = asset["size"].as<uint32_t>();
+
+                String digest = asset["digest"].as<String>();
+                target->sha256 = digest.startsWith("sha256:")
+                    ? digest.substring(7)
+                    : "";
+            }
+        }
+    } else {
+        manifest_.latest_version = doc["latest_version"].as<String>();
+        manifest_.release_date = doc["release_date"].as<String>();
+
+        if (doc["firmware"].is<JsonObject>()) {
+            manifest_.firmware.version = doc["firmware"]["version"].as<String>();
+            manifest_.firmware.url = doc["firmware"]["url"].as<String>();
+            manifest_.firmware.size_bytes = doc["firmware"]["size_bytes"].as<uint32_t>();
+            manifest_.firmware.sha256 = doc["firmware"]["sha256"].as<String>();
+        }
+
+        if (doc["filesystem"].is<JsonObject>()) {
+            manifest_.filesystem.version = doc["filesystem"]["version"].as<String>();
+            manifest_.filesystem.url = doc["filesystem"]["url"].as<String>();
+            manifest_.filesystem.size_bytes = doc["filesystem"]["size_bytes"].as<uint32_t>();
+            manifest_.filesystem.sha256 = doc["filesystem"]["sha256"].as<String>();
+        }
     }
 
     last_check_time_ = hal_->millis();
