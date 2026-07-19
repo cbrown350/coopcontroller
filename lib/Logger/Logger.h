@@ -1,18 +1,15 @@
 #ifndef __LOGGER_H__
 #define __LOGGER_H__
 
-#include "IHAL.h"
-
-// std headers MUST come before <Arduino.h>: ArduinoFake's Arduino.h (and the
-// real ESP32 Arduino.h) define round(x)/abs(x) macros that clobber the
-// std::chrono::round / std::abs function templates pulled in transitively by
-// <mutex> on libstdc++ 13 (Ubuntu CI). Including <mutex> first avoids the
-// macro collision. See docs/superpowers/specs/2026-07-19-llm-weather-decider-design.md.
-#include <mutex> // Cross-core log serialization (see logMutex_)
+#include "IHAL.h"  // Also #undefs ArduinoFake's round(x)/abs(x) macros on the
+                   // desktop test build so <mutex> below doesn't collide with
+                   // std::chrono on GCC 13/Ubuntu CI — see IHAL.h for the why.
 
 #include <Arduino.h> // Requires ArduinoFake to mock in tests
 #include <SimpleSyslog.h> // Requires ArduinoFake to mock in tests
 #include <UUID.h> // Requires ArduinoFake to mock in tests
+
+#include <mutex> // Cross-core log serialization (see logMutex_)
 
 /**
  * @brief Logging severity levels

@@ -2,6 +2,23 @@
 #define __IHAL_H__
 
 #include <Arduino.h>
+
+#ifdef UNIT_TEST_DESKTOP
+// ArduinoFake's Arduino.h defines round(x)/abs(x) function-like macros. On
+// the desktop test build (GCC 13 / libstdc++, Ubuntu CI) any subsequent
+// <chrono> or <mutex> include (e.g. Logger.h's cross-core log mutex) breaks:
+// the preprocessor rewrites std::chrono::round(...)/std::abs(...) function
+// template definitions as if they were macro invocations, producing
+// nonsensical "macro passed N arguments" errors. Apple clang's libc++
+// tolerates the collision, which is why this only broke on CI, not locally.
+// Real ESP32 builds never include <chrono>/<mutex> transitively from Arduino
+// headers, so this is desktop-test-only; production code never calls the
+// macro form of round()/abs() (verified: no bare round(/abs( call sites in
+// lib/ or src/), so undefining them here is safe.
+#undef round
+#undef abs
+#endif
+
 #include <ArduinoJson.h>
 #include <cstddef>
 #include <functional>
