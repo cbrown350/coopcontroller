@@ -1115,7 +1115,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                           // Write log entries one at a time
                           while (state->current < state->total && written < maxLen) {
                               int bufIdx = (state->startIndex + static_cast<int>(state->current)) % 150;
-                              const LogEntry& entry = logger.getLogEntryAt(bufIdx);
+                              // getLogEntryAt returns a by-value snapshot taken under
+                              // the log mutex; binding it to a const ref extends the
+                              // temporary's lifetime for this iteration so the main
+                              // loop can't tear this entry mid-read.
+                              const LogEntry entry = logger.getLogEntryAt(bufIdx);
 
                               String point;
                               if (state->current > 0) point += ",";

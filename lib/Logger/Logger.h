@@ -7,6 +7,8 @@
 #include <SimpleSyslog.h> // Requires ArduinoFake to mock in tests
 #include <UUID.h> // Requires ArduinoFake to mock in tests
 
+#include <mutex> // Cross-core log serialization (see logMutex_)
+
 /**
  * @brief Logging severity levels
  *
@@ -69,6 +71,21 @@ private:
   String syslogHostnameStr_;                 ///< Persistent copy of hostname (SimpleSyslog stores raw pointer)
 
   LogLevel currentLogLevel_;                 ///< Current minimum log level
+
+  /// @brief Serializes every log emission across cores/tasks.
+  ///
+  /// The logger is called from the main loop (core 1) and from async web
+  /// handlers (async_tcp task, core 0). Without a lock those callers race on
+  /// the shared circular buffer, the UUID generator, and — most damaging — the
+  /// single WiFiUDP socket inside SimpleSyslog (one shared tx_buffer/length/fd).
+  /// Interleaved beginPacket()/write()/endPacket() from two cores tears that
+  /// buffer, producing the "endPacket: could not send data: 12" storm and
+  /// corrupting newlib lock/heap state (observed as lock_init_generic aborts
+  /// and a wedged TCP acceptor under concurrent web requests). recursive_mutex
+  /// so a log call made while already logging (e.g. stringToLogLevel emitting a
+  /// warning) does not self-deadlock. Declared mutable: logging methods are
+  /// const. Not used from ISRs (verified: no ISR in the codebase logs).
+  mutable std::recursive_mutex logMutex_;
 
   /**
    * @brief Private constructor for singleton
@@ -149,9 +166,15 @@ public:
   int getLogCount() const;
 
   /**
-   * @brief Get a log entry by raw buffer index (for chunked streaming)
+   * @brief Get a copy of a log entry by raw buffer index (for chunked streaming)
+   *
+   * Returns by value, not by reference: the chunked /logs response runs on the
+   * async web task and reads the entry field-by-field, while the main loop may
+   * concurrently overwrite that circular-buffer slot. A reference would let the
+   * caller read a torn entry after the internal lock was released. Copying the
+   * whole fixed-size entry under the lock hands the caller a stable snapshot.
    */
-  const LogEntry& getLogEntryAt(int index) const;
+  LogEntry getLogEntryAt(int index) const;
 
   /**
    * @brief Get the start index for ordered iteration (oldest entry)

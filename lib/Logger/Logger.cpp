@@ -39,6 +39,11 @@ void Logger::begin(IHAL* _hal)
 
 void Logger::reconfigureSyslog(const String& server, int port, const char* hostname)
 {
+  // Hold the log mutex: this swaps the syslog pointer that logWithLevel()
+  // dereferences on another core. Without the lock a concurrent log could use
+  // a syslog client mid-delete (use-after-free).
+  std::lock_guard<std::recursive_mutex> guard(logMutex_);
+
   // Destroy existing syslog client
   if (syslog != nullptr) {
     delete syslog; // NOSONAR
@@ -72,6 +77,14 @@ void Logger::logWithLevel(const String &message, LogLevel level) const
     if (static_cast<int>(level) < static_cast<int>(currentLogLevel_)) {
         return; // Filter out messages below current log level
     }
+
+    // Serialize the whole emission (serial print, syslog UDP send, and circular
+    // buffer write) across cores/tasks. See logMutex_ in Logger.h for why: the
+    // shared SimpleSyslog WiFiUDP tx_buffer and the buffer indices are not
+    // safe for concurrent use from the loop task (core 1) and async web
+    // handlers (async_tcp, core 0). Recursive so a nested log (e.g. a warning
+    // emitted from within stringToLogLevel) does not deadlock.
+    std::lock_guard<std::recursive_mutex> guard(logMutex_);
 
     unsigned long timestamp = hal->getTime();
     
@@ -229,6 +242,11 @@ String Logger::getLogsAsJson() const
 
   logger.logfDebug("Free heap before JSON log: %u bytes", hal->getFreeHeap());
 
+  // Runs on the async web task while the main loop may be appending entries.
+  // Hold the log mutex for the buffer read so we never serialize a half-written
+  // entry. Recursive mutex: the logfDebug calls in this method re-enter safely.
+  std::lock_guard<std::recursive_mutex> guard(logMutex_);
+
   JsonDocument jsonDoc;
   JsonArray logsArray = jsonDoc["logs"].to<JsonArray>();
 
@@ -267,6 +285,8 @@ String Logger::getLogsAsJson() const
 
 void Logger::clearLogs()
 {
+  // Mutates the shared buffer that logWithLevel() writes from other tasks.
+  std::lock_guard<std::recursive_mutex> guard(logMutex_);
   currentIndex = 0;
   totalEntries = 0;
   // Clear the buffer
@@ -280,15 +300,21 @@ void Logger::clearLogs()
 
 int Logger::getLogCount() const
 {
+  std::lock_guard<std::recursive_mutex> guard(logMutex_);
   return totalEntries;
 }
 
-const LogEntry& Logger::getLogEntryAt(int index) const
+LogEntry Logger::getLogEntryAt(int index) const
 {
+  // Return a COPY taken under the lock so the caller reads a stable snapshot
+  // even if the main loop overwrites this slot immediately afterward. See the
+  // header for why a reference would be unsafe here.
+  std::lock_guard<std::recursive_mutex> guard(logMutex_);
   return logBuffer[index];
 }
 
 int Logger::getStartIndex() const
 {
+  std::lock_guard<std::recursive_mutex> guard(logMutex_);
   return (totalEntries < MAX_LOG_ENTRIES) ? 0 : currentIndex;
 }

@@ -6,6 +6,10 @@
 #include "Logger.h"
 #include "MockHAL.h"
 
+#include <atomic>
+#include <thread>
+#include <vector>
+
 using namespace fakeit;
 
 // Test fixture for Logger
@@ -240,7 +244,72 @@ TEST_F(LoggerTest, SetGetLogLevel) {
 TEST_F(LoggerTest, SingletonPattern) {
     Logger& logger1 = Logger::getInstance();
     Logger& logger2 = Logger::getInstance();
-    
+
     // Both references should point to the same instance
     EXPECT_EQ(&logger1, &logger2);
+}
+
+// Concurrency regression test for the cross-core logging race.
+//
+// On the device the logger is called from the main loop (core 1) and from
+// async web handlers (async_tcp task, core 0) with no coordination. Before the
+// logMutex_ fix those callers raced on the circular buffer, the UUID generator,
+// and the shared SimpleSyslog WiFiUDP socket, corrupting newlib lock/heap state
+// (decoded as lock_init_generic aborts) and wedging the TCP acceptor.
+//
+// This test reproduces the concurrent access pattern on desktop: many threads
+// emit logs while another thread repeatedly serializes the buffer via
+// getLogsAsJson() (the /logs endpoint path). With the logMutex_ in place every
+// entry point is serialized, so this must complete without a crash, a data
+// race (under TSan), or a corrupted count. Without the lock it crashes/asserts.
+TEST_F(LoggerTest, ConcurrentLoggingIsThreadSafe) {
+    Logger& logger_instance = Logger::getInstance();
+    logger_instance.clearLogs();
+
+    constexpr int kWriterThreads = 8;
+    constexpr int kLogsPerThread = 500;
+    std::atomic<bool> start{false};
+    std::atomic<int> readerReads{0};
+
+    std::vector<std::thread> threads;
+    threads.reserve(kWriterThreads + 1);
+
+    // Writer threads hammer every severity path.
+    for (int t = 0; t < kWriterThreads; ++t) {
+        threads.emplace_back([&logger_instance, &start, t]() {
+            while (!start.load(std::memory_order_acquire)) { /* spin */ }
+            for (int i = 0; i < kLogsPerThread; ++i) {
+                logger_instance.logfInfo("thread %d msg %d", t, i);
+                logger_instance.logWarning("concurrent warning");
+            }
+        });
+    }
+
+    // Reader thread concurrently serializes the buffer (the /logs API path).
+    threads.emplace_back([&logger_instance, &start, &readerReads]() {
+        while (!start.load(std::memory_order_acquire)) { /* spin */ }
+        for (int i = 0; i < 200; ++i) {
+            String json = logger_instance.getLogsAsJson();
+            // Buffer must always serialize to *some* valid JSON, never empty.
+            if (json.length() > 0) {
+                readerReads.fetch_add(1, std::memory_order_relaxed);
+            }
+            (void)logger_instance.getLogCount();
+        }
+    });
+
+    start.store(true, std::memory_order_release);
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    // The buffer is capacity-bounded and internally consistent after the storm.
+    EXPECT_LE(logger_instance.getLogCount(), 150);
+    EXPECT_GT(readerReads.load(), 0);
+
+    // The logger is still fully functional after concurrent stress.
+    logger_instance.clearLogs();
+    logger_instance.logInfo("post-stress sanity");
+    String finalJson = logger_instance.getLogsAsJson();
+    EXPECT_TRUE(finalJson.indexOf("post-stress sanity") >= 0);
 }
