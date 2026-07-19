@@ -1119,7 +1119,12 @@ function Status() {
                         {weatherStatus()!.current!.description || weatherStatus()!.current!.condition}
                       </div>
                       <Show when={weatherStatus()!.decision_reason}>
-                        <div class="stat-desc">Decision: {weatherStatus()!.decision_reason}</div>
+                        <div class="stat-desc">
+                          Decision: {weatherStatus()!.decision_reason}
+                          <Show when={weatherStatus()!.decider}>
+                            {' '}({weatherStatus()!.decider === 'llm' ? 'LLM' : 'rules'})
+                          </Show>
+                        </div>
                       </Show>
                     </div>
 

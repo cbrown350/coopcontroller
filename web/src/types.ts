@@ -160,6 +160,12 @@ export interface Settings {
   weather_api_key?: string;
   weather_units?: string;
   weather_update_interval_minutes?: number;
+  llm_enabled?: boolean;
+  llm_provider_type?: string;
+  llm_base_url?: string;
+  llm_api_key?: string;
+  llm_model?: string;
+  llm_timeout_seconds?: number;
 }
 
 export interface WeatherCurrent {
@@ -197,4 +203,15 @@ export interface WeatherStatus {
   last_error?: string;
   current?: WeatherCurrent;
   forecast?: WeatherForecast[];
+}
+
+export interface WeatherTestResult {
+  success: boolean;
+  error?: string;
+  status?: WeatherStatus;
+}
+
+export interface LlmTestConnectionResult {
+  success: boolean;
+  error?: string;
 }

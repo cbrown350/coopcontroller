@@ -135,6 +135,19 @@ function Settings() {
   const [showWeatherApiKey, setShowWeatherApiKey] = createSignal(false)
   const [weatherUnits, setWeatherUnits] = createSignal<string>('imperial')
   const [weatherUpdateIntervalMinutes, setWeatherUpdateIntervalMinutes] = createSignal<number | null>(10)
+  const [weatherTestLoading, setWeatherTestLoading] = createSignal(false)
+  const [weatherTestResult, setWeatherTestResult] = createSignal<{success: boolean, message: string} | null>(null)
+
+  // LLM weather-decider settings (issue #6)
+  const [llmEnabled, setLlmEnabled] = createSignal<boolean | null>(null)
+  const [llmProviderType, setLlmProviderType] = createSignal<string>('openai_compatible')
+  const [llmBaseUrl, setLlmBaseUrl] = createSignal('')
+  const [llmApiKey, setLlmApiKey] = createSignal('')
+  const [showLlmApiKey, setShowLlmApiKey] = createSignal(false)
+  const [llmModel, setLlmModel] = createSignal('')
+  const [llmTimeoutSeconds, setLlmTimeoutSeconds] = createSignal<number | null>(15)
+  const [llmTestLoading, setLlmTestLoading] = createSignal(false)
+  const [llmTestResult, setLlmTestResult] = createSignal<{success: boolean, message: string} | null>(null)
 
   // Notification settings - Telegram
   const [telegramEnabled, setTelegramEnabled] = createSignal<boolean | null>(null)
@@ -302,6 +315,14 @@ function Settings() {
       setWeatherUnits(settings.weather_units ?? 'imperial')
       setWeatherUpdateIntervalMinutes(settings.weather_update_interval_minutes ?? 10)
 
+      // Load LLM weather-decider settings (API key never returned for security)
+      setLlmEnabled(settings.llm_enabled ?? false)
+      setLlmProviderType(settings.llm_provider_type ?? 'openai_compatible')
+      setLlmBaseUrl(settings.llm_base_url ?? '')
+      setLlmApiKey('')
+      setLlmModel(settings.llm_model ?? '')
+      setLlmTimeoutSeconds(settings.llm_timeout_seconds ?? 15)
+
       // Load notification settings
       setTelegramEnabled(settings.telegram_enabled ?? false)
       setTelegramBotToken('') // Never load token back for security
@@ -437,6 +458,11 @@ function Settings() {
         weather_enabled: weatherEnabled() ?? false,
         weather_units: weatherUnits() ?? 'imperial',
         weather_update_interval_minutes: weatherUpdateIntervalMinutes() ?? 10,
+        llm_enabled: llmEnabled() ?? false,
+        llm_provider_type: llmProviderType() ?? 'openai_compatible',
+        llm_base_url: llmBaseUrl() ?? '',
+        llm_model: llmModel() ?? '',
+        llm_timeout_seconds: llmTimeoutSeconds() ?? 15,
         water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
         water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
         telegram_enabled: telegramEnabled() ?? false,
@@ -474,6 +500,11 @@ function Settings() {
       // Handle weather API key: only include if provided (non-empty)
       if (weatherApiKey().length > 0) {
         settingsPayload['weather_api_key'] = weatherApiKey()
+      }
+
+      // Handle LLM API key: only include if provided (non-empty)
+      if (llmApiKey().length > 0) {
+        settingsPayload['llm_api_key'] = llmApiKey()
       }
 
       // Handle Telegram bot token: only include if provided (non-empty)
@@ -646,6 +677,62 @@ function Settings() {
       }
     } catch (error) {
       console.error('Failed to fetch sunrise/sunset data:', error)
+    }
+  }
+
+  const handleTestWeather = async () => {
+    setWeatherTestLoading(true)
+    setWeatherTestResult(null)
+    try {
+      // Send current form value so testing works before saving
+      const body: Record<string, string> = {}
+      if (weatherApiKey()) body.weather_api_key = weatherApiKey()
+      const response = await authenticatedFetch('/weather/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      const data = await response.json()
+      setWeatherTestResult({
+        success: data.success,
+        message: data.success
+          ? `OK — ${data.status?.current?.description ?? 'weather fetched'}`
+          : (data.error || 'Weather fetch failed')
+      })
+    } catch (err: any) {
+      setWeatherTestResult({ success: false, message: err.message || 'Request failed' })
+    } finally {
+      setWeatherTestLoading(false)
+      setTimeout(() => setWeatherTestResult(null), 6000)
+    }
+  }
+
+  const handleTestLlmConnection = async () => {
+    setLlmTestLoading(true)
+    setLlmTestResult(null)
+    try {
+      // Send current form values so testing works before saving
+      const body: Record<string, any> = {}
+      if (llmBaseUrl()) body.llm_base_url = llmBaseUrl()
+      if (llmApiKey()) body.llm_api_key = llmApiKey()
+      if (llmModel()) body.llm_model = llmModel()
+      if (llmProviderType()) body.llm_provider_type = llmProviderType()
+      if (llmTimeoutSeconds()) body.llm_timeout_seconds = llmTimeoutSeconds()
+      const response = await authenticatedFetch('/weather/llm/test_connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      const data = await response.json()
+      setLlmTestResult({
+        success: data.success,
+        message: data.success ? 'Connected! Provider responded.' : (data.error || 'Connection failed')
+      })
+    } catch (err: any) {
+      setLlmTestResult({ success: false, message: err.message || 'Request failed' })
+    } finally {
+      setLlmTestLoading(false)
+      setTimeout(() => setLlmTestResult(null), 8000)
     }
   }
 
@@ -1670,9 +1757,124 @@ function Settings() {
                 <div class="fieldset-label">How often to refresh weather (5-360 min, default 10). Kept well within the free tier.</div>
               </fieldset>
             </div>
+            <div class="mt-2">
+              <button type="button" class="btn btn-accent btn-soft btn-sm"
+                onClick={handleTestWeather}
+                disabled={weatherTestLoading()}>
+                {weatherTestLoading() ? (
+                  <><span class="loading loading-spinner loading-xs"></span> Testing...</>
+                ) : 'Test Connection'}
+              </button>
+              <Show when={weatherTestResult()}>
+                <span class={`ml-2 text-sm ${weatherTestResult()!.success ? 'text-success' : 'text-error'}`}>
+                  {weatherTestResult()!.message}
+                </span>
+              </Show>
+            </div>
           </Show>
         </div>
       </div>
+
+      {/* LLM Weather Decision (issue #6) */}
+      <Show when={weatherEnabled()}>
+        <div class="card bg-base-200 card-sm shadow-sm mt-4">
+          <div class="card-body">
+            <h2 class="card-title">LLM Weather Decision</h2>
+            <div class="fieldset-label">
+              Optionally replace the rule-based weather check above with an LLM. The model is
+              asked to judge the forecast for the door's actual open period today — not just
+              whether any bad weather appears somewhere in the forecast. Falls back automatically
+              to the rule-based check if the LLM is unreachable, disabled, or returns something
+              unusable. Works with Ollama Cloud, a local/LAN Ollama or Rapid-MLX instance, or any
+              other OpenAI-compatible provider.
+            </div>
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Enable LLM Decision</legend>
+              <label class="label cursor-pointer justify-start gap-2">
+                <span class="label-text">Use an LLM instead of the rule-based check</span>
+                <Show when={loaded()}>
+                  <input type="checkbox" class="toggle toggle-accent"
+                    checked={llmEnabled() ?? false}
+                    onChange={(e) => setLlmEnabled(e.currentTarget.checked)} />
+                </Show>
+              </label>
+            </fieldset>
+            <Show when={llmEnabled()}>
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Provider</legend>
+                <select class="select w-full" value={llmProviderType()}
+                  onInput={(e) => setLlmProviderType((e.target as HTMLSelectElement).value)}>
+                  <option value="ollama_cloud">Ollama Cloud</option>
+                  <option value="openai_compatible">Ollama (local/LAN) or other OpenAI-compatible</option>
+                  <option value="ollama_native">Ollama native API (local/LAN, non-OpenAI-compatible)</option>
+                </select>
+                <div class="fieldset-label">
+                  Ollama Cloud and "OpenAI-compatible" both use the standard /v1/chat/completions
+                  API (this covers Rapid-MLX and most local servers too). Pick "Ollama native" only
+                  if your local Ollama install's OpenAI-compatible endpoint isn't available.
+                </div>
+              </fieldset>
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Provider URL</legend>
+                <input type="text" value={llmBaseUrl()}
+                  onInput={(e) => setLlmBaseUrl(e.target.value)}
+                  placeholder="http://192.168.1.5:11434 or https://ollama.com"
+                  class="input w-full" />
+                <div class="fieldset-label">
+                  Base URL including port, no trailing slash or path (e.g. http://localhost:8000
+                  for a LAN Ollama/Rapid-MLX server, or https://ollama.com for Ollama Cloud).
+                </div>
+              </fieldset>
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">API Key</legend>
+                <div class="join w-full">
+                  <input type={showLlmApiKey() ? 'text' : 'password'}
+                    value={llmApiKey()}
+                    onInput={(e) => setLlmApiKey(e.target.value)}
+                    placeholder="Leave blank for LAN providers with no auth"
+                    class="input join-item w-full" />
+                  <button type="button" class="btn join-item"
+                    onClick={() => setShowLlmApiKey(!showLlmApiKey())}>
+                    {showLlmApiKey() ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <div class="fieldset-label">Bearer token for the provider. Optional for local/LAN Ollama. Leave blank to keep existing key.</div>
+              </fieldset>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Model</legend>
+                  <input type="text" value={llmModel()}
+                    onInput={(e) => setLlmModel(e.target.value)}
+                    placeholder="e.g. llama3.1, gpt-oss:20b"
+                    class="input w-full" />
+                </fieldset>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Timeout (seconds)</legend>
+                  <input type="number" min="5" max="60" step="1"
+                    value={llmTimeoutSeconds() ?? 15}
+                    onInput={(e) => setLlmTimeoutSeconds(parseInt(e.target.value) || 15)}
+                    class="input w-full" />
+                  <div class="fieldset-label">Per-request timeout (5-60s, default 15).</div>
+                </fieldset>
+              </div>
+              <div class="mt-2">
+                <button type="button" class="btn btn-accent btn-soft btn-sm"
+                  onClick={handleTestLlmConnection}
+                  disabled={llmTestLoading()}>
+                  {llmTestLoading() ? (
+                    <><span class="loading loading-spinner loading-xs"></span> Testing...</>
+                  ) : 'Test Connection'}
+                </button>
+                <Show when={llmTestResult()}>
+                  <span class={`ml-2 text-sm ${llmTestResult()!.success ? 'text-success' : 'text-error'}`}>
+                    {llmTestResult()!.message}
+                  </span>
+                </Show>
+              </div>
+            </Show>
+          </div>
+        </div>
+      </Show>
 
       <h2 class="text-lg font-bold mb-4 mt-10">OTA Updates</h2>
 
