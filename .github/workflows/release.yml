@@ -23,6 +23,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git to use HTTPS (works locally in act and on GitHub, public or private)
+        env:
+          # Present on GitHub Actions. Optional in local `act` runs — pass with
+          # `act --secret GITHUB_TOKEN=<PAT> ...` to authenticate fetches/pushes
+          # against a private repo. When absent, falls back to unauthenticated
+          # HTTPS, which works for public repos.
+          AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Rewrite both SSH URL forms to HTTPS so the runner never needs an SSH
+          # key. --add is required because both rules share the same key and would
+          # otherwise overwrite each other.
+          git config --global --add url."https://github.com/".insteadOf "git@github.com:"
+          git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git remote get-url origin || true
+          git config --global --get-all url."https://github.com/".insteadOf
+
+          # If a token is available, embed it in the insteadOf target so all
+          # subsequent fetch/push ops authenticate. Works for private repos.
+          # When no token is present (e.g. local act on a public repo), the
+          # rewrite still succeeds via unauthenticated HTTPS.
+          if [ -n "$AUTH_TOKEN" ]; then
+            git config --global --unset-all url."https://github.com/".insteadOf 2>/dev/null || true
+            git config --global --add url."https://${AUTH_TOKEN}@github.com/".insteadOf "git@github.com:"
+            git config --global --add url."https://${AUTH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+            echo "Configured authenticated HTTPS (token present)."
+          else
+            echo "No token present — using unauthenticated HTTPS (public repos only)."
+          fi
+
       - name: Check if Tag is on Master
         id: check
         run: |
@@ -188,14 +217,30 @@ jobs:
           } >> $GITHUB_ENV
 
       - name: Set Latest Tag to Current Commit
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -fa latest -m "Update latest release to ${{ steps.version.outputs.version }}"
+          git tag -fa latest -m "Update latest release to $VERSION"
+
+          if [ -z "${GH_PUSH_TOKEN}" ]; then
+            echo "No GITHUB_TOKEN available (likely a local act run) — skipping tag push."
+            echo "Tag 'latest' was created locally but not pushed to the remote."
+            exit 0
+          fi
+
+          # origin is already authenticated via the insteadOf rewrite in the
+          # "Configure git to use HTTPS" step, which embeds the token in the URL.
           git push origin latest --force
 
       - name: Create GitHub Release
+        if: ${{ env.GH_RELEASE_TOKEN != '' }}
         uses: softprops/action-gh-release@v2
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: Release ${{ steps.version.outputs.version }}
@@ -229,5 +274,3 @@ jobs:
             - Filesystem Size: ${{ env.FILESYSTEM_SIZE }} bytes
             - Merged Size: ${{ env.MERGED_SIZE }} bytes
             - Git Commit: ${{ github.sha }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
