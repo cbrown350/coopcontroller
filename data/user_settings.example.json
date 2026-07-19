@@ -43,6 +43,9 @@
   "door_auto_close_offset_minutes": 0,
   "door_auto_close_days": [true, true, true, true, true, true, true],
 
+  "sunrise_offset_minutes": 0,
+  "sunset_offset_minutes": 0,
+
   "latitude": 40.7128,
   "longitude": -74.006,
   "timezone_offset_hours": -7,
@@ -107,5 +110,12 @@
   "weather_enabled": false,
   "weather_api_key": "",
   "weather_units": "imperial",
-  "weather_update_interval_minutes": 10
+  "weather_update_interval_minutes": 10,
+
+  "llm_enabled": false,
+  "llm_provider_type": "openai_compatible",
+  "llm_base_url": "",
+  "llm_api_key": "",
+  "llm_model": "",
+  "llm_timeout_seconds": 15
 }
