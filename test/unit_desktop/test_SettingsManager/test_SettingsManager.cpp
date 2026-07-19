@@ -1425,14 +1425,14 @@ TEST_F(SettingsManagerTest, LlmEnabledDefaultFalse) {
 
 TEST_F(SettingsManagerTest, LlmSettersAndGetters) {
     sm.setLlmEnabled(true);
-    sm.setLlmProviderType("ollama_native");
+    sm.setLlmProviderType("openai_compatible");
     sm.setLlmBaseUrl("http://192.168.1.5:11434");
     sm.setLlmApiKey("secret-token");
     sm.setLlmModel("llama3.1");
     sm.setLlmTimeoutSeconds(20);
 
     EXPECT_TRUE(sm.getLlmEnabled());
-    EXPECT_STREQ(sm.getLlmProviderType().c_str(), "ollama_native");
+    EXPECT_STREQ(sm.getLlmProviderType().c_str(), "openai_compatible");
     EXPECT_STREQ(sm.getLlmBaseUrl().c_str(), "http://192.168.1.5:11434");
     EXPECT_STREQ(sm.getLlmApiKey().c_str(), "secret-token");
     EXPECT_STREQ(sm.getLlmModel().c_str(), "llama3.1");
@@ -1441,6 +1441,11 @@ TEST_F(SettingsManagerTest, LlmSettersAndGetters) {
 
 TEST_F(SettingsManagerTest, LlmProviderTypeRejectsUnknownValues) {
     sm.setLlmProviderType("openai_compatible");
+    // Legacy/deprecated values are no longer accepted (UI now exposes only
+    // openai_compatible since all real providers — Ollama Cloud, local/LAN
+    // Ollama, Rapid-MLX — speak the OpenAI schema).
+    sm.setLlmProviderType("ollama_native");
+    sm.setLlmProviderType("ollama_cloud");
     sm.setLlmProviderType("not_a_real_provider");
     EXPECT_STREQ(sm.getLlmProviderType().c_str(), "openai_compatible");  // unchanged
 }
@@ -1462,7 +1467,7 @@ TEST_F(SettingsManagerTest, LlmApiKeyOnlySerializedWithIncludePassword) {
 
 TEST_F(SettingsManagerTest, LlmSettingsSerializedInJson) {
     sm.setLlmEnabled(true);
-    sm.setLlmProviderType("ollama_cloud");
+    sm.setLlmProviderType("openai_compatible");
     sm.setLlmBaseUrl("https://ollama.com");
     sm.setLlmModel("gpt-oss:20b");
     sm.setLlmTimeoutSeconds(30);

@@ -185,9 +185,11 @@ String LlmWeatherDecider::testConnection() const {
     const char* sys = "You are a connectivity test endpoint.";
     const char* usr = "Reply with exactly the single word OK and nothing else.";
 
-    // Fixed short timeout regardless of the configured production timeout, so
-    // the UI test button can't hang on a slow/unreachable model.
-    String reply = sendRequest(sys, usr, 8000);
+    // Honor the configured timeout: a real model on consumer hardware (e.g. a
+    // 35B MLX model cold-starting) can take 10-15s to first token. The timeout
+    // is already clamped to [5000, 60000] ms in the constructor, so the UI
+    // button is still bounded.
+    String reply = sendRequest(sys, usr, timeout_ms_);
     if (reply.length() == 0) {
         return "No response from provider (check URL, API key, and that the model is loaded)";
     }

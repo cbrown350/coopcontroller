@@ -1804,14 +1804,12 @@ function Settings() {
                 <legend class="fieldset-legend">Provider</legend>
                 <select class="select w-full" value={llmProviderType()}
                   onInput={(e) => setLlmProviderType((e.target as HTMLSelectElement).value)}>
-                  <option value="ollama_cloud">Ollama Cloud</option>
-                  <option value="openai_compatible">Ollama (local/LAN) or other OpenAI-compatible</option>
-                  <option value="ollama_native">Ollama native API (local/LAN, non-OpenAI-compatible)</option>
+                  <option value="openai_compatible">OpenAI-compatible (Ollama Cloud, local/LAN Ollama, Rapid-MLX, etc.)</option>
                 </select>
                 <div class="fieldset-label">
-                  Ollama Cloud and "OpenAI-compatible" both use the standard /v1/chat/completions
-                  API (this covers Rapid-MLX and most local servers too). Pick "Ollama native" only
-                  if your local Ollama install's OpenAI-compatible endpoint isn't available.
+                  Any OpenAI-compatible endpoint works — Ollama Cloud, a local/LAN Ollama or
+                  Rapid-MLX instance, or other providers. All use the standard
+                  /v1/chat/completions API.
                 </div>
               </fieldset>
               <fieldset class="fieldset">

@@ -1304,9 +1304,10 @@ unsigned int SettingsManager::getLlmTimeoutSeconds() const { return settings.llm
 // LLM weather-decider setters (issue #6)
 void SettingsManager::setLlmEnabled(bool enabled) { settings.llm_enabled = enabled; }
 void SettingsManager::setLlmProviderType(const String& type) {
-    // Only accept the known wire formats; ignore anything else so a bad value
-    // can't point the decider at a garbage URL path.
-    if (type == "openai_compatible" || type == "ollama_native" || type == "ollama_cloud") {
+    // Only accept OpenAI-compatible providers (covers Ollama Cloud, local/LAN
+    // Ollama, Rapid-MLX, and any other OpenAI-compatible endpoint — they all
+    // speak /v1/chat/completions). Ignore anything else.
+    if (type == "openai_compatible") {
         settings.llm_provider_type = type;
     }
 }

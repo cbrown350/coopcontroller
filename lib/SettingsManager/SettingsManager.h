@@ -220,7 +220,7 @@ struct user_settings // NOSONAR
     // ========================================================================
 
     bool     llm_enabled = false;                  ///< Use LLM decider instead of (over) rule-based
-    String   llm_provider_type = "openai_compatible"; ///< "openai_compatible" | "ollama_native" | "ollama_cloud"
+    String   llm_provider_type = "openai_compatible"; ///< "openai_compatible" (all supported providers use this)
     String   llm_base_url = "";                    ///< Provider base URL (e.g. http://192.168.1.5:11434, https://api.host)
     String   llm_api_key = "";                     ///< Bearer token (empty = no auth, for LAN Ollama)
     String   llm_model = "";                       ///< Model name (e.g. "llama3.1", "gpt-4o-mini")
