@@ -237,6 +237,37 @@ void setup() // NOSONAR - complexity ok
     sensorManager.begin(TEMP_METER_PIN, TEMP_METER_2_PIN);
     pumpController.begin(&sensorManager, &sensorManager, OUT_PUMP_PIN);
     buzzerController.begin(BUZZER_B_PIN);
+
+    // Initialize Task Watchdog Timer before any component can call taskWdtReset()
+    // (e.g. the WiFi connect retry loop in wifiController.begin below). Calling
+    // esp_task_wdt_reset() before the loop task is subscribed logs a noisy
+    // "task not found" error on IDF 5.x, where the TWDT is auto-initialized at
+    // boot — so subscribe here, first.
+    int watchdogTimeout = settingsManager.getWatchdogTimeoutSeconds();
+    // IDF 5.x (arduino-esp32 3.x) changed esp_task_wdt_init() to take a config
+    // struct, and the TWDT is now initialized by default at boot (subscribing the
+    // idle tasks). esp_task_wdt_init() therefore returns ESP_ERR_INVALID_STATE on
+    // the first call; esp_task_wdt_reconfigure() is the IDF 5.x way to apply our
+    // own timeout/panic settings to the already-running TWDT. idle_core_mask=0
+    // unsubscribes the idle tasks so only the loop task (added below) is watched,
+    // matching the old behavior.
+    esp_task_wdt_config_t wdtConfig = {
+        .timeout_ms = static_cast<uint32_t>(watchdogTimeout) * 1000U,
+        .idle_core_mask = 0,
+        .trigger_panic = true
+    };
+
+    esp_err_t wdtResult = esp_task_wdt_init(&wdtConfig);
+    if (wdtResult == ESP_ERR_INVALID_STATE) {
+        wdtResult = esp_task_wdt_reconfigure(&wdtConfig);
+    }
+    if (wdtResult == ESP_OK) {
+        esp_task_wdt_add(nullptr); // Add current task (loop) to WDT watch
+        logger.logfInfo("Task Watchdog Timer initialized with %d second timeout", watchdogTimeout);
+    } else {
+        logger.logfError("Failed to initialize Task Watchdog Timer: %s", esp_err_to_name(wdtResult));
+    }
+
     wifiController.begin(&hal, &settingsManager, &buzzerController, apPasswd);
     doorController.begin(&buzzerController, &sunriseSunset);
     // Apply persisted door settings to the controller runtime. This fixes the
@@ -314,16 +345,6 @@ void setup() // NOSONAR - complexity ok
     crashDiagnosticsCheck([](const char* msg) {
         logger.logError(msg);
     });
-
-    // Initialize Task Watchdog Timer
-    int watchdogTimeout = settingsManager.getWatchdogTimeoutSeconds();
-    
-    if (esp_err_t wdtResult = esp_task_wdt_init(watchdogTimeout, true); wdtResult == ESP_OK) { // timeout in seconds, panic on timeout
-        esp_task_wdt_add(nullptr); // Add current task (loop) to WDT watch
-        logger.logfInfo("Task Watchdog Timer initialized with %d second timeout", watchdogTimeout);
-    } else {
-        logger.logfError("Failed to initialize Task Watchdog Timer: %s", esp_err_to_name(wdtResult));
-    }
 
     // Only sync NTP if connected to WiFi (not in AP mode)
     if (wifiController.isConnected()) {

@@ -169,7 +169,7 @@ bool HAL_ESP32::wifiSetHostname(const char *hostName_) {
 }
 
 bool HAL_ESP32::wifiIsConnected() {
-  return WiFiClass::status() == WL_CONNECTED;
+  return WiFi.status() == WL_CONNECTED;
 }
 
 String HAL_ESP32::wifiGetSSID() { return WiFi.SSID(); }
@@ -192,7 +192,7 @@ void HAL_ESP32::wifiSetAutoReconnect(bool autoReconnect) {
   WiFi.setAutoReconnect(autoReconnect);
 }
 
-int HAL_ESP32::wifiGetStatus() { return WiFiClass::status(); }
+int HAL_ESP32::wifiGetStatus() { return WiFi.status(); }
 
 // ========================================================================
 // MDNS METHODS
@@ -692,15 +692,21 @@ void HAL_ESP32::webServerEnd() {
 // ========================================================================
 
 void HAL_ESP32::pwmSetup(uint8_t channel, uint32_t freq, uint8_t resolution) {
-  ledcSetup(channel, freq, resolution);
+  (void)channel;  // 3.x LEDC is pin-based; channel is opaque in the HAL.
+  pwmFreq_ = freq;
+  pwmResolution_ = resolution;
 }
 
 void HAL_ESP32::pwmAttachPin(uint8_t pin, uint8_t channel) {
-  ledcAttachPin(pin, channel);
+  if (channel < sizeof(pwmPinForChannel_)) {
+    pwmPinForChannel_[channel] = pin;
+  }
+  ledcAttach(pin, pwmFreq_, pwmResolution_);
 }
 
 void HAL_ESP32::pwmWrite(uint8_t channel, uint32_t duty) {
-  ledcWrite(channel, duty);
+  uint8_t pin = (channel < sizeof(pwmPinForChannel_)) ? pwmPinForChannel_[channel] : channel;
+  ledcWrite(pin, duty);
 }
 
 // ========================================================================
@@ -1683,9 +1689,9 @@ bool HAL_ESP32::sha256Verify(const uint8_t *data, size_t data_length,
   mbedtls_sha256_context ctx;
 
   mbedtls_sha256_init(&ctx);
-  mbedtls_sha256_starts_ret(&ctx, false);  // false = SHA256 (not SHA224)
-  mbedtls_sha256_update_ret(&ctx, data, data_length);
-  mbedtls_sha256_finish_ret(&ctx, hash);
+  mbedtls_sha256_starts(&ctx, false);  // false = SHA256 (not SHA224)
+  mbedtls_sha256_update(&ctx, data, data_length);
+  mbedtls_sha256_finish(&ctx, hash);
   mbedtls_sha256_free(&ctx);
 
   // Convert hash to hex string
