@@ -775,6 +775,19 @@ static String readHttpLine(WiFiClientSecure& client, unsigned long deadlineMs) {
 }
 
 std::unique_ptr<WiFiClientSecure> HAL_ESP32::createSecureClient(unsigned long timeout_ms) {
+  // Refuse to start a TLS handshake when WiFi isn't associated. Firing a TLS
+  // connect while the STA is down/reconnecting is a documented trigger for the
+  // mbedtls StoreProhibited panic (esp-idf #8895, #11131) on the async_tcp task,
+  // because the TLS teardown races the net80211 connection state machine and
+  // fault on a null context. All outbound TLS (httpGet / httpGetStream /
+  // httpPost / httpPostAuth) funnels through here, so gating here covers every
+  // caller (LLM decider, weather, OTA check/install, Telegram, email) uniformly.
+  // Note: deliberately NOT gated on RSSI — a weak-but-working link is fine.
+  if (!wifiIsConnected()) {
+    Serial.println("[HAL_ESP32] createSecureClient: refusing TLS alloc, WiFi not connected");
+    return nullptr;
+  }
+
   // Refuse the TLS allocation when free heap is too low or fragmented to hold
   // the mbedtls context. The constructor's internal `new` would otherwise throw
   // std::bad_alloc; with -fexceptions enabled and no catch handler on the loop
@@ -1214,8 +1227,13 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
     }
     if (!tlsHolder->connect(host.c_str(), port, timeout_ms)) return "";
   } else {
-    // Same low-heap guard as the TLS path: a connection that can't even buffer
-    // its request line is not worth attempting.
+    // Same WiFi-connected + low-heap guards as the TLS path: skip the request
+    // entirely if the link is down (no point POSTing over a dead STA) or if
+    // heap is too low to even buffer the request line.
+    if (!wifiIsConnected()) {
+      Serial.println("[HAL_ESP32] httpPostAuth: plain-HTTP abort, WiFi not connected");
+      return "";
+    }
     if (ESP.getFreeHeap() < TLS_CLIENT_MIN_FREE_HEAP) {
       return "";
     }
