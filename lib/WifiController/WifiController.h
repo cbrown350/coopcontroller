@@ -75,6 +75,24 @@ private:
     int wifiRetryCount;                 ///< Current retry attempt number
     bool bssidReconnectAttempt_;        ///< Whether current reconnect uses BSSID preference
 
+    // BSSID preference is "preferred, not forced": if the configured BSSID fails
+    // to connect, we temporarily blacklist it and fall back to auto-select so a
+    // weak/dead AP doesn't strand the board off the network. The blacklist is
+    // runtime-only (not persisted) and clears on a successful connection or
+    // after BSSID_BLACKLIST_MS elapses.
+    static constexpr unsigned long BSSID_BLACKLIST_MS = 10UL * 60UL * 1000UL; ///< 10 min
+    unsigned long bssidBlacklistUntil_ = 0;   ///< millis() until BSSID pref is eligible again
+    String blacklistedBssid_;                 ///< Which BSSID string is currently blacklisted
+
+    /// Is the configured BSSID preference currently blacklisted?
+    bool isBssidBlacklisted() const;
+
+    /// Temporarily blacklist the given BSSID so we fall back to auto-select.
+    void blacklistCurrentBssid(const String& bssidPref);
+
+    /// Clear the blacklist (called on successful connection).
+    void clearBssidBlacklist();
+
     // WiFi LED control variables
     unsigned long lastLedToggle;        ///< Last time LED was toggled
     bool ledState;                      ///< Current LED state

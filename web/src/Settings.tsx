@@ -111,6 +111,7 @@ function Settings() {
 
   // WiFi BSSID preference
   const [wifiBssidPreference, setWifiBssidPreference] = createSignal('')
+  const [wifiBssidError, setWifiBssidError] = createSignal('')
 
   // Syslog configuration
   const [syslogServer, setSyslogServer] = createSignal('')
@@ -386,6 +387,31 @@ function Settings() {
     return true
   }
 
+  // Accepts XX:XX:XX:XX:XX:XX, XX-XX-... or 12 hex digits; empty = auto-select.
+  // Returns the colon-separated uppercase normalized form, or '' for empty.
+  const normalizeBssid = (raw: string): string => {
+    const hex = raw.replace(/[:\-\s]/g, '').toUpperCase()
+    if (hex.length === 0) return ''
+    if (hex.length !== 12 || !/^[0-9A-F]{12}$/.test(hex)) return raw.trim() // invalid -> keep raw so error shows
+    return hex.match(/.{2}/g)!.join(':')
+  }
+
+  const isValidBssid = (raw: string): boolean => {
+    const trimmed = raw.trim()
+    if (trimmed.length === 0) return true
+    const hex = trimmed.replace(/[:\-\s]/g, '').toUpperCase()
+    return /^[0-9A-F]{12}$/.test(hex)
+  }
+
+  const validateBssid = (raw: string): boolean => {
+    if (isValidBssid(raw)) {
+      setWifiBssidError('')
+      return true
+    }
+    setWifiBssidError('Invalid MAC format. Use XX:XX:XX:XX:XX:XX (or leave empty for auto-select).')
+    return false
+  }
+
   const handleSave = async () => {
     if (!loaded()) {
       setError('Settings not loaded. Please refresh the page.')
@@ -393,6 +419,8 @@ function Settings() {
     }
 
     if (!validateThresholds()) return
+
+    if (!validateBssid(wifiBssidPreference())) return
 
     // Validate password if not clearing it
     if (!clearPassword() && password().length > 0 && !validatePassword(password())) {
@@ -445,7 +473,7 @@ function Settings() {
         log_level: logLevel() ?? 'INFO',
         api_auth_enabled: apiAuthEnabled() ?? false,
         api_username: apiUsername() ?? 'admin',
-        wifi_bssid_preference: wifiBssidPreference() ?? '',
+        wifi_bssid_preference: normalizeBssid(wifiBssidPreference()) ?? '',
         syslog_server: syslogServer() ?? '',
         syslog_port: syslogPort() ?? 514,
         flow_calculation_interval_seconds: flowCalculationIntervalSeconds() ?? 60,
@@ -1331,12 +1359,26 @@ function Settings() {
           <fieldset class="fieldset mt-4">
             <legend class="fieldset-legend">WiFi BSSID Preference</legend>
             <Show when={loaded()}>
-              <input type="text" value={wifiBssidPreference()} onInput={(e) => setWifiBssidPreference(e.target.value)} placeholder="AA:BB:CC:DD:EE:FF" class="input" />
+              <input
+                type="text"
+                value={wifiBssidPreference()}
+                onInput={(e) => { setWifiBssidPreference(e.target.value); validateBssid(e.target.value) }}
+                onBlur={(e) => {
+                  const norm = normalizeBssid(e.target.value)
+                  setWifiBssidPreference(norm)
+                  validateBssid(norm)
+                }}
+                placeholder="AA:BB:CC:DD:EE:FF"
+                class={`input ${wifiBssidError() ? 'input-error' : ''}`}
+              />
             </Show>
             <Show when={!loaded()}>
               <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
             </Show>
-            <div class="fieldset-label">Preferred access point MAC address for mesh networks (leave empty for auto-select)</div>
+            <Show when={wifiBssidError()}>
+              <div class="text-error text-sm mt-1">{wifiBssidError()}</div>
+            </Show>
+            <div class="fieldset-label">Preferred access point MAC for mesh networks (XX:XX:XX:XX:XX:XX, hyphens or no separator accepted; leave empty for auto-select). Preferred, not forced — falls back to auto-select if the AP is unreachable.</div>
           </fieldset>
 
           <fieldset class="fieldset mt-4">

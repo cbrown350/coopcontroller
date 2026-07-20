@@ -172,10 +172,11 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
         // Disable auto-reconnect and persistent storage - credentials managed by settingsManager
         _hal->wifiSetAutoReconnect(false); // Disable auto-reconnect, we handle it manually
         
-        // Check for BSSID preference
+        // Check for BSSID preference (skipped if the preference was temporarily
+        // blacklisted after a recent failure — see isBssidBlacklisted()).
         String bssidPref = settingsManager_->getWifiBssidPreference();
         bool usingBssid = false;
-        if (bssidPref.length() > 0) {
+        if (bssidPref.length() > 0 && !isBssidBlacklisted()) {
             uint8_t bssid[6];
             if (parseBSSID(bssidPref, bssid)) {
                 logger.logInfo("Connecting to WiFi: " + ssid + " (BSSID: " + bssidPref + ")");
@@ -187,36 +188,43 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
                 _hal->wifiBegin(ssid.c_str(), password.c_str());
             }
         } else {
+            if (bssidPref.length() > 0 && isBssidBlacklisted()) {
+                logger.logInfo("BSSID " + bssidPref + " temporarily blacklisted, using auto-select");
+            }
             logger.logInfo("Connecting to WiFi: " + ssid);
             _hal->wifiBegin(ssid.c_str(), password.c_str());
         }
-        
+
         int maxRetries = settingsManager_->getWifiMaxRetries();
         int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
 
         wifiRetryCount = 0;
-        while (!_hal->wifiIsConnected() && wifiRetryCount < maxRetries) {            
-            _hal->taskWdtReset();  
+        while (!_hal->wifiIsConnected() && wifiRetryCount < maxRetries) {
+            _hal->taskWdtReset();
 
             logger.logDebug(".");
             delay(retryDelay * 1000);
-            wifiRetryCount++;  
+            wifiRetryCount++;
 
             // Add some debugging
-            logger.logDebug("WiFi status: " + String(_hal->wifiGetStatus()) + ", attempt " + 
+            logger.logDebug("WiFi status: " + String(_hal->wifiGetStatus()) + ", attempt " +
                     String(wifiRetryCount) + "/" + String(maxRetries));
         }
 
-        // If BSSID connection failed, fall back to auto-BSSID before giving up
+        // If the preferred BSSID failed to connect, blacklist it for a while and
+        // immediately retry with auto-select. Blacklisting (rather than a single
+        // one-shot fallback) prevents the next reconnect cycle from re-trying
+        // the same dead/weak AP and stranding the board off the network.
         if (!_hal->wifiIsConnected() && usingBssid) {
             logger.logWarning("Failed to connect to preferred BSSID " + bssidPref + ", falling back to any available AP");
+            blacklistCurrentBssid(bssidPref);
             _hal->wifiBegin(ssid.c_str(), password.c_str());
             wifiRetryCount = 0;
             while (!_hal->wifiIsConnected() && wifiRetryCount < maxRetries) {
                 _hal->taskWdtReset();
                 delay(retryDelay * 1000);
                 wifiRetryCount++;
-                logger.logDebug("WiFi fallback status: " + String(_hal->wifiGetStatus()) + ", attempt " + 
+                logger.logDebug("WiFi fallback status: " + String(_hal->wifiGetStatus()) + ", attempt " +
                         String(wifiRetryCount) + "/" + String(maxRetries));
             }
         }
@@ -229,6 +237,7 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             logger.logInfo("BSSID: " + _hal->wifiGetBSSID());
             logger.logInfo("MAC Address: " + _hal->wifiGetMacAddress());
             isInAPMode_ = false;
+            clearBssidBlacklist();
             
             if (settingsManager_->getHostname().length() > 0) {
                 int mDNSRetries = 5;
@@ -289,7 +298,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             
             if (ssid.length() != 0) {
                 String bssidPref = settingsManager_->getWifiBssidPreference();
-                if (bssidPref.length() > 0) {
+                if (bssidPref.length() > 0 && !isBssidBlacklisted()) {
                     uint8_t bssid[6];
                     if (parseBSSID(bssidPref, bssid)) {
                         logger.logInfo("Reconnecting to WiFi with BSSID preference: " + bssidPref);
@@ -300,6 +309,9 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
                         bssidReconnectAttempt_ = false;
                     }
                 } else {
+                    if (bssidPref.length() > 0 && isBssidBlacklisted()) {
+                        logger.logInfo("BSSID " + bssidPref + " temporarily blacklisted, reconnecting with auto-select");
+                    }
                     _hal->wifiBegin(ssid.c_str(), password.c_str());
                     bssidReconnectAttempt_ = false;
                 }
@@ -318,9 +330,16 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             unsigned int retryDelay = settingsManager_->getWifiRetryDelaySeconds();
 
             if (millis() - wifiReconnectStart >= (static_cast<unsigned long>(retryDelay) * 1000UL * maxRetries)) {
-                // If we were trying with BSSID, fall back to auto-BSSID before giving up
+                // If we were trying with BSSID, blacklist it for a while and
+                // fall back to auto-select. Blacklisting (vs. one-shot fallback)
+                // keeps the next reconnect cycle on auto-select instead of
+                // re-trying the dead/weak AP and stranding the board.
                 if (bssidReconnectAttempt_) {
+                    String bssidPref = settingsManager_->getWifiBssidPreference();
                     logger.logWarning("BSSID reconnection failed, falling back to any available AP");
+                    if (bssidPref.length() > 0) {
+                        blacklistCurrentBssid(bssidPref);
+                    }
                     bssidReconnectAttempt_ = false;
                     String ssid = settingsManager_->getSSID();
                     String password = settingsManager_->getPassword();
@@ -340,6 +359,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
         if (isReconnecting) {
             logger.logInfo("WiFi reconnected successfully");
             isReconnecting = false;
+            clearBssidBlacklist();
             
             // Clear WiFi disconnected alert when reconnected
             if (buzzerController_) {
@@ -398,28 +418,51 @@ void WifiController::updateWifiLed() {
 
 bool WifiController::parseBSSID(const String& bssidStr, uint8_t* bssid) {
     if (bssidStr.length() != 17) return false;  // "AA:BB:CC:DD:EE:FF" = 17 chars
-    
+
     for (int i = 0; i < 6; i++) {
         int offset = i * 3;
         char high = bssidStr.charAt(offset);
         char low = bssidStr.charAt(offset + 1);
-        
+
         // Validate separator (except after last byte)
         if (i < 5 && bssidStr.charAt(offset + 2) != ':') return false;
-        
+
         // Convert hex chars to byte
         uint8_t val = 0;
         if (high >= '0' && high <= '9') val = (high - '0') << 4;
         else if (high >= 'A' && high <= 'F') val = (high - 'A' + 10) << 4;
         else if (high >= 'a' && high <= 'f') val = (high - 'a' + 10) << 4;
         else return false;
-        
+
         if (low >= '0' && low <= '9') val |= (low - '0');
         else if (low >= 'A' && low <= 'F') val |= (low - 'A' + 10);
         else if (low >= 'a' && low <= 'f') val |= (low - 'a' + 10);
         else return false;
-        
+
         bssid[i] = val;
     }
     return true;
+}
+
+bool WifiController::isBssidBlacklisted() const {
+    // Blacklist only applies while the configured preference matches the one
+    // that failed, and only until the timeout elapses.
+    if (bssidBlacklistUntil_ == 0) return false;
+    if (millis() >= bssidBlacklistUntil_) return false;
+    String pref = settingsManager_->getWifiBssidPreference();
+    return pref.length() > 0 && pref == blacklistedBssid_;
+}
+
+void WifiController::blacklistCurrentBssid(const String& bssidPref) {
+    blacklistedBssid_ = bssidPref;
+    bssidBlacklistUntil_ = millis() + BSSID_BLACKLIST_MS;
+    logger.logWarning("BSSID " + bssidPref + " blacklisted for " +
+                      String(BSSID_BLACKLIST_MS / 1000) + "s; using auto-select");
+}
+
+void WifiController::clearBssidBlacklist() {
+    if (bssidBlacklistUntil_ != 0) {
+        bssidBlacklistUntil_ = 0;
+        blacklistedBssid_ = "";
+    }
 }

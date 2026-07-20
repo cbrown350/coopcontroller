@@ -133,12 +133,22 @@ bool HAL_ESP32::getLocalTime(struct tm *timeinfo, unsigned long ms) {
 // ========================================================================
 
 bool HAL_ESP32::wifiBegin(const char *ssid, const char *password) {
+  // Cycle the STA interface off/on so back-to-back begins (e.g. the BSSID ->
+  // auto-select fallback) start from a clean radio state. Without this, the
+  // ESP32 STA can stick in WL_CONNECT_FAILED after a failed targeted attempt
+  // and the fallback never associates.
+  if (WiFiClass::getMode() & WIFI_MODE_STA) {
+    WiFiClass::mode(WIFI_OFF);
+  }
   WiFiClass::mode(WIFI_STA);
   WiFi.begin(ssid, password);
   return true;
 }
 
 bool HAL_ESP32::wifiBeginWithBSSID(const char *ssid, const char *password, const uint8_t *bssid) {
+  if (WiFiClass::getMode() & WIFI_MODE_STA) {
+    WiFiClass::mode(WIFI_OFF);
+  }
   WiFiClass::mode(WIFI_STA);
   WiFi.begin(ssid, password, 0, bssid);
   return true;

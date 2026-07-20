@@ -22,6 +22,39 @@
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
 
+// Validate a WiFi BSSID preference string. Accepts colon or hyphen separated
+// hex (XX:XX:XX:XX:XX:XX / XX-XX-... ) or 12 contiguous hex digits. Empty
+// string is valid (means auto-select). Returns true and fills normalized
+// (colon-separated, uppercase) on success; returns false otherwise.
+static bool isValidBssidPref(const String& in, String& normalized) {
+    normalized = "";
+    String trimmed = in;
+    trimmed.trim();
+    if (trimmed.length() == 0) {
+        return true;  // empty = auto-select
+    }
+    // Collect only the hex digits, ignore ':' and '-' separators.
+    String hex = "";
+    for (unsigned int i = 0; i < trimmed.length(); i++) {
+        char c = trimmed.charAt(i);
+        if (c == ':' || c == '-' || c == ' ') continue;
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+            hex += (char)toupper(c);
+        } else {
+            return false;  // invalid character
+        }
+    }
+    if (hex.length() != 12) return false;  // must be exactly 6 bytes
+    char buf[18];
+    for (int i = 0; i < 6; i++) {
+        buf[i * 3] = hex.charAt(i * 2);
+        buf[i * 3 + 1] = hex.charAt(i * 2 + 1);
+        buf[i * 3 + 2] = (i < 5) ? ':' : '\0';
+    }
+    normalized = String(buf);
+    return true;
+}
+
 CoopControllerWebServer::CoopControllerWebServer(IHAL* hal, uint16_t port) : hal(hal), port(port) {
 }
 
@@ -72,7 +105,22 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   Serial.println("[WebServer] /update_settings request received with JSON:");
                   serializeJsonPretty(jsonObj, Serial);
                   Serial.println();
-                  
+
+                  // Validate BSSID preference early so a malformed value never
+                  // reaches NVS (a bad BSSID strands the board off the network
+                  // until manually cleared). Empty is allowed (auto-select).
+                  if (jsonObj["wifi_bssid_preference"].is<const char*>()) {
+                      String normalized;
+                      String raw = jsonObj["wifi_bssid_preference"].as<String>();
+                      if (!isValidBssidPref(raw, normalized)) {
+                          logger.logWarning(("Rejecting invalid wifi_bssid_preference: " + raw).c_str());
+                          response->send(400, "application/json",
+                              R"({"success":false,"error":"Invalid BSSID format. Use XX:XX:XX:XX:XX:XX (or leave empty for auto-select)."})");
+                          return;
+                      }
+                      jsonObj["wifi_bssid_preference"] = normalized;  // store normalized form
+                  }
+
                   // Only set WiFi settings if provided (i.e., when changing WiFi)
                   if (jsonObj["ssid"].is<const char*>()) {
                       settingsManager.setSSID(jsonObj["ssid"].as<String>());
