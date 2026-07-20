@@ -65,6 +65,111 @@ String WeatherManager::testLlmConnection(const String& baseUrl, const String& ap
     return probe.testConnection();
 }
 
+void WeatherManager::requestLlmTest(const String& baseUrl, const String& apiKey,
+                                    const String& model, const String& providerType,
+                                    unsigned int timeoutSeconds) {
+    llm_test_base_url_ = baseUrl;
+    llm_test_api_key_ = apiKey;
+    llm_test_model_ = model;
+    llm_test_provider_type_ = providerType;
+    llm_test_timeout_seconds_ = timeoutSeconds;
+    llm_test_done_ = false;
+    llm_test_success_ = false;
+    llm_test_error_ = "";
+    pending_test_ = TestKind::LLM;
+    logger.logInfo("LLM connection test requested (deferred to main loop)");
+}
+
+void WeatherManager::requestWeatherTest(const String& apiKeyOverride) {
+    weather_test_api_key_override_ = apiKeyOverride;
+    weather_test_done_ = false;
+    weather_test_success_ = false;
+    weather_test_error_ = "";
+    weather_test_ok_before_ = successful_fetches_;
+    weather_test_fail_before_ = failed_fetches_;
+    pending_test_ = TestKind::WEATHER;
+    logger.logInfo("Weather fetch test requested (deferred to main loop)");
+}
+
+bool WeatherManager::isTestInProgress() const {
+    return pending_test_ != TestKind::NONE || running_test_ != TestKind::NONE;
+}
+
+JsonDocument WeatherManager::getLlmTestResultJson() const {
+    JsonDocument doc;
+    if (pending_test_ == TestKind::LLM || running_test_ == TestKind::LLM) {
+        doc["status"] = "pending";
+    } else if (llm_test_done_) {
+        doc["status"] = llm_test_success_ ? "success" : "error";
+        doc["success"] = llm_test_success_;
+        if (!llm_test_success_ && llm_test_error_.length() > 0) {
+            doc["error"] = llm_test_error_;
+        }
+    } else {
+        doc["status"] = "idle";
+        doc["success"] = false;
+    }
+    return doc;
+}
+
+JsonDocument WeatherManager::getWeatherTestResultJson() const {
+    JsonDocument doc;
+    if (pending_test_ == TestKind::WEATHER || running_test_ == TestKind::WEATHER) {
+        doc["status"] = "pending";
+    } else if (weather_test_done_) {
+        doc["status"] = weather_test_success_ ? "success" : "error";
+        doc["success"] = weather_test_success_;
+        if (!weather_test_success_ && weather_test_error_.length() > 0) {
+            doc["error"] = weather_test_error_;
+        }
+        if (weather_test_success_) {
+            JsonObject status = doc["status_snapshot"].to<JsonObject>();
+            const_cast<WeatherManager*>(this)->toJson(status);
+        }
+    } else {
+        doc["status"] = "idle";
+        doc["success"] = false;
+    }
+    return doc;
+}
+
+void WeatherManager::runLlmTest_() {
+    // Empty base URL means the user hasn't configured a provider yet.
+    if (llm_test_base_url_.length() == 0) {
+        llm_test_done_ = true;
+        llm_test_success_ = false;
+        llm_test_error_ = "Base URL is empty";
+        return;
+    }
+    String err = testLlmConnection(llm_test_base_url_, llm_test_api_key_,
+                                   llm_test_model_, llm_test_provider_type_,
+                                   llm_test_timeout_seconds_);
+    llm_test_done_ = true;
+    llm_test_success_ = (err.length() == 0);
+    llm_test_error_ = err;
+    logger.logInfo(llm_test_success_ ? "LLM connection test: OK"
+                                      : ("LLM connection test failed: " + err));
+}
+
+void WeatherManager::runWeatherTest_() {
+    // Apply the optional one-shot API-key override without persisting it.
+    bool appliedOverride = false;
+    String savedKey = api_key_;
+    if (weather_test_api_key_override_.length() > 0) {
+        api_key_ = weather_test_api_key_override_;
+        appliedOverride = true;
+    }
+    forceRefresh();  // guarded internally by isReadyToFetch()
+    if (appliedOverride) api_key_ = savedKey;
+
+    bool ok = (successful_fetches_ > weather_test_ok_before_) &&
+              (failed_fetches_ == weather_test_fail_before_);
+    weather_test_done_ = true;
+    weather_test_success_ = ok;
+    weather_test_error_ = ok ? "" : (last_error_.length() > 0 ? last_error_
+                                                              : String("Weather fetch failed"));
+}
+
 void WeatherManager::setDecider(IWeatherDecider* decider) {
     decider_ = decider;  // nullptr => fall back to built-in rule-based decider
     // Recompute immediately so status reflects the new engine without waiting
@@ -93,6 +198,26 @@ bool WeatherManager::isReadyToFetch() const {
 }
 
 void WeatherManager::update() {
+    // Consume a deferred connection test BEFORE the isReadyToFetch() guard:
+    // a test request still needs to run (and report failure) when WiFi is
+    // down or heap is low, so the UI gets a real error instead of timing out.
+    if (pending_test_ == TestKind::LLM) {
+        TestKind kind = pending_test_;
+        pending_test_ = TestKind::NONE;
+        running_test_ = kind;
+        runLlmTest_();
+        running_test_ = TestKind::NONE;
+        return;
+    }
+    if (pending_test_ == TestKind::WEATHER) {
+        TestKind kind = pending_test_;
+        pending_test_ = TestKind::NONE;
+        running_test_ = kind;
+        runWeatherTest_();
+        running_test_ = TestKind::NONE;
+        return;
+    }
+
     if (!isReadyToFetch()) return;
 
     unsigned long now = hal_->millis();

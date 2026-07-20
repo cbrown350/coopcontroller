@@ -1923,7 +1923,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
         if (uri.startsWith("/get_") || uri.startsWith("/get_") || uri.startsWith("/pump/") || uri.startsWith("/water/") ||
             uri.startsWith("/update_settings") || uri.equals("/logs") || uri.equals("/version") ||
             uri.equals("/update") || uri.startsWith("/update/") || uri.startsWith("/buzzer/") || uri.startsWith("/door/") ||
-            uri.startsWith("/light/") || uri.equals("/sun/times") ||
+            uri.startsWith("/light/") || uri.startsWith("/weather/") || uri.equals("/sun/times") ||
             uri.equals("/system_status") || uri.equals("/factory_reset") ||
             uri.equals("/reboot") || uri.startsWith("/settings/") || uri.startsWith("/data/")) {
             response->send(404, "text/plain", "Not Found");
@@ -2002,6 +2002,10 @@ void CoopControllerWebServer::setWeatherManager(WeatherManager* weatherManager) 
 
     // LLM provider test-connection endpoint (issue #6). Accepts an optional
     // JSON body with unsaved provider config so the UI can test before saving.
+    // CRASH FIX (v0.7.1): the TLS probe is deferred to the main loop — this
+    // handler only captures overrides + flags the request, then returns 202
+    // immediately. Running blocking TLS here panicked async_tcp (see issue #4
+    // / v0.7.0 syslog). Pair with GET /weather/llm/test_result.
     hal->webServerOn("/weather/llm/test_connection", HAL_WebRequestMethod::HTTP_POST,
         [this](IWebRequest *request, IWebResponse *response) {
             if (!isAuthenticated(request)) {
@@ -2032,20 +2036,32 @@ void CoopControllerWebServer::setWeatherManager(WeatherManager* weatherManager) 
                 }
             }
 
-            String err = weatherManager_->testLlmConnection(baseUrl, apiKey, model, type, timeout);
-            JsonDocument doc;
-            doc["success"] = (err.length() == 0);
-            if (err.length() > 0) doc["error"] = err;
+            weatherManager_->requestLlmTest(baseUrl, apiKey, model, type, timeout);
+            response->send(202, "application/json", R"({"status":"pending"})");
+        });
+
+    // LLM test result polling endpoint. No network I/O — reads the snapshot
+    // produced by the loop task. Status: "pending" | "success" | "error" | "idle".
+    hal->webServerOn("/weather/llm/test_result", HAL_WebRequestMethod::HTTP_GET,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!isAuthenticated(request)) {
+                sendAuthRequired(response);
+                return;
+            }
+            if (!weatherManager_) {
+                response->send(500, "application/json", R"({"success":false,"error":"WeatherManager not initialized"})");
+                return;
+            }
+            JsonDocument doc = weatherManager_->getLlmTestResultJson();
             String output;
             serializeJson(doc, output);
-            response->send(err.length() == 0 ? 200 : 400, "application/json", output.c_str());
+            response->send(200, "application/json", output.c_str());
         });
 
     // Weather (OpenWeatherMap) test endpoint (issue #6). Triggers one fetch
     // cycle with optional API-key override so the user can verify the key
-    // before saving. The fetch happens on the loop task via forceRefresh() —
-    // but forceRefresh() blocks this handler for up to the HTTP timeout, which
-    // is acceptable for an explicit user-initiated test (not a hot path).
+    // before saving. CRASH FIX (v0.7.1): like the LLM endpoint above, the
+    // fetch is deferred to the main loop. Pair with GET /weather/test_result.
     hal->webServerOn("/weather/test", HAL_WebRequestMethod::HTTP_POST,
         [this](IWebRequest *request, IWebResponse *response) {
             if (!isAuthenticated(request)) {
@@ -2056,7 +2072,8 @@ void CoopControllerWebServer::setWeatherManager(WeatherManager* weatherManager) 
                 response->send(500, "application/json", R"({"success":false,"error":"WeatherManager not initialized"})");
                 return;
             }
-            // Optional unsaved API key override.
+            // Optional unsaved API key override (applied one-shot by the loop).
+            String override;
             String body = request->body();
             if (body.length() > 0) {
                 JsonDocument bodyDoc;
@@ -2064,31 +2081,30 @@ void CoopControllerWebServer::setWeatherManager(WeatherManager* weatherManager) 
                     JsonObject cfg = bodyDoc.as<JsonObject>();
                     if (cfg["weather_api_key"].is<const char*>()) {
                         String k = cfg["weather_api_key"].as<String>();
-                        if (k.length() > 0) weatherManager_->setApiKey(k);
+                        if (k.length() > 0) override = k;
                     }
                 }
             }
-            // Snapshot fetch stats before/after to detect a successful fetch.
-            unsigned int beforeFail = weatherManager_->getFailedFetches();
-            unsigned int beforeOk = weatherManager_->getSuccessfulFetches();
-            weatherManager_->forceRefresh();
-            bool success = (weatherManager_->getSuccessfulFetches() > beforeOk) &&
-                           (weatherManager_->getFailedFetches() == beforeFail);
 
-            JsonDocument doc;
-            doc["success"] = success;
-            if (!success) {
-                String e = weatherManager_->getLastError();
-                doc["error"] = e.length() > 0 ? e : String("Weather fetch failed");
+            weatherManager_->requestWeatherTest(override);
+            response->send(202, "application/json", R"({"status":"pending"})");
+        });
+
+    // Weather test result polling endpoint. No network I/O.
+    hal->webServerOn("/weather/test_result", HAL_WebRequestMethod::HTTP_GET,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!isAuthenticated(request)) {
+                sendAuthRequired(response);
+                return;
             }
-            // Include the current snapshot on success for the UI to show.
-            if (success) {
-                JsonObject status = doc["status"].to<JsonObject>();
-                weatherManager_->toJson(status);
+            if (!weatherManager_) {
+                response->send(500, "application/json", R"({"success":false,"error":"WeatherManager not initialized"})");
+                return;
             }
+            JsonDocument doc = weatherManager_->getWeatherTestResultJson();
             String output;
             serializeJson(doc, output);
-            response->send(success ? 200 : 400, "application/json", output.c_str());
+            response->send(200, "application/json", output.c_str());
         });
 
     logger.logInfo("Weather endpoint registered");

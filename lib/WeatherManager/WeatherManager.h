@@ -80,15 +80,57 @@ public:
                              unsigned int timeoutSeconds);
 
     /**
-     * @brief Probe the LLM provider (used by the "Test Connection" button)
+     * @brief Probe the LLM provider (loop-task only)
      *
      * Uses the LLM decider if one is configured; otherwise builds a temporary
      * probe from the given override values (so the UI can test unsaved config).
      * @return Empty string on success, error message on failure
+     *
+     * Blocking (TLS up to timeoutSeconds). NEVER call from an async web handler
+     * — use requestLlmTest() + pollLlmTestResultJson() instead.
      */
     String testLlmConnection(const String& baseUrl, const String& apiKey,
                              const String& model, const String& providerType,
                              unsigned int timeoutSeconds) const;
+
+    /**
+     * @brief Deferred LLM connection test (safe from an async web handler)
+     *
+     * Stores the override config + sets a pending flag; the actual TLS probe
+     * runs from update() on the main loop task. Coalesces repeat clicks while
+     * pending. Pair with pollLlmTestResultJson() from a GET endpoint.
+     */
+    void requestLlmTest(const String& baseUrl, const String& apiKey,
+                        const String& model, const String& providerType,
+                        unsigned int timeoutSeconds);
+
+    /**
+     * @brief Deferred weather-fetch test (safe from an async web handler)
+     *
+     * Same defer-then-poll shape as requestLlmTest(). Snapshots fetch counters
+     * at request time so the loop task can tell a successful test fetch apart
+     * from a prior cycle. Pair with pollWeatherTestResultJson().
+     */
+    void requestWeatherTest(const String& apiKeyOverride);
+
+    /// True if either deferred test is still waiting to run / finish.
+    bool isTestInProgress() const;
+
+    /**
+     * @brief Read-only snapshot of the LLM test result + state
+     *
+     * Returns JSON suitable for a GET polling endpoint. Status is one of
+     * "idle", "pending", "success", "error". No network I/O.
+     */
+    JsonDocument getLlmTestResultJson() const;
+
+    /**
+     * @brief Read-only snapshot of the weather-fetch test result + state
+     *
+     * Same shape as getLlmTestResultJson(); additionally embeds the current
+     * weather snapshot on success. No network I/O.
+     */
+    JsonDocument getWeatherTestResultJson() const;
 
     /**
      * @brief Install the open/no-open decision strategy
@@ -196,6 +238,29 @@ private:
     unsigned int failed_fetches_ = 0;
     String last_error_;
 
+    // Deferred connection-test state (issue #6 / async-tcp panic fix).
+    // Pending flags are set by the async web handler; runLlmTest_() and
+    // runWeatherTest_() execute the blocking TLS on the loop task, then
+    // stash the result for the polling endpoint to read.
+    enum class TestKind { NONE, LLM, WEATHER };
+    TestKind pending_test_ = TestKind::NONE;
+    TestKind running_test_ = TestKind::NONE;  // set while the loop task is mid-probe
+    bool llm_test_done_ = false;
+    bool llm_test_success_ = false;
+    String llm_test_error_;
+    // LLM overrides captured at request time
+    String llm_test_base_url_;
+    String llm_test_api_key_;
+    String llm_test_model_;
+    String llm_test_provider_type_;
+    unsigned int llm_test_timeout_seconds_ = 15;
+    bool weather_test_done_ = false;
+    bool weather_test_success_ = false;
+    String weather_test_error_;
+    String weather_test_api_key_override_;
+    unsigned int weather_test_ok_before_ = 0;   // successful_fetches_ at request time
+    unsigned int weather_test_fail_before_ = 0; // failed_fetches_ at request time
+
     // Internal helpers
     bool isReadyToFetch() const;
     void fetchWeather();
@@ -204,6 +269,10 @@ private:
     void recomputeDecision();
     IWeatherDecider& activeDecider();
     static void copyTruncated(char* dst, size_t dstSize, const char* src);
+
+    // Run the deferred LLM / weather probe on the loop task and stash results.
+    void runLlmTest_();
+    void runWeatherTest_();
 };
 
 #endif // __WEATHER_MANAGER_H__

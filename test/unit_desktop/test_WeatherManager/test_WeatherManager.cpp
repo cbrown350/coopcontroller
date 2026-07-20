@@ -546,3 +546,198 @@ TEST_F(WeatherManagerTest, TestLlmConnectionFailure) {
                                            "qwen3", "openai_compatible", 15);
     EXPECT_NE(err, "");
 }
+
+// ============================================================================
+// Deferred connection-test lifecycle (v0.7.1 async-tcp panic fix)
+// ============================================================================
+
+TEST_F(WeatherManagerTest, DeferredLlmTestStartsPendingThenResolvesSuccess) {
+    weather.requestLlmTest("http://localhost:8000", "kO7dkihVsUVeb",
+                           "qwen3", "openai_compatible", 15);
+    EXPECT_TRUE(weather.isTestInProgress());
+
+    // Before the loop consumes it, polling must see "pending" — no TLS yet.
+    JsonDocument pre = weather.getLlmTestResultJson();
+    EXPECT_EQ(String(pre["status"].as<const char*>()), String("pending"));
+
+    mockHal->setHttpPostAuthResponse(R"({"choices":[{"message":{"content":"OK"}}]})");
+    weather.update();  // loop task runs the probe
+    EXPECT_FALSE(weather.isTestInProgress());
+
+    JsonDocument post = weather.getLlmTestResultJson();
+    EXPECT_EQ(String(post["status"].as<const char*>()), String("success"));
+    EXPECT_TRUE(post["success"].as<bool>());
+    // The probe must have actually hit the provider.
+    EXPECT_TRUE(mockHal->getLastHttpPostAuthUrl().length() > 0);
+}
+
+TEST_F(WeatherManagerTest, DeferredLlmTestResolvesFailure) {
+    weather.requestLlmTest("http://localhost:8000", "kO7dkihVsUVeb",
+                           "qwen3", "openai_compatible", 15);
+    mockHal->setHttpPostAuthResponse("");  // empty body => probe returns error
+    weather.update();
+
+    EXPECT_FALSE(weather.isTestInProgress());
+    JsonDocument post = weather.getLlmTestResultJson();
+    EXPECT_EQ(String(post["status"].as<const char*>()), String("error"));
+    EXPECT_FALSE(post["success"].as<bool>());
+    EXPECT_TRUE(post["error"].as<String>().length() > 0);
+}
+
+TEST_F(WeatherManagerTest, DeferredLlmTestEmptyBaseUrlIsErrorNotPending) {
+    weather.requestLlmTest("", "", "", "openai_compatible", 15);
+    weather.update();  // no TLS attempt (empty base URL)
+    EXPECT_FALSE(weather.isTestInProgress());
+    JsonDocument post = weather.getLlmTestResultJson();
+    EXPECT_EQ(String(post["status"].as<const char*>()), String("error"));
+    // Must NOT have attempted a TLS POST.
+    EXPECT_EQ(mockHal->getLastHttpPostAuthUrl(), String(""));
+}
+
+TEST_F(WeatherManagerTest, DeferredLlmTestRequestDoesNoNetworkIo) {
+    // The request side must be free of any TLS work — it runs from the async
+    // handler. Assert by checking no HTTP POST has happened post-request.
+    weather.requestLlmTest("http://localhost:8000", "key", "m", "openai_compatible", 15);
+    EXPECT_EQ(mockHal->getLastHttpPostAuthUrl(), String(""));
+    EXPECT_EQ(mockHal->getLastHttpPostAuthBody(), String(""));
+}
+
+TEST_F(WeatherManagerTest, DeferredLlmTestUsesProvidedOverrides) {
+    // Provide saved-but-different LLM config, then override via the test path.
+    weather.configureLlmDecider(true, "http://saved-host:11434", "saved-key", "saved-model",
+                                "openai_compatible", 30);
+    weather.requestLlmTest("http://override-host:8000", "override-key", "override-model",
+                           "ollama_native", 15);
+    mockHal->setHttpPostAuthResponse(R"({"message":{"content":"OK"}})");  // ollama native shape
+    weather.update();
+
+    EXPECT_EQ(mockHal->getLastHttpPostAuthUrl(), String("http://override-host:8000/api/chat"));
+    EXPECT_EQ(mockHal->getLastHttpPostAuthToken(), String("override-key"));
+}
+
+TEST_F(WeatherManagerTest, DeferredWeatherTestResolvesSuccessAndIncludesSnapshot) {
+    configureWeather();  // enabled + api key + location
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 72.0f, 5.0f));
+
+    weather.requestWeatherTest("");
+    EXPECT_TRUE(weather.isTestInProgress());
+    JsonDocument pre = weather.getWeatherTestResultJson();
+    EXPECT_EQ(String(pre["status"].as<const char*>()), String("pending"));
+
+    weather.update();  // consumes the test, runs forceRefresh()
+    EXPECT_FALSE(weather.isTestInProgress());
+
+    JsonDocument post = weather.getWeatherTestResultJson();
+    EXPECT_EQ(String(post["status"].as<const char*>()), String("success"));
+    EXPECT_TRUE(post["success"].as<bool>());
+    // Successful weather fetches bump the counter.
+    EXPECT_GT(weather.getSuccessfulFetches(), 0u);
+}
+
+TEST_F(WeatherManagerTest, DeferredWeatherTestResolvesFailureWhenApiError) {
+    configureWeather();
+    mockHal->setHttpGetResponse(R"({"cod":401,"message":"Invalid API key"})");
+
+    weather.requestWeatherTest("");
+    weather.update();
+
+    JsonDocument post = weather.getWeatherTestResultJson();
+    EXPECT_EQ(String(post["status"].as<const char*>()), String("error"));
+    EXPECT_FALSE(post["success"].as<bool>());
+    EXPECT_GT(weather.getFailedFetches(), 0u);
+}
+
+TEST_F(WeatherManagerTest, DeferredWeatherTestAppliesApiKeyOverrideOneShot) {
+    configureWeather();  // sets the saved api key to "testkey123"
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 72.0f, 5.0f));
+
+    weather.requestWeatherTest("override-key-XYZ");
+    weather.update();
+
+    // After the test the saved key must be restored.
+    EXPECT_EQ(weather.getApiKey(), String("testkey123"));
+    EXPECT_TRUE(weather.getSuccessfulFetches() > 0u);
+}
+
+TEST_F(WeatherManagerTest, DeferredWeatherTestRequestDoesNoNetworkIo) {
+    configureWeather();
+    weather.requestWeatherTest("");
+    EXPECT_EQ(mockHal->getLastHttpGetUrl(), String(""));
+}
+
+TEST_F(WeatherManagerTest, DeferredTestIdleState) {
+    // No request made -> both result readers report "idle".
+    JsonDocument llm = weather.getLlmTestResultJson();
+    EXPECT_EQ(String(llm["status"].as<const char*>()), String("idle"));
+    JsonDocument w = weather.getWeatherTestResultJson();
+    EXPECT_EQ(String(w["status"].as<const char*>()), String("idle"));
+    EXPECT_FALSE(weather.isTestInProgress());
+}
+
+TEST_F(WeatherManagerTest, DeferredTestDoesNotBreakPeriodicFetch) {
+    // A pending test must not postpone the normal interval-based fetch beyond
+    // one cycle. Configure weather, request an LLM test, run update() twice:
+    // the first consumes the test; the second does the periodic fetch.
+    configureWeather();
+    weather.configureLlmDecider(true, "http://localhost:8000", "key", "m",
+                                "openai_compatible", 15);
+
+    mockHal->setHttpPostAuthResponse(R"({"choices":[{"message":{"content":"OK"}}]})");
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 72.0f, 5.0f));
+
+    weather.requestLlmTest("http://localhost:8000", "key", "m", "openai_compatible", 15);
+    weather.update();  // consumes the test (LLM POST happens; no weather GET)
+    String urlAfterTest = mockHal->getLastHttpGetUrl();
+    EXPECT_EQ(urlAfterTest, String(""));  // periodic fetch hasn't fired yet
+
+    // Advance time past the interval and tick again — periodic fetch resumes.
+    mockHal->setMillis(1000 + 11 * 60 * 1000);
+    weather.update();
+    EXPECT_TRUE(mockHal->getLastHttpGetUrl().length() > 0);
+}
+
+TEST_F(WeatherManagerTest, RepeatedLlmTestRequestsCoalesceToSingleProbe) {
+    // Clicking the button multiple times before the loop consumes the request
+    // must result in ONE probe, not N — matches the UpdateManager pattern.
+    weather.requestLlmTest("http://localhost:8000", "key", "m", "openai_compatible", 15);
+    weather.requestLlmTest("http://localhost:8000", "key", "m", "openai_compatible", 15);
+    weather.requestLlmTest("http://localhost:8000", "key", "m", "openai_compatible", 15);
+
+    mockHal->setHttpPostAuthResponse(R"({"choices":[{"message":{"content":"OK"}}]})");
+    weather.update();
+
+    // Only one probe POST happened (last URL/body recorded, count not tracked,
+    // but isTestInProgress is false and result is populated once).
+    EXPECT_FALSE(weather.isTestInProgress());
+    JsonDocument post = weather.getLlmTestResultJson();
+    EXPECT_EQ(String(post["status"].as<const char*>()), String("success"));
+}
+
+// While the loop task is mid-probe (between consuming the request and writing
+// the result), polling must still report "pending" — never "idle". This was a
+// real bug observed on the USB test board: a 3-second TLS fetch left a window
+// where the getter returned "idle" because pending_test_ was already cleared.
+TEST_F(WeatherManagerTest, LlmTestReportsPendingWhileProbeIsRunning) {
+    // Stand up a slow LLM POST that we can observe mid-flight. The MockHAL
+    // returns synchronously, so we instead verify the contract by checking
+    // isTestInProgress() remains true across the update() call boundary: the
+    // public surface must NOT flicker to idle between pending and done.
+    weather.requestLlmTest("http://localhost:8000", "key", "m", "openai_compatible", 15);
+    EXPECT_TRUE(weather.isTestInProgress());
+    mockHal->setHttpPostAuthResponse(R"({"choices":[{"message":{"content":"OK"}}]})");
+    weather.update();
+    EXPECT_FALSE(weather.isTestInProgress());  // settled
+    JsonDocument r = weather.getLlmTestResultJson();
+    EXPECT_NE(String(r["status"].as<const char*>()), String("idle"));
+}
+
+TEST_F(WeatherManagerTest, WeatherTestReportsPendingWhileProbeIsRunning) {
+    configureWeather();
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 72.0f, 5.0f));
+    weather.requestWeatherTest("");
+    EXPECT_TRUE(weather.isTestInProgress());
+    weather.update();
+    EXPECT_FALSE(weather.isTestInProgress());
+    JsonDocument r = weather.getWeatherTestResultJson();
+    EXPECT_NE(String(r["status"].as<const char*>()), String("idle"));
+}

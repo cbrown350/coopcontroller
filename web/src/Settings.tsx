@@ -687,16 +687,33 @@ function Settings() {
       // Send current form value so testing works before saving
       const body: Record<string, string> = {}
       if (weatherApiKey()) body.weather_api_key = weatherApiKey()
+      // Enqueue only; the OpenWeatherMap fetch runs from the device's main
+      // loop, not the async web-server task (running it inline crashed
+      // async_tcp — see v0.7.1 / issue #4). This returns 202 immediately.
       const response = await authenticatedFetch('/weather/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
-      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status} ${response.statusText}`)
+      }
+      // Poll the result endpoint until the loop task finishes the probe.
+      let data: any = { status: 'pending' }
+      for (let attempt = 0; attempt < 60; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const poll = await authenticatedFetch('/weather/test_result')
+        if (!poll.ok) continue
+        data = await poll.json()
+        if (data.status !== 'pending') break
+      }
+      if (data.status === 'pending') {
+        throw new Error('Weather test timed out')
+      }
       setWeatherTestResult({
-        success: data.success,
+        success: !!data.success,
         message: data.success
-          ? `OK — ${data.status?.current?.description ?? 'weather fetched'}`
+          ? `OK — ${data.status_snapshot?.current?.description ?? 'weather fetched'}`
           : (data.error || 'Weather fetch failed')
       })
     } catch (err: any) {
@@ -718,14 +735,31 @@ function Settings() {
       if (llmModel()) body.llm_model = llmModel()
       if (llmProviderType()) body.llm_provider_type = llmProviderType()
       if (llmTimeoutSeconds()) body.llm_timeout_seconds = llmTimeoutSeconds()
+      // Enqueue only; the provider TLS probe runs from the device's main loop,
+      // not the async web-server task (running it inline crashed async_tcp —
+      // see v0.7.1 / issue #4). This returns 202 immediately.
       const response = await authenticatedFetch('/weather/llm/test_connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
-      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status} ${response.statusText}`)
+      }
+      // Poll until the loop task finishes the probe.
+      let data: any = { status: 'pending' }
+      for (let attempt = 0; attempt < 90; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const poll = await authenticatedFetch('/weather/llm/test_result')
+        if (!poll.ok) continue
+        data = await poll.json()
+        if (data.status !== 'pending') break
+      }
+      if (data.status === 'pending') {
+        throw new Error('Connection test timed out')
+      }
       setLlmTestResult({
-        success: data.success,
+        success: !!data.success,
         message: data.success ? 'Connected! Provider responded.' : (data.error || 'Connection failed')
       })
     } catch (err: any) {

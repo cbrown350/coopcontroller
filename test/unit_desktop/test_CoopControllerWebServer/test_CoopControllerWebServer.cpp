@@ -301,8 +301,11 @@ TEST_F(CoopControllerWebServerIntegrationTest, WeatherManagerNullDeciderDoesNotC
 
 // MockHAL::webServerOn only retains the single most-recently-registered
 // handler (no per-URI map), so only the last endpoint setWeatherManager()
-// registers (/weather/test) is directly invokable here. This matches the
-// existing coverage convention in this file for other test-button endpoints.
+// registers (/weather/test_result) is directly invokable here. The v0.7.1
+// deferred-test design means: the POST returns 202 with no network I/O, the
+// loop task (weatherManager.update()) runs the probe, then the GET result
+// endpoint returns the outcome. These tests exercise the GET side directly;
+// the request/run/poll lifecycle is covered in test_WeatherManager.
 TEST_F(CoopControllerWebServerIntegrationTest, WeatherTestEndpointReturnsSuccessOnGoodFetch) {
     WeatherManager weatherManager;
     weatherManager.begin(mockHal);
@@ -323,11 +326,17 @@ TEST_F(CoopControllerWebServerIntegrationTest, WeatherTestEndpointReturnsSuccess
         R"("main":{"temp":72.0,"feels_like":71.0,"humidity":40,"pressure":1015},)"
         R"("wind":{"speed":5.0},"clouds":{"all":10},"dt":1721234567,"cod":200})");
 
+    // Enqueue the test, run the deferred probe on the loop task, then read
+    // the result via the GET endpoint (which is what the handler under test
+    // is, per the MockHAL single-handler convention above).
+    weatherManager.requestWeatherTest("");
+    weatherManager.update();
+
     WebServerHandler handler = mockHal->getWebServerHandler();
     ASSERT_NE(handler, nullptr);
 
     MockWebRequest request;
-    request.setMethod(HAL_WebRequestMethod::HTTP_POST);
+    request.setMethod(HAL_WebRequestMethod::HTTP_GET);
     MockWebResponse response;
     handler(&request, &response);
 
@@ -351,15 +360,18 @@ TEST_F(CoopControllerWebServerIntegrationTest, WeatherTestEndpointReturnsErrorOn
     mockHal->setFreeHeap(200000);
     mockHal->setHttpGetResponse("");  // Simulate fetch failure
 
+    weatherManager.requestWeatherTest("");
+    weatherManager.update();
+
     WebServerHandler handler = mockHal->getWebServerHandler();
     ASSERT_NE(handler, nullptr);
 
     MockWebRequest request;
-    request.setMethod(HAL_WebRequestMethod::HTTP_POST);
+    request.setMethod(HAL_WebRequestMethod::HTTP_GET);
     MockWebResponse response;
     handler(&request, &response);
 
-    EXPECT_EQ(response.getLastCode(), 400);
+    EXPECT_EQ(response.getLastCode(), 200);  // result endpoint always 200
     EXPECT_TRUE(String(response.getLastBody()).indexOf("\"success\":false") >= 0);
 }
 
