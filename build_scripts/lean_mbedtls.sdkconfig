@@ -1,0 +1,82 @@
+# Lean IDF/mbedtls config for the pioarduino platform (arduino-esp32 3.3.9 / IDF 5.5.4).
+#
+# Goal: free heap so the TLS handshake reliably succeeds. The stock pioarduino
+# libs ship a fat config — every ECP curve, every key exchange, plus a large
+# static footprint from unused components (Bluetooth Bluedroid + BLE Mesh,
+# Ethernet, ESP RainMaker, PPP, FAT). With ~90-115KB free heap the RSA-2048
+# private operation during the TLS handshake intermittently can't get a big
+# enough contiguous block (mbedtls -17040 BIGNUM alloc fail), and whatever
+# outbound TLS happens to run at that moment fails — observed on the weather
+# LLM fetch, the OTA GitHub check, the Telegram test button, and email.
+# This is heap-pressure, not cipher negotiation: the fat config eats more
+# static RAM and more per-handshake heap, pushing the board over.
+#
+# This file is referenced via custom_sdkconfig = file://... in platformio.ini.
+# The pioarduino builder reads it, triggers a one-time recompile of the IDF/
+# mbedtls libs from source (call_compile_libs -> SConscript espidf.py), and
+# writes its generated full config to ./sdkconfig.defaults (which we don't
+# track). This file is NOT overwritten — only sdkconfig.defaults is.
+#
+# Kept (what our endpoints use: ollama.com, openweather, telegram, mailjet):
+#   TLS 1.2, ECDHE-RSA + ECDHE-ECDSA, SECP256R1/SECP384R1/Curve25519,
+#   AES-GCM/CCM, SHA256, RSA_C, ECP_C, ECDSA_C, HKDF.
+# Dropped: exotic curves, PSK/RSA-only/ECDH/ECJPAKE key exchanges, DTLS,
+#   Bluetooth, BLE Mesh, Ethernet, ESP RainMaker, PPP, FAT, esp-modbus
+#   static footprint — all unused by this project.
+
+# ---- mbedTLS: trim curves and key exchanges ----
+# Disable exotic ECP curves (keep SECP256R1, SECP384R1, Curve25519).
+CONFIG_MBEDTLS_ECP_DP_SECP192R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP224R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP521R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP192K1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP224K1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP256K1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_BP256R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_BP384R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_BP512R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_CURVE448_ENABLED=n
+
+# Disable unused key exchanges (keep ECDHE_RSA + ECDHE_ECDSA).
+CONFIG_MBEDTLS_PSK_MODES=n
+CONFIG_MBEDTLS_KEY_EXCHANGE_PSK=n
+CONFIG_MBEDTLS_KEY_EXCHANGE_DHE_PSK=n
+CONFIG_MBEDTLS_KEY_EXCHANGE_RSA_PSK=n
+CONFIG_MBEDTLS_KEY_EXCHANGE_RSA=n
+CONFIG_MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA=n
+CONFIG_MBEDTLS_KEY_EXCHANGE_ECDH_RSA=n
+CONFIG_MBEDTLS_KEY_EXCHANGE_ECJPAKE=n
+
+# DTLS not used.
+CONFIG_MBEDTLS_SSL_PROTO_DTLS=n
+
+# Camellia not needed (AES is enough); saves static footprint.
+CONFIG_MBEDTLS_CAMELLIA_C=n
+
+# Smaller TLS I/O buffers: default 16384 (16KB) each = 32KB per context.
+# Our responses are small JSON (<16KB); 8KB in + 4KB out is plenty and frees
+# ~24KB per TLS context, directly relieving the handshake heap pressure.
+CONFIG_MBEDTLS_SSL_MAX_CONTENT_LEN=8192
+CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN=y
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=8192
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
+
+# Don't keep peer cert after handshake (frees heap while the connection lives).
+CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n
+
+# ---- Disable big unused IDF components to free static RAM ----
+# Bluetooth (Bluedroid + BLE Mesh is the single biggest static consumer).
+# Disabling this is the largest static-RAM win on the ESP32.
+CONFIG_BT_ENABLED=n
+CONFIG_BTDM_CTRL_MODE_BTDM=n
+CONFIG_BT_NIMBLE_ENABLED=n
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BLE_MESH=n
+
+# PPP over serial (not used).
+CONFIG_LWIP_PPP_SUPPORT=n
+
+# esp-modbus component asserts FMB_MASTER_MAX_API_BLOCKING_TIME_MS >=
+# FMB_MASTER_TIMEOUT_MS_RESPOND. We don't use modbus; set blocking high so
+# the assertion holds if the component still compiles.
+CONFIG_FMB_MASTER_MAX_API_BLOCKING_TIME_MS=15000

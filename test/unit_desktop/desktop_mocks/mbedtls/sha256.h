@@ -193,4 +193,17 @@ inline int mbedtls_sha256_finish_ret(mbedtls_sha256_context* ctx, uint8_t* outpu
     return 0;
 }
 
+// mbedtls 3.x dropped the _ret-suffixed names; the production code calls the
+// unsuffixed forms. Provide them as aliases so the desktop mock matches the
+// real 3.x API the firmware links against.
+inline int mbedtls_sha256_starts(mbedtls_sha256_context* ctx, int is224) {
+    return mbedtls_sha256_starts_ret(ctx, is224);
+}
+inline int mbedtls_sha256_update(mbedtls_sha256_context* ctx, const uint8_t* input, size_t ilen) {
+    return mbedtls_sha256_update_ret(ctx, input, ilen);
+}
+inline int mbedtls_sha256_finish(mbedtls_sha256_context* ctx, uint8_t* output) {
+    return mbedtls_sha256_finish_ret(ctx, output);
+}
+
 #endif // MBEDTLS_SHA256_H_MOCK
