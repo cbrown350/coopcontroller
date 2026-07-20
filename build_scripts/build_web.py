@@ -32,10 +32,21 @@ def before_buildfs(source, target, env): # NOSONAR - complexity OK
     
     # Copy project data dir to data_dir
     static_data_src = os.path.join(env.subst('$PROJECT_DIR'), "data")
+    # Live-config files that are gitignored and hold a developer's local board
+    # settings. Never bake these into a filesystem image — doing so silently
+    # ships a developer's WiFi creds/hostname/BSSID into any board the image
+    # gets flashed to (stranded a production board on 2026-07-20 when a local
+    # image carrying a bad BSSID was ElegantOTA-flashed to the coop board).
+    # CI builds are already clean (gitignored files absent in fresh checkout);
+    # this matches local builds to that. Real settings survive flashes via the
+    # NVS backup/restore in SettingsManager + the ElegantOTA onStart hook.
+    LIVE_CONFIG_FILES = {"user_settings.json", "emulator_settings.json"}
     if os.path.exists(static_data_src):
-        # copy all files and folders except those with "example" in the name
+        # copy all files and folders except examples and live-config files
         for item in os.listdir(static_data_src):
             if "example" in item.lower():
+                continue
+            if item in LIVE_CONFIG_FILES:
                 continue
             src = os.path.join(static_data_src, item)
             dst = os.path.join(data_dir, item)

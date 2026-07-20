@@ -146,6 +146,14 @@ void UpdateManager::checkForUpdates() {
     JsonDocument doc;
     DeserializationError jsonError = deserializeJson(doc, manifestJson);
     if (jsonError) {
+        // Log the body length + first bytes so a parse failure is diagnosable
+        // (truncation, TLS garbage, HTML error page, gzip, etc.) instead of a
+        // bare "InvalidInput".
+        String preview = manifestJson.substring(0, 200);
+        preview.replace("\r", "\\r");
+        preview.replace("\n", "\\n");
+        logger.logError("Manifest body length: " + String(manifestJson.length()) +
+                        ", first 200 bytes: " + preview);
         setError(UpdateError::MANIFEST_PARSE, "Failed to parse manifest JSON: " + String(jsonError.c_str()));
         last_check_time_ = hal_->millis();
         return;
