@@ -133,12 +133,27 @@ bool HAL_ESP32::getLocalTime(struct tm *timeinfo, unsigned long ms) {
 // ========================================================================
 
 bool HAL_ESP32::wifiBegin(const char *ssid, const char *password) {
-  // Cycle the STA interface off/on so back-to-back begins (e.g. the BSSID ->
-  // auto-select fallback) start from a clean radio state. Without this, the
-  // ESP32 STA can stick in WL_CONNECT_FAILED after a failed targeted attempt
-  // and the fallback never associates.
+  // Disable modem sleep: the ESP32 SDK default (WIFI_PS_MIN_MODEM) powers the
+  // radio down between DTIM beacons, which causes transient dropouts on
+  // mesh/multi-AP networks even at strong RSSI. The coop controller is
+  // mains-powered, so the ~30 mA savings is irrelevant. WIFI_PS_NONE keeps the
+  // radio continuously awake and eliminates that dropout source. Idempotent
+  // and harmless to call on every begin.
+  WiFi.setSleep(WIFI_PS_NONE);
+
+  // Only cycle the STA interface off when it's actually in a bad state.
+  // Unconditionally doing mode(OFF)->mode(STA) on every reconnect calls
+  // esp_wifi_stop, which races mbedtls_x509_crt_free on the async_tcp task
+  // and panics (decoded backtraces end in esp_wifi_stop/deauth_sta). If STA
+  // is already up and associated, just re-issue the connect. Only tear down
+  // when stuck in CONNECT_FAILED/DISCONNECTED, where the radio genuinely
+  // needs a clean restart to associate again.
   if (WiFiClass::getMode() & WIFI_MODE_STA) {
-    WiFiClass::mode(WIFI_OFF);
+    if (WiFiClass::status() == WL_CONNECT_FAILED ||
+        WiFiClass::status() == WL_CONNECTION_LOST ||
+        WiFiClass::status() == WL_DISCONNECTED) {
+      WiFiClass::mode(WIFI_OFF);
+    }
   }
   WiFiClass::mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -146,8 +161,13 @@ bool HAL_ESP32::wifiBegin(const char *ssid, const char *password) {
 }
 
 bool HAL_ESP32::wifiBeginWithBSSID(const char *ssid, const char *password, const uint8_t *bssid) {
+  WiFi.setSleep(WIFI_PS_NONE);
   if (WiFiClass::getMode() & WIFI_MODE_STA) {
-    WiFiClass::mode(WIFI_OFF);
+    if (WiFiClass::status() == WL_CONNECT_FAILED ||
+        WiFiClass::status() == WL_CONNECTION_LOST ||
+        WiFiClass::status() == WL_DISCONNECTED) {
+      WiFiClass::mode(WIFI_OFF);
+    }
   }
   WiFiClass::mode(WIFI_STA);
   WiFi.begin(ssid, password, 0, bssid);
@@ -193,6 +213,10 @@ void HAL_ESP32::wifiSetAutoReconnect(bool autoReconnect) {
 }
 
 int HAL_ESP32::wifiGetStatus() { return WiFiClass::status(); }
+
+int HAL_ESP32::tlsClientsInFlight() {
+  return tls_in_flight_.load(std::memory_order_acquire);
+}
 
 // ========================================================================
 // MDNS METHODS
@@ -774,7 +798,7 @@ static String readHttpLine(WiFiClientSecure& client, unsigned long deadlineMs) {
   return line;
 }
 
-std::unique_ptr<WiFiClientSecure> HAL_ESP32::createSecureClient(unsigned long timeout_ms) {
+HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_ms) {
   // Refuse to start a TLS handshake when WiFi isn't associated. Firing a TLS
   // connect while the STA is down/reconnecting is a documented trigger for the
   // mbedtls StoreProhibited panic (esp-idf #8895, #11131) on the async_tcp task,
@@ -808,7 +832,16 @@ std::unique_ptr<WiFiClientSecure> HAL_ESP32::createSecureClient(unsigned long ti
     // Clamp handshake to the same budget as the overall request timeout.
     client->setTimeout(timeout_ms);
     client->setHandshakeTimeout((timeout_ms + 999) / 1000);  // ms -> seconds, round up
-    return client;
+
+    // RAII: bump the in-flight counter for the lifetime of this client. The
+    // custom deleter (TlsClientDeleter) decrements it when the unique_ptr is
+    // destroyed — scope exit, move, or exception. This lets the WiFi reconnect
+    // path avoid tearing the radio down while a TLS session is live. Atomic,
+    // lock-free, and the deleter runs exactly once per allocation — no way to
+    // stick high unless a client is genuinely alive.
+    tls_in_flight_.fetch_add(1, std::memory_order_acq_rel);
+    auto* raw = client.release();
+    return SecureClientPtr(raw, TlsClientDeleter(&tls_in_flight_));
   } catch (...) {
     Serial.println("[HAL_ESP32] createSecureClient: exception during TLS client allocation");
     return nullptr;
@@ -1214,7 +1247,7 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   // Plain HTTP path uses a non-TLS WiFiClient so LAN endpoints (Rapid-MLX on
   // :8000, local Ollama on :11434) work — httpPost() above is TLS-only.
   std::unique_ptr<WiFiClient> plainHolder;
-  std::unique_ptr<WiFiClientSecure> tlsHolder;
+  SecureClientPtr tlsHolder;
   if (useTls) {
     tlsHolder = createSecureClient(timeout_ms);
     if (tlsHolder == nullptr) {

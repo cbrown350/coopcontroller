@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <WiFiClientSecure.h>
+#include <atomic>
 #include <memory>
 
 #include "ElegantOTA.h"
@@ -95,6 +96,7 @@ public:
   void wifiDisconnect() override;
   void wifiSetAutoReconnect(bool autoReconnect) override;
   int wifiGetStatus() override;
+  int tlsClientsInFlight() override;
 
   // ========================================================================
   // MDNS METHODS
@@ -228,6 +230,26 @@ private:
   // throw that slips through above this threshold under fragmentation.
   static constexpr uint32_t TLS_CLIENT_MIN_FREE_HEAP = 16000;
 
+  // Count of WiFiClientSecure instances handed out by createSecureClient()
+  // and not yet destroyed. Atomic so the WiFi reconnect path (loop task) can
+  // read it lock-free while createSecureClient/destroy run on the loop or
+  // async_tcp tasks. Pure advisory: a >0 value means "a TLS session is live,
+  // don't tear the radio down right now". Never used for blocking.
+  std::atomic<int> tls_in_flight_{0};
+
+  // RAII deleter for WiFiClientSecure: decrements tls_in_flight_ on destroy.
+  // Stateful (holds a pointer to the counter) so it survives unique_ptr moves.
+  struct TlsClientDeleter {
+    std::atomic<int>* counter = nullptr;
+    TlsClientDeleter() = default;
+    explicit TlsClientDeleter(std::atomic<int>* c) : counter(c) {}
+    void operator()(WiFiClientSecure* p) const {
+      delete p;
+      if (counter) counter->fetch_sub(1, std::memory_order_acq_rel);
+    }
+  };
+  using SecureClientPtr = std::unique_ptr<WiFiClientSecure, TlsClientDeleter>;
+
   /// @brief Create a WiFiClientSecure that is exception-safe.
   ///
   /// Guards against the issue #4 crash root cause: allocating a TLS context
@@ -239,7 +261,7 @@ private:
   /// @param timeout_ms  Connect/handshake timeout passed to the client.
   /// @return Owned client configured (insecure) with bounded timeouts, or
   ///         nullptr if it could not be created safely.
-  std::unique_ptr<WiFiClientSecure> createSecureClient(unsigned long timeout_ms);
+  SecureClientPtr createSecureClient(unsigned long timeout_ms);
 };
 
 #endif // __HAL_ESP32_H__

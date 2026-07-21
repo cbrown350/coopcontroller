@@ -208,15 +208,91 @@ TEST_F(WifiControllerTest, UpdateHandlesWifiChangedFlag) {
 
 TEST_F(WifiControllerTest, UpdateDoesNotTriggerBuzzerWhenAlreadyDisconnected) {
     mockHAL->setWiFiStatus(WL_DISCONNECTED); // WL_DISCONNECTED
-    
+
     wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
     mockBuzzer->reset();
     mockHAL->setMillis(31000);
-    
+
     wifiController->update();
-    
+
     // Buzzer should not be triggered again
     EXPECT_EQ(mockBuzzer->getLastTriggeredAlert(), AlertType::WIFI_DISCONNECTED);
+}
+
+// ============================================================================
+// TLS-in-flight guard tests — the reconnect path must defer while an outbound
+// TLS request is active (to avoid the esp_wifi_stop vs mbedtls race), but
+// MUST NOT lock up: after WIFI_DISCONNECT_OVERDUE_MS it reconnects anyway.
+// ============================================================================
+
+TEST_F(WifiControllerTest, ReconnectDefersWhenTlsInFlight) {
+    sm.setAPMode(false);
+    sm.setSSID("TestSSID");
+    sm.setPassword("password");
+    sm.setHasConnected(true);
+
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
+    // Board is connected initially; mark the boot begin.
+    int beginsAfterBoot = mockHAL->wifiBeginCallCount;
+
+    // WiFi drops, and a TLS request is mid-flight on the loop task.
+    mockHAL->setWiFiStatus(WL_DISCONNECTED);
+    mockHAL->mockTlsInFlight = 1;
+    mockHAL->setMillis(31000);
+
+    wifiController->update();
+
+    // Reconnect deferred: no new wifiBegin/wifiBeginWithBSSID this cycle.
+    EXPECT_EQ(mockHAL->wifiBeginCallCount, beginsAfterBoot);
+    // Still disconnected, not reconnecting yet.
+    EXPECT_FALSE(wifiController->getStatus().isReconnecting);
+}
+
+TEST_F(WifiControllerTest, ReconnectProceedsWhenNoTlsInFlight) {
+    sm.setAPMode(false);
+    sm.setSSID("TestSSID");
+    sm.setPassword("password");
+    sm.setHasConnected(true);
+
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
+    int beginsAfterBoot = mockHAL->wifiBeginCallCount;
+
+    // WiFi drops, no TLS active.
+    mockHAL->setWiFiStatus(WL_DISCONNECTED);
+    mockHAL->mockTlsInFlight = 0;
+    mockHAL->setMillis(31000);
+
+    wifiController->update();
+
+    // Reconnect proceeds immediately.
+    EXPECT_GT(mockHAL->wifiBeginCallCount, beginsAfterBoot);
+}
+
+TEST_F(WifiControllerTest, ReconnectDoesNotLockUpWhenTlsCounterStuck) {
+    // Critical lock-up-proofness: even if the TLS counter never decrements
+    // (stuck positive), the board must still reconnect once the disconnect
+    // has been outstanding past the overdue threshold. A stuck counter must
+    // not permanently block reconnects.
+    sm.setAPMode(false);
+    sm.setSSID("TestSSID");
+    sm.setPassword("password");
+    sm.setHasConnected(true);
+
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
+    int beginsAfterBoot = mockHAL->wifiBeginCallCount;
+
+    mockHAL->setWiFiStatus(WL_DISCONNECTED);
+    mockHAL->mockTlsInFlight = 1;  // stuck positive, never decrements
+
+    // First cycle at 31s: deferred.
+    mockHAL->setMillis(31000);
+    wifiController->update();
+    EXPECT_EQ(mockHAL->wifiBeginCallCount, beginsAfterBoot);
+
+    // Past the 90s overdue threshold: reconnect proceeds despite TLS flag.
+    mockHAL->setMillis(130000);
+    wifiController->update();
+    EXPECT_GT(mockHAL->wifiBeginCallCount, beginsAfterBoot);
 }
 
 // ============================================================================

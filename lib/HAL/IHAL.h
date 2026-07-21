@@ -431,6 +431,16 @@ public:
   virtual int wifiGetStatus() = 0;
 
   /**
+   * @brief Count of outbound TLS clients currently in flight (allocated but
+   *        not yet destroyed). Used by the WiFi reconnect path to avoid
+   *        tearing the radio down (esp_wifi_stop) while a TLS handshake or
+   *        data transfer is active on the loop task, which races
+   *        mbedtls_x509_crt_free and panics async_tcp. Pure advisory; never
+   *        blocks or spins. See HAL_ESP32::tlsClientsInFlight().
+   */
+  virtual int tlsClientsInFlight() = 0;
+
+  /**
    * @brief Start mDNS service
    * @param hostname Hostname for mDNS
    * @return true if mDNS started successfully

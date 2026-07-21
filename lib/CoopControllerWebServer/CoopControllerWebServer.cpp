@@ -1195,6 +1195,13 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                   response->sendChunked(200, "application/json",
                       [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                          // This callback runs on the async_tcp task, where an
+                          // uncaught std::bad_alloc (heap-allocating String ops
+                          // under memory pressure) panics and reboots the board.
+                          // Catch any exception, end the stream gracefully, and
+                          // mark closed so the client gets a clean termination
+                          // instead of a crash. Returns 0 = end of chunked body.
+                          try {
                           if (state->closedBracket && state->overflow.length() == 0) return 0;
 
                           size_t written = 0;
@@ -1283,6 +1290,14 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                           }
 
                           return written;
+                          } catch (...) {
+                              // Out-of-memory or other allocation failure on async_tcp:
+                              // end the stream so the framework tears the connection
+                              // down cleanly instead of aborting the task.
+                              state->closedBracket = true;
+                              state->overflow = "";
+                              return 0;
+                          }
                       });
               });
     
@@ -1885,6 +1900,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   response->addHeader("Content-Disposition", "attachment; filename=coop_history.csv");
                   response->sendChunked(200, "text/csv",
                       [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                          // Runs on async_tcp: an uncaught bad_alloc here panics
+                          // and reboots (decoded backtrace: std::__throw_bad_alloc
+                          // in this callback). Catch any exception, end the stream
+                          // gracefully, return 0 to terminate the chunked body.
+                          try {
                           size_t written = 0;
 
                           // Flush overflow
@@ -1957,6 +1977,13 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                           }
 
                           return written;
+                          } catch (...) {
+                              state->overflow = "";
+                              // Force the loop to finish: jump current to total so
+                              // the next invocation returns 0 and ends the stream.
+                              state->current = state->total;
+                              return 0;
+                          }
                       });
               });
 

@@ -226,15 +226,19 @@ public:
     bool wifiBegin(const char* ssid, const char* password) override {
         mockSSID = String(ssid);
         mockWiFiPassword = String(password);
+        wifiBeginCallCount++;
         return true;
     }
 
     bool wifiBeginWithBSSID(const char* ssid, const char* password, const uint8_t* bssid) override {
         mockSSID = String(ssid);
         mockWiFiPassword = String(password);
+        wifiBeginCallCount++;
         (void)bssid;  // BSSID not used in mock
         return true;
     }
+
+    int wifiBeginCallCount = 0;
 
     bool wifiBeginAP(const char* ssid, const char* password = nullptr) override {
         // Store the AP SSID for testing
@@ -294,6 +298,12 @@ public:
     int wifiGetStatus() override {
         return mockWiFiStatus;
     }
+
+    int tlsClientsInFlight() override {
+        return mockTlsInFlight;
+    }
+
+    int mockTlsInFlight = 0;
 
     bool mdnsBegin(const char* hostname) override {
         (void)hostname;

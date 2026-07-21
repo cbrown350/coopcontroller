@@ -84,6 +84,18 @@ private:
     unsigned long bssidBlacklistUntil_ = 0;   ///< millis() until BSSID pref is eligible again
     String blacklistedBssid_;                 ///< Which BSSID string is currently blacklisted
 
+    // TLS-in-flight guard for the reconnect path. When the radio drops while
+    // an outbound TLS request is active, we defer the reconnect one 30 s cycle
+    // to avoid the esp_wifi_stop vs mbedtls_x509_crt_free race. This bounds how
+    // long we'll defer: past WIFI_DISCONNECT_OVERDUE_MS we reconnect anyway, so
+    // a stuck counter can never permanently lock out reconnects.
+    static constexpr unsigned long WIFI_DISCONNECT_OVERDUE_MS = 90UL * 1000UL; ///< 90 s
+    unsigned long wifiDisconnectStart_ = 0;  ///< millis() when disconnect first observed
+
+    /// True once we've deferred the reconnect long enough that being offline
+    /// outweighs the TLS-race risk — reconnect regardless of in-flight TLS.
+    bool wifiDisconnectOverdue_() const;
+
     /// Is the configured BSSID preference currently blacklisted?
     bool isBssidBlacklisted() const;
 

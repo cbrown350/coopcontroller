@@ -289,13 +289,39 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
     // Check if WiFi is connected
     if (!_hal->wifiIsConnected()) {
         if (!isReconnecting) {
+            // Stamp the disconnect start time on the FIRST observation so the
+            // overdue timer counts from the actual disconnect, not from after
+            // deferral. Without this, a TLS counter that stays positive would
+            // keep deferring forever and the overdue threshold would never
+            // fire — a lock-up. wifiDisconnectStart_ is reset to 0 on
+            // successful reconnect.
+            if (wifiDisconnectStart_ == 0) {
+                wifiDisconnectStart_ = millis();
+            }
+
+            // TLS-in-flight guard: if an outbound TLS request (weather fetch,
+            // LLM call, OTA check) is active on the loop task right now,
+            // tearing the radio down here calls esp_wifi_stop, which races
+            // mbedtls_x509_crt_free on the async_tcp task and panics (the
+            // decoded backtraces all end in esp_wifi_stop/deauth_sta). Defer
+            // the reconnect one check cycle (30 s) and let the TLS call
+            // finish; its client's RAII deleter decrements the counter on
+            // scope exit. Bounded: if WiFi has been down for >90 s we proceed
+            // regardless — a stuck counter must not lock out reconnects
+            // forever, and being offline is worse than a rare TLS race.
+            int tlsActive = _hal->tlsClientsInFlight();
+            if (tlsActive > 0 && !wifiDisconnectOverdue_()) {
+                logger.logInfo(String("WiFi down but ") + tlsActive +
+                               " TLS client(s) active; deferring reconnect 30s to avoid TLS/radio race");
+                return;
+            }
             logger.logWarning("WiFi disconnected, attempting to reconnect...");
             if (buzzerController_) {
                 buzzerController_->triggerAlert(AlertType::WIFI_DISCONNECTED);
             }
             String ssid = settingsManager_->getSSID();
             String password = settingsManager_->getPassword();
-            
+
             if (ssid.length() != 0) {
                 String bssidPref = settingsManager_->getWifiBssidPreference();
                 if (bssidPref.length() > 0 && !isBssidBlacklisted()) {
@@ -359,6 +385,7 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
         if (isReconnecting) {
             logger.logInfo("WiFi reconnected successfully");
             isReconnecting = false;
+            wifiDisconnectStart_ = 0;
             clearBssidBlacklist();
             
             // Clear WiFi disconnected alert when reconnected
@@ -465,4 +492,9 @@ void WifiController::clearBssidBlacklist() {
         bssidBlacklistUntil_ = 0;
         blacklistedBssid_ = "";
     }
+}
+
+bool WifiController::wifiDisconnectOverdue_() const {
+    if (wifiDisconnectStart_ == 0) return false;
+    return (millis() - wifiDisconnectStart_) >= WIFI_DISCONNECT_OVERDUE_MS;
 }
