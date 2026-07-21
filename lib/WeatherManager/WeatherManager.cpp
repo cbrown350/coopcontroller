@@ -2,6 +2,7 @@
 #include "LlmWeatherDecider.h"  // Complete type for the owned unique_ptr<LlmWeatherDecider>
 #include "Logger.h"
 #include <math.h>
+#include <time.h>
 
 WeatherManager::WeatherManager() = default;
 WeatherManager::~WeatherManager() = default;  // Out-of-line: needs complete LlmWeatherDecider type
@@ -30,6 +31,11 @@ void WeatherManager::setOpenWindowMinutes(int openMin, int closeMin) {
     window_close_minutes_ = closeMin;
 }
 
+void WeatherManager::setLocalTempF(float tempF, const String& source) {
+    local_temp_f_ = tempF;
+    local_temp_source_ = source;
+}
+
 static LlmProviderWire wireFromType(const String& providerType) {
     if (providerType == "ollama_native") return LlmProviderWire::OLLAMA_NATIVE;
     // "openai_compatible" and "ollama_cloud" both speak the OpenAI schema.
@@ -38,7 +44,8 @@ static LlmProviderWire wireFromType(const String& providerType) {
 
 void WeatherManager::configureLlmDecider(bool enabled, const String& baseUrl, const String& apiKey,
                                          const String& model, const String& providerType,
-                                         unsigned int timeoutSeconds) {
+                                         unsigned int timeoutSeconds,
+                                         const String& promptOverride) {
     if (!enabled) {
         llm_decider_.reset();
         setDecider(nullptr);  // restores rule-based default
@@ -48,6 +55,7 @@ void WeatherManager::configureLlmDecider(bool enabled, const String& baseUrl, co
     auto decider = std::make_unique<LlmWeatherDecider>(
         hal_, baseUrl, apiKey, model, wire,
         static_cast<unsigned long>(timeoutSeconds) * 1000UL);
+    decider->setPromptOverride(promptOverride);
     LlmWeatherDecider* raw = decider.get();
     llm_decider_ = std::move(decider);
     setDecider(raw);
@@ -173,8 +181,12 @@ void WeatherManager::runWeatherTest_() {
 void WeatherManager::setDecider(IWeatherDecider* decider) {
     decider_ = decider;  // nullptr => fall back to built-in rule-based decider
     // Recompute immediately so status reflects the new engine without waiting
-    // for the next fetch (only meaningful once we have data).
-    if (current_.valid) recomputeDecision();
+    // for the next fetch (only meaningful once we have data). Refresh the time
+    // anchor first so a decider swapped in mid-cycle gets real local times.
+    if (current_.valid) {
+        refreshLocalTime_();
+        recomputeDecision();
+    }
 }
 
 IWeatherDecider& WeatherManager::activeDecider() {
@@ -280,6 +292,11 @@ void WeatherManager::fetchWeather() {
     successful_fetches_++;
     last_error_ = "";
 
+    // Snapshot the current local-time anchor (epoch + DST-aware UTC offset +
+    // short tz name) so the decider can render every time in the prompt on the
+    // same wall clock the UI shows. Done once per fetch; cheap.
+    refreshLocalTime_();
+
     // Recompute the open/no-open decision once per successful fetch. The
     // decider (rule-based today, LLM tomorrow) reasons over the fresh snapshot;
     // the result is cached so the door gate and status page read it cheaply
@@ -300,10 +317,51 @@ void WeatherManager::recomputeDecision() {
         return;
     }
     WeatherDecisionInput input{current_, forecast_, forecast_count_, units_,
-                               window_open_minutes_, window_close_minutes_};
+                               window_open_minutes_, window_close_minutes_,
+                               now_epoch_, tz_offset_minutes_, tz_name_,
+                               local_temp_f_, local_temp_source_};
     WeatherDecision decision = activeDecider().decide(input);
     decision_open_ = decision.open;
     decision_reason_ = decision.reason;
+}
+
+// Derive the current DST-aware UTC offset from the system clock and synthesize
+// a short tz label. The board runs configTzTime() with the configured POSIX
+// string, so localtime()/getLocalTime() is already DST-corrected; we diff it
+// against the raw epoch to recover the live offset (e.g. -420 for MDT in
+// summer, -480 for MST in winter). ESP32 newlib's struct tm doesn't expose
+// tm_zone portably, so the label is built from the offset (e.g. "UTC-7").
+// Best-effort: on any failure the fields stay 0/"" and the prompt falls back
+// to "UTC".
+void WeatherManager::refreshLocalTime_() {
+    now_epoch_ = -1;
+    tz_offset_minutes_ = 0;
+    tz_name_ = "";
+    if (hal_ == nullptr) return;
+
+    now_epoch_ = static_cast<long>(hal_->getTime());
+
+    struct tm tmv = {};
+    if (!hal_->getLocalTime(&tmv, 0)) return;
+
+    // Seconds since epoch for the local wall-clock representation.
+    time_t localEpoch = mktime(&tmv);
+    if (localEpoch == static_cast<time_t>(-1)) return;
+
+    long diffSeconds = static_cast<long>(localEpoch) - now_epoch_;
+    // mktime normalizes tmv to local; diffSeconds is the UTC offset in seconds
+    // (positive east of UTC, negative west — matches POSIX/ISO sign convention).
+    tz_offset_minutes_ = static_cast<int>(diffSeconds / 60);
+
+    int h = tz_offset_minutes_ / 60;
+    int m = tz_offset_minutes_ % 60;
+    char buf[12];
+    if (m == 0) {
+        snprintf(buf, sizeof(buf), "UTC%+d", h);
+    } else {
+        snprintf(buf, sizeof(buf), "UTC%+d:%02d", h, m < 0 ? -m : m);
+    }
+    tz_name_ = String(buf);
 }
 
 bool WeatherManager::parseCurrentJson(const String& body) {
@@ -426,6 +484,13 @@ WeatherCondition RuleBasedWeatherDecider::classify(int code, float wind,
         if (tempF <= 10.0f) {  // bitter cold — keep chickens in
             return WeatherCondition::INCLEMENT;
         }
+        // Extreme heat gate. Chickens can die from heat stress above ~105°F
+        // ambient in direct sun; the coop is shaded and the yard offers shade,
+        // so we only block at genuinely dangerous heat. 108°F catches lethal
+        // desert-southwest afternoons without false-blocking normal hot days.
+        if (tempF >= 108.0f) {
+            return WeatherCondition::INCLEMENT;
+        }
     }
 
     return WeatherCondition::GOOD;
@@ -444,13 +509,29 @@ WeatherDecision RuleBasedWeatherDecider::decide(const WeatherDecisionInput& inpu
         return {false, reason};
     }
 
-    // Block if the immediate forecast (next 3-hour block) shows likely
+    // Block if a forecast block that STARTS inside the open window shows likely
     // precipitation. This prevents opening during a brief clearing right before
-    // rain arrives, which is exactly the case the door should avoid.
+    // rain arrives, which is exactly the case the door should avoid — but a
+    // high pop on a block that begins after the door has already closed for
+    // the night is irrelevant (the chickens are locked in).
     if (input.forecast_count > 0) {
-        const WeatherForecastEntry& next = input.forecast[0];
-        if (next.precip_prob >= 0.5f) {
-            return {false, "rain likely soon"};
+        const int closeMin = input.window_close_minutes;  // local min, -1 unknown
+        for (size_t i = 0; i < input.forecast_count; i++) {
+            const WeatherForecastEntry& fe = input.forecast[i];
+            if (fe.precip_prob < 0.5f) continue;
+            // When we don't know the window close, fall back to the original
+            // behavior of checking only the imminent block.
+            if (closeMin < 0 || fe.dt <= 0) {
+                if (i == 0) return {false, "rain likely soon"};
+                continue;
+            }
+            // Convert the block's start epoch to local minutes-of-day using the
+            // DST-aware offset, then compare against the close time.
+            long local = fe.dt + static_cast<long>(input.tz_offset_minutes) * 60L;
+            int blockStartMin = static_cast<int>(((local % 86400L) + 86400L) % 86400L / 60L);
+            if (blockStartMin < closeMin) {
+                return {false, "rain likely during open window"};
+            }
         }
     }
 

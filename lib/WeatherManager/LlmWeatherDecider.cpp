@@ -21,17 +21,66 @@ String LlmWeatherDecider::formatHM(int minutes) {
     return String(buf);
 }
 
+// Convert a Unix epoch second value to local HH:MM using the decision input's
+// DST-aware UTC offset. Deterministic (no libc) so unit tests are reproducible.
+// Returns "unknown" when the epoch or offset is unavailable.
+String LlmWeatherDecider::formatLocalHM(long epoch, int tzOffsetMinutes) {
+    if (epoch < 0) return "unknown";
+    long local = epoch + static_cast<long>(tzOffsetMinutes) * 60L;
+    if (local < 0) local = 0;
+    long minutesOfDay = (local % 86400L) / 60L;
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02ld:%02ld", minutesOfDay / 60L, minutesOfDay % 60L);
+    return String(buf);
+}
+
 String LlmWeatherDecider::buildUrl() const {
     return base_url_ + (wire_ == LlmProviderWire::OLLAMA_NATIVE ? "/api/chat" : "/v1/chat/completions");
 }
 
 String LlmWeatherDecider::buildPrompt(const WeatherDecisionInput& input) const {
     String p;
+    // Coop context so the model judges against the actual environment, not a
+    // generic "is this weather nice" interpretation.
+    p += "Coop context: The chickens are protected inside a coop that is open on "
+         "the bottom with chicken wire and enclosed above with pine shavings, "
+         "sitting under the shade of a tree. The fenced yard they enter has "
+         "plenty of shade and forage, but the birds can jump the fence if "
+         "spooked. They can retreat into the dry coop at any time.\n";
+
+    // Judgment guidance: user-customizable (issue #8). Empty override falls back
+    // to the built-in default. Steers the model toward calibrated risk rather
+    // than a binary "any rain = no", and pins concrete thresholds so it can't
+    // dramatize mild data into a justification to block.
+    p += "Judgment guidance: ";
+    p += (prompt_override_.length() > 0) ? prompt_override_ : defaultJudgmentGuidance();
+    p += "\n";
+
+    // Anti-hallucination guardrail (issue #7): the model must reason ONLY from
+    // the values printed below and may not round up, extrapolate, or invent
+    // numbers. Without this, gemma4 fabricated "feels like 112.3F" to justify
+    // blocking when the actual feels_like in the data was 99.55F.
+    p += "Integrity rule: Use ONLY the exact values printed below. Do not round "
+         "up, exaggerate, infer, or invent any number — if the data does not "
+         "show genuine risk during the open window, you MUST answer "
+         "{\"open\": true}. Cite the real values in the reason. Keep the reason "
+         "short.\n";
+
+    // Current local time + tz, so the model can anchor "now" against the
+    // window and forecast on the same wall clock the UI shows.
+    if (input.now_epoch >= 0) {
+        p += "Now (local ";
+        p += input.tz_name.length() > 0 ? input.tz_name : String("UTC");
+        p += "): ";
+        p += formatLocalHM(input.now_epoch, input.tz_offset_minutes);
+        p += "\n";
+    }
+
     p += "Door open window today: opens ";
     p += formatHM(input.window_open_minutes);
     p += ", closes ";
     p += formatHM(input.window_close_minutes);
-    p += " (local time). Judge conditions for THIS window, not the full forecast.\n";
+    p += " (local time). Judge conditions for THIS window only.\n";
 
     p += "Units: " + input.units + "\n";
     p += "Current conditions: ";
@@ -42,13 +91,34 @@ String LlmWeatherDecider::buildPrompt(const WeatherDecisionInput& input) const {
     if (input.current.humidity >= 0) { p += ", humidity="; p += String(input.current.humidity); p += "%"; }
     p += "\n";
 
+    // On-board coop-local temperature (issue #8). The coop is shaded under a
+    // tree and routinely runs hotter/cooler than the OWM grid-cell average for
+    // the wider area; this is the temperature the chickens actually experience.
+    // Prefer it over the OWM temp for the open/no-open call when present.
+    if (!isnan(input.local_temp_f)) {
+        p += "Coop-local temp (";
+        p += input.local_temp_source.length() > 0 ? input.local_temp_source : String("on-board sensor");
+        p += "): ";
+        p += String(input.local_temp_f, 1);
+        p += "F — this is the ACTUAL temperature at the coop and is more "
+             "authoritative than the area temp above. Use it (not the OWM temp) "
+             "when judging heat/cold risk.\n";
+    }
+
     if (input.forecast_count > 0) {
-        p += "Upcoming forecast (approx. 3-hour blocks from now):\n";
+        p += "Forecast (3-hour blocks, local ";
+        p += input.tz_name.length() > 0 ? input.tz_name : String("UTC");
+        p += "). IGNORE any block that STARTS at or after the close time above — "
+            "the chickens are already locked in by then:\n";
         for (size_t i = 0; i < input.forecast_count; i++) {
             const WeatherForecastEntry& fe = input.forecast[i];
-            p += "  block ";
-            p += String((unsigned)(i + 1));
-            p += ": ";
+            p += "  ";
+            // Anchor each block with its local start time so the model can see
+            // which blocks fall inside vs. outside the open window.
+            if (fe.dt > 0) {
+                p += formatLocalHM(fe.dt, input.tz_offset_minutes);
+                p += " ";
+            }
             p += fe.main_description[0] != '\0' ? String(fe.main_description) : String("unknown");
             if (!isnan(fe.temp)) { p += ", temp="; p += String(fe.temp, 1); }
             if (fe.wind_speed >= 0) { p += ", wind="; p += String(fe.wind_speed, 1); }
@@ -59,10 +129,30 @@ String LlmWeatherDecider::buildPrompt(const WeatherDecisionInput& input) const {
         p += "No forecast data available; use current conditions only.\n";
     }
 
-    p += "Is it safe to let the chickens outside for this window? "
-         "Consider precipitation, wind, and temperature extremes during the window; "
-         "brief conditions well before or after the window matter less.";
+    p += "Is it safe to let the chickens outside for THIS window, weighing the "
+         "judgment guidance above against the conditions during the window only? "
+         "Default to open unless the data shows genuine risk. Reply with only the JSON.";
     return p;
+}
+
+// Built-in default judgment guidance (issue #8). Used when the user has not set
+// a custom prompt. Pinned concrete thresholds (108F heat, 25 mph wind) so the
+// model has no latitude to dramatize mild data into a block; explicit "NOT a
+// reason" list for sprinkles/light drizzle. Exposed publicly so the web UI can
+// show it pre-populated as the editable starting point.
+const char* LlmWeatherDecider::defaultJudgmentGuidance() {
+    return "Default to letting them out. Block only for genuine risk during the "
+           "open window: thunderstorms (lightning + predator activity), "
+           "sustained moderate-or-heavier rain, heavy snow, sustained wind at "
+           "or above 25 mph (can blow a lightweight bird over the fence when "
+           "spooked), feels_like at or above 108F (heatstroke risk), or "
+           "feels_like at or below 10F. A brief sprinkle, light drizzle, or "
+           "scattered showers with wind below 25 mph and feels_like between "
+           "10F and 108F are NOT reasons to keep them in — the birds tolerate "
+           "light rain and have dry shelter steps away. The \"Rain\" category "
+           "in the forecast spans a trace to a downpour; weigh it alongside "
+           "precip_prob and wind, not as a hard block. Keep the reason short "
+           "and cite the actual values.";
 }
 
 String LlmWeatherDecider::buildRequestBody(const String& systemPrompt, const String& userPrompt) const {
@@ -155,7 +245,10 @@ WeatherDecision LlmWeatherDecider::decide(const WeatherDecisionInput& input) {
     static const char* kSystemPrompt =
         "You are a chicken coop door safety assistant. Given weather data and the "
         "door's open window for today, decide if it is safe to let chickens outside "
-        "during that window. Respond with ONLY a JSON object of the exact form "
+        "during that window. Base your decision STRICTLY on the exact values "
+        "provided — never round up, exaggerate, infer, or invent numbers. Default "
+        "to open unless the actual values show genuine risk during the window. "
+        "Respond with ONLY a JSON object of the exact form "
         "{\"open\": true, \"reason\": \"short reason\"} or {\"open\": false, \"reason\": \"short reason\"}. "
         "No other text before or after the JSON.";
 

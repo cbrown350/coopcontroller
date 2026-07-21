@@ -225,6 +225,7 @@ struct user_settings // NOSONAR
     String   llm_api_key = "";                     ///< Bearer token (empty = no auth, for LAN Ollama)
     String   llm_model = "";                       ///< Model name (e.g. "llama3.1", "gpt-4o-mini")
     unsigned int llm_timeout_seconds = 15;         ///< Per-request timeout (5-60s)
+    String   llm_prompt_override = "";             ///< Custom judgment-guidance text; empty = firmware default
 };
 
 /**
@@ -567,6 +568,7 @@ class SettingsManager // NOSONAR
     String       getLlmApiKey() const;
     String       getLlmModel() const;
     unsigned int getLlmTimeoutSeconds() const;
+    String       getLlmPromptOverride() const;
 
     // LLM weather-decider setters (issue #6)
     void setLlmEnabled(bool enabled);
@@ -575,6 +577,7 @@ class SettingsManager // NOSONAR
     void setLlmApiKey(const String& key);
     void setLlmModel(const String& model);
     void setLlmTimeoutSeconds(unsigned int seconds);
+    void setLlmPromptOverride(const String& override);
 
     void factoryReset();
     void setFromJsonDoc(const JsonDocument &doc);

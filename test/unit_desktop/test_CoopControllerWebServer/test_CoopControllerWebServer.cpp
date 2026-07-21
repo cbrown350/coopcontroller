@@ -375,4 +375,27 @@ TEST_F(CoopControllerWebServerIntegrationTest, WeatherTestEndpointReturnsErrorOn
     EXPECT_TRUE(String(response.getLastBody()).indexOf("\"success\":false") >= 0);
 }
 
+// Reset-reason label mapping (issue #9): the status UI shows why the board last
+// rebooted. Brownout (code 9) was the key case the old boot-log switch missed —
+// it must map to a recognizable label, not a numeric fallback.
+TEST(ResetReasonTest, MapsKnownCodesToLabels) {
+    EXPECT_STREQ(resetReasonToString(0), "Unknown");
+    EXPECT_STREQ(resetReasonToString(1), "Power-on");
+    EXPECT_STREQ(resetReasonToString(3), "Software restart");
+    EXPECT_STREQ(resetReasonToString(4), "Panic / exception");
+    EXPECT_STREQ(resetReasonToString(5), "Interrupt watchdog");
+    EXPECT_STREQ(resetReasonToString(6), "Task watchdog");
+    EXPECT_STREQ(resetReasonToString(7), "Other watchdog");
+    EXPECT_STREQ(resetReasonToString(8), "Deep sleep wake");
+    EXPECT_STREQ(resetReasonToString(9), "Brownout");
+    EXPECT_STREQ(resetReasonToString(14), "Power glitch");
+    EXPECT_STREQ(resetReasonToString(15), "CPU lockup");
+}
+
+TEST(ResetReasonTest, UnknownCodeFallsBackGracefully) {
+    // Any code outside the enum returns "Other" — never crashes or returns null.
+    EXPECT_STREQ(resetReasonToString(99), "Other");
+    EXPECT_STREQ(resetReasonToString(255), "Other");
+}
+
 // Note: main function is provided by desktop_main.cpp

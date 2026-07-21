@@ -279,6 +279,85 @@ TEST_F(WeatherManagerTest, LowForecastPopAllowsOpening) {
     EXPECT_TRUE(weather.isWeatherGoodForOpening());
 }
 
+// Regression for issue #7: a high-pop forecast block that STARTS after the
+// door's close time must NOT block opening. The chickens are locked in by then.
+TEST_F(WeatherManagerTest, RainAfterCloseDoesNotBlockOpening) {
+    configureWeather();
+    weather.setOpenWindowMinutes(390, 1140);  // 06:30 - 19:00 local
+
+    // Current is clear. Forecast block has pop=0.7 but starts at 22:00 local
+    // (well after the 19:00 close). With tz offset 0, dt epoch 79200 = 22:00.
+    // We drive the rule-based decider directly to control the input precisely.
+    WeatherSnapshot cur;
+    cur.valid = true;
+    cur.weather_code = 800;
+    cur.temp = 72.0f;
+    cur.wind_speed = 5.0f;
+    strncpy(cur.main_description, "Clear", sizeof(cur.main_description) - 1);
+
+    WeatherForecastEntry fe;
+    fe.dt = 79200L;  // 22:00 at offset 0
+    fe.temp = 65.0f;
+    fe.wind_speed = 4.0f;
+    fe.precip_prob = 0.7f;
+    strncpy(fe.main_description, "Rain", sizeof(fe.main_description) - 1);
+
+    WeatherDecisionInput input{cur, &fe, 1, String("imperial"),
+                               390, 1140, /*now*/ 70000L,
+                               /*tz_off*/ 0, String("UTC")};
+    RuleBasedWeatherDecider decider;
+    WeatherDecision d = decider.decide(input);
+
+    EXPECT_TRUE(d.open);
+}
+
+TEST_F(WeatherManagerTest, RainBeforeCloseStillBlocksOpening) {
+    // Same setup as above but the high-pop block starts at 18:00 — inside the
+    // 06:30-19:00 window. Opening must be blocked.
+    WeatherSnapshot cur;
+    cur.valid = true;
+    cur.weather_code = 800;
+    cur.temp = 72.0f;
+    cur.wind_speed = 5.0f;
+    strncpy(cur.main_description, "Clear", sizeof(cur.main_description) - 1);
+
+    WeatherForecastEntry fe;
+    fe.dt = 64800L;  // 18:00 at offset 0
+    fe.temp = 65.0f;
+    fe.wind_speed = 4.0f;
+    fe.precip_prob = 0.7f;
+    strncpy(fe.main_description, "Rain", sizeof(fe.main_description) - 1);
+
+    WeatherDecisionInput input{cur, &fe, 1, String("imperial"),
+                               390, 1140, /*now*/ 60000L,
+                               /*tz_off*/ 0, String("UTC")};
+    RuleBasedWeatherDecider decider;
+    WeatherDecision d = decider.decide(input);
+
+    EXPECT_FALSE(d.open);
+}
+
+TEST_F(WeatherManagerTest, ExtremeHeatIsInclement) {
+    // 110°F current (shaded coop threshold is 108°F) should block opening.
+    configureWeather();
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 110.0f, 5.0f));
+    weather.update();
+
+    EXPECT_TRUE(weather.isWeatherGateActive());
+    EXPECT_FALSE(weather.isWeatherGoodForOpening());
+}
+
+TEST_F(WeatherManagerTest, HotButBelowHeatThresholdAllowsOpening) {
+    // 100°F is hot but below the 108°F extreme-heat threshold — the coop is
+    // shaded and the yard offers shade, so the door should still open.
+    configureWeather();
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 100.0f, 5.0f));
+    weather.update();
+
+    EXPECT_TRUE(weather.isWeatherGateActive());
+    EXPECT_TRUE(weather.isWeatherGoodForOpening());
+}
+
 // ============================================================================
 // API ERROR HANDLING
 // ============================================================================

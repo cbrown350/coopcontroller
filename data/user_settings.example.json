@@ -117,5 +117,6 @@
   "llm_base_url": "",
   "llm_api_key": "",
   "llm_model": "",
-  "llm_timeout_seconds": 15
+  "llm_timeout_seconds": 15,
+  "llm_prompt_override": ""
 }

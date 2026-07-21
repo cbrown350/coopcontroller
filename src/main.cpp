@@ -269,7 +269,8 @@ void setup() // NOSONAR - complexity ok
         settingsManager.getLlmApiKey(),
         settingsManager.getLlmModel(),
         settingsManager.getLlmProviderType(),
-        settingsManager.getLlmTimeoutSeconds());
+        settingsManager.getLlmTimeoutSeconds(),
+        settingsManager.getLlmPromptOverride());
     doorController.setWeatherManager(&weatherManager);
 
     lightController.begin(&hal, &sunriseSunset);
@@ -285,29 +286,16 @@ void setup() // NOSONAR - complexity ok
     
     logger.logInfo("Coop controller components initialized");    
     
-    // Check reset reason - deferred until after logger/Wifi is initialized to capture any watchdog resets during bootup
-    switch (int resetReason = hal.getResetReason(); resetReason) {
-        case ESP_RST_TASK_WDT:
-            logger.logError("System was reset by Task Watchdog Timer!");
-            break;
-        case ESP_RST_INT_WDT:
-            logger.logError("System was reset by Interrupt Watchdog Timer!");
-            break;
-        case ESP_RST_WDT:
-            logger.logError("System was reset by other Watchdog!");
-            break;
-        case ESP_RST_POWERON:
-            logger.logInfo("System powered on normally");
-            break;
-        case ESP_RST_SW:
-            logger.logInfo("System reset by software");
-            break;
-        case ESP_RST_PANIC:
-            logger.logError("System was reset by software PANIC/exception!");
-            break;
-        default:
-            logger.logfWarning("System reset reason: %d", resetReason);
-            break;
+    // Check reset reason - deferred until after logger/Wifi is initialized to capture any watchdog resets during bootup.
+    // Uses resetReasonToString() so the boot log and the /system_status UI show
+    // the same label (incl. brownout=9, which the old switch missed).
+    if (int resetReason = hal.getResetReason(); resetReason == 1 /*POWERON*/ || resetReason == 3 /*SW*/) {
+        logger.logfInfo("System booted normally: %s (code %d)",
+                        resetReasonToString(resetReason), resetReason);
+    } else {
+        // Anything else (panic, watchdog, brownout, etc.) is worth flagging.
+        logger.logfWarning("System rebooted: %s (code %d)",
+                           resetReasonToString(resetReason), resetReason);
     }
 
     // Check for coredump from previous crash and log details
@@ -618,6 +606,18 @@ void setup() // NOSONAR - complexity ok
             lastSensorUpdate = currentTime;
             sensorManager.update();
 
+            // Push the coop-local temperature into the weather manager so the
+            // LLM decider judges the ACTUAL shaded-coop conditions, not the OWM
+            // area average (issue #8). NaN + empty source when no sensor is
+            // connected; the decider falls back to the OWM temp in that case.
+            float coopTemp = getBestTemperature();
+            if (!isnan(coopTemp)) {
+                String src = sensorManager.isSensor1Connected() ? "coop sensor 1"
+                                                                : "coop sensor 2";
+                weatherManager.setLocalTempF(coopTemp, src);
+            } else {
+                weatherManager.setLocalTempF(coopTemp, "");
+            }
             // Check for state changes and record historical data (event-based)
             historyManager.checkAndRecord(
                 getBestTemperature(),

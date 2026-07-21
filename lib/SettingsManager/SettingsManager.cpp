@@ -990,6 +990,7 @@ void SettingsManager::setFromJsonDoc(const JsonDocument &doc) {
     if (doc["llm_api_key"].is<const char*>()) settings.llm_api_key = doc["llm_api_key"].as<String>();
     if (doc["llm_model"].is<const char*>()) settings.llm_model = doc["llm_model"].as<String>();
     settings.llm_timeout_seconds = doc["llm_timeout_seconds"] | defaultSettings.llm_timeout_seconds;
+    if (doc["llm_prompt_override"].is<const char*>()) settings.llm_prompt_override = doc["llm_prompt_override"].as<String>();
 }
 
 JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
@@ -1151,6 +1152,7 @@ JsonDocument SettingsManager::toJsonDoc(bool includePassword) const {
     }
     doc["llm_model"] = settings.llm_model;
     doc["llm_timeout_seconds"] = settings.llm_timeout_seconds;
+    doc["llm_prompt_override"] = settings.llm_prompt_override;
 
     return doc;
 }
@@ -1300,6 +1302,7 @@ String       SettingsManager::getLlmBaseUrl() const { return settings.llm_base_u
 String       SettingsManager::getLlmApiKey() const { return settings.llm_api_key; }
 String       SettingsManager::getLlmModel() const { return settings.llm_model; }
 unsigned int SettingsManager::getLlmTimeoutSeconds() const { return settings.llm_timeout_seconds; }
+String       SettingsManager::getLlmPromptOverride() const { return settings.llm_prompt_override; }
 
 // LLM weather-decider setters (issue #6)
 void SettingsManager::setLlmEnabled(bool enabled) { settings.llm_enabled = enabled; }
@@ -1316,4 +1319,14 @@ void SettingsManager::setLlmApiKey(const String& key) { settings.llm_api_key = k
 void SettingsManager::setLlmModel(const String& model) { settings.llm_model = model; }
 void SettingsManager::setLlmTimeoutSeconds(unsigned int seconds) {
     settings.llm_timeout_seconds = constrain(seconds, 5, 60);
+}
+void SettingsManager::setLlmPromptOverride(const String& override) {
+    // Cap length to keep the LittleFS settings file and the prompt payload
+    // bounded on the ESP32. 2048 chars comfortably fits a detailed guidance
+    // paragraph while staying well under the JsonDocument/prompt buffer budget.
+    if (override.length() > 2048) {
+        settings.llm_prompt_override = override.substring(0, 2048);
+    } else {
+        settings.llm_prompt_override = override;
+    }
 }

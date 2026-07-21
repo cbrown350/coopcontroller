@@ -61,6 +61,19 @@ public:
     void setOpenWindowMinutes(int openMin, int closeMin);
 
     /**
+     * @brief Push the on-board coop-local temperature (issue #8)
+     *
+     * Called from the main loop with the latest DS18B20 reading (°F) when a
+     * sensor is connected. This is the *actual* temperature at the coop — which
+     * sits shaded under a tree and routinely differs from the OWM grid-cell
+     * average for the wider area. NaN means "no sensor" (decider/LLM falls back
+     * to the OWM current temp only). The source label (e.g. "coop sensor 1")
+     * surfaces in the LLM prompt so the model knows the reading's provenance.
+     * Cheap copy; safe to call every loop tick.
+     */
+    void setLocalTempF(float tempF, const String& source);
+
+    /**
      * @brief Configure the optional built-in LLM decider and make it active
      *
      * Constructs (or reconfigures) the owned LlmWeatherDecider with the given
@@ -77,7 +90,8 @@ public:
      */
     void configureLlmDecider(bool enabled, const String& baseUrl, const String& apiKey,
                              const String& model, const String& providerType,
-                             unsigned int timeoutSeconds);
+                             unsigned int timeoutSeconds,
+                             const String& promptOverride = "");
 
     /**
      * @brief Probe the LLM provider (loop-task only)
@@ -227,10 +241,25 @@ private:
     WeatherForecastEntry forecast_[MAX_FORECAST_ENTRIES];
     size_t forecast_count_ = 0;
 
+    // Coop-local temperature pushed from the main loop (issue #8). NAN when no
+    // sensor is connected. Forwarded to deciders via WeatherDecisionInput so an
+    // LLM can weigh the actual shaded-coop temp vs the OWM area average.
+    float local_temp_f_ = NAN;
+    String local_temp_source_;
+
     // Cached decision — recomputed once per successful fetch so an LLM-backed
     // decider makes at most one model call per fetch interval, never per loop.
     bool decision_open_ = true;
     String decision_reason_;
+
+    // Local-time anchor refreshed once per successful fetch. now_epoch_ is the
+    // Unix seconds at the fetch; tz_offset_minutes_ + tz_name_ describe the
+    // DST-aware local zone in effect at that moment. Handed to deciders so an
+    // LLM can render every time in its prompt on the same wall clock the UI
+    // shows (now, each forecast block, and the door window).
+    long now_epoch_ = -1;
+    int tz_offset_minutes_ = 0;
+    String tz_name_;
 
     // Timing & stats
     unsigned long last_fetch_attempt_ms_ = 0;
@@ -267,6 +296,7 @@ private:
     bool parseCurrentJson(const String& body);
     bool parseForecastJson(const String& body);
     void recomputeDecision();
+    void refreshLocalTime_();  ///< Snapshot now_epoch_ + DST-aware tz offset/name
     IWeatherDecider& activeDecider();
     static void copyTruncated(char* dst, size_t dstSize, const char* src);
 

@@ -52,15 +52,24 @@ struct WeatherForecastEntry {
 /**
  * @brief Immutable view of the weather data a decider gets to reason over
  *
- * Passed to IWeatherDecider so decision logic (rule-based today, LLM-based in
- * a future session) never touches WeatherManager internals. All fields are in
- * the configured display units; `units` says which system.
+ * Passed to IWeatherDecider so decision logic (rule-based today, LLM-based
+ * tomorrow) never touches WeatherManager internals. All fields are in the
+ * configured display units; `units` says which system.
  *
  * `window_open_minutes` / `window_close_minutes` are the door's actual open
  * window for today, in local minutes-since-midnight (-1 = unknown). An LLM
  * decider uses these to judge weather for the period the chickens will be
  * outside, instead of flagging on any bad weather anywhere in the forecast.
  * The rule-based decider ignores them.
+ *
+ * Time anchoring (so the LLM can compare the window to forecast blocks on
+ * the same wall clock):
+ *  - `now_epoch`: current Unix time (seconds). -1 = unknown.
+ *  - `tz_offset_minutes`: current UTC offset in minutes, DST-aware at this
+ *    instant (e.g. -420 for MDT). 0 when unknown. The LLM decider converts
+ *    every epoch (now + each forecast dt) to local HH:MM with this offset,
+ *    matching the wall-clock the UI shows.
+ *  - `tz_name`: short label for the offset (e.g. "MDT", "UTC"). Display only.
  */
 struct WeatherDecisionInput {
     const WeatherSnapshot& current;
@@ -69,6 +78,11 @@ struct WeatherDecisionInput {
     String units;                          ///< "imperial" | "metric" | "standard"
     int window_open_minutes = -1;          ///< Door opens at this local minute today (-1 unknown)
     int window_close_minutes = -1;         ///< Door's hard close ceiling, local minute (-1 unknown)
+    long now_epoch = -1;                   ///< Current Unix time, seconds (-1 unknown)
+    int tz_offset_minutes = 0;             ///< Current UTC offset incl. DST (e.g. -420 for MDT)
+    String tz_name;                        ///< Short label e.g. "MDT" (display only)
+    float local_temp_f = NAN;              ///< On-board coop-local temp, °F (NAN if no sensor)
+    String local_temp_source;              ///< Label e.g. "coop sensor 1" (empty if no sensor)
 };
 
 /**

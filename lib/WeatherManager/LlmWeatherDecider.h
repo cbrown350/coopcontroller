@@ -52,6 +52,24 @@ public:
     const char* name() const override { return "llm"; }
 
     /**
+     * @brief Set a user-defined judgment-guidance override (issue #8)
+     *
+     * Replaces only the "Judgment guidance:" paragraph in the prompt — the coop
+     * context, integrity rule, time/weather data, and JSON instruction are always
+     * injected by the firmware. Pass an empty string to use the built-in default
+     * (see defaultJudgmentGuidance()).
+     */
+    void setPromptOverride(const String& override) { prompt_override_ = override; }
+
+    /**
+     * @brief Built-in default text for the judgment-guidance paragraph
+     *
+     * Surfaced publicly so the web UI can pre-populate the editable textarea with
+     * the firmware default, letting users edit from a known-good starting point.
+     */
+    static const char* defaultJudgmentGuidance();
+
+    /**
      * @brief Minimal cheap probe used by the "Test Connection" button
      *
      * Sends a trivial prompt and reports whether the provider replied at all.
@@ -72,6 +90,7 @@ private:
     String model_;
     LlmProviderWire wire_;
     unsigned long timeout_ms_;
+    String prompt_override_;  ///< User-defined judgment-guidance text; empty = default
 
     RuleBasedWeatherDecider fallback_;  ///< Used when the LLM call fails or returns junk
 
@@ -94,6 +113,14 @@ private:
      * @brief Format HH:MM from minutes-since-midnight (or "unknown" if -1)
      */
     static String formatHM(int minutes);
+
+    /**
+     * @brief Format local HH:MM from a Unix epoch + DST-aware UTC offset
+     *
+     * Deterministic (no libc) so unit tests are reproducible. Returns
+     * "unknown" if epoch < 0.
+     */
+    static String formatLocalHM(long epoch, int tzOffsetMinutes);
 };
 
 #endif // __LLM_WEATHER_DECIDER_H__

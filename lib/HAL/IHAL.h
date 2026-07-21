@@ -882,4 +882,40 @@ public:
   virtual void unlockSharedState() = 0;
 };
 
+/**
+ * @brief Map an ESP32 reset-reason code to a short human label
+ *
+ * Mirrors the esp_reset_reason_t enum (esp_system.h): POWERON, SW, PANIC,
+ * INT_WDT, TASK_WDT, WDT, BROWNOUT, DEEPSLEEP, etc. Used by the boot log and
+ * surfaced in /system_status so the status page can show why the board last
+ * rebooted (brownout, panic, watchdog, normal power-on, etc.). Returns the
+ * numeric value as a string for any unrecognized code.
+ *
+ * Uses the numeric enum values directly (not the symbolic names) so it compiles
+ * in both the ESP32 firmware and the desktop test build (which doesn't see
+ * esp_system.h). Header-inline so there's no linkage to add.
+ */
+inline const char *resetReasonToString(uint8_t reason) {
+  // Values match esp_reset_reason_t in esp_system.h (ESP32).
+  switch (reason) {
+    case 0:  return "Unknown";
+    case 1:  return "Power-on";
+    case 2:  return "External pin";
+    case 3:  return "Software restart";
+    case 4:  return "Panic / exception";
+    case 5:  return "Interrupt watchdog";
+    case 6:  return "Task watchdog";
+    case 7:  return "Other watchdog";
+    case 8:  return "Deep sleep wake";
+    case 9:  return "Brownout";
+    case 10: return "SDIO";
+    case 11: return "USB";
+    case 12: return "JTAG";
+    case 13: return "eFuse error";
+    case 14: return "Power glitch";
+    case 15: return "CPU lockup";
+    default: return "Other";
+  }
+}
+
 #endif // __IHAL_H__

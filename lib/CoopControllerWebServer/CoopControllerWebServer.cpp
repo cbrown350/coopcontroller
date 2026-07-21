@@ -547,6 +547,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       String llmModel = settingsManager.getLlmModel();
                       String llmType = settingsManager.getLlmProviderType();
                       unsigned int llmTimeout = settingsManager.getLlmTimeoutSeconds();
+                      String llmPrompt = settingsManager.getLlmPromptOverride();
                       if (jsonObj["llm_enabled"].is<bool>()) {
                           llmEnabled = jsonObj["llm_enabled"].as<bool>();
                           settingsManager.setLlmEnabled(llmEnabled);
@@ -583,13 +584,23 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                           settingsManager.setLlmTimeoutSeconds(llmTimeout);
                           llmChanged = true;
                       }
+                      // Custom judgment-guidance override (issue #8). Unlike the
+                      // api_key, an empty value is meaningful here — it means
+                      // "use the firmware default," so we always accept the field
+                      // when the UI sends it (Reset to Default sends "").
+                      if (jsonObj["llm_prompt_override"].is<String>()) {
+                          llmPrompt = jsonObj["llm_prompt_override"].as<String>();
+                          settingsManager.setLlmPromptOverride(llmPrompt);
+                          llmChanged = true;
+                      }
                       // Reconfigure the active decider immediately on change.
                       // configureLlmDecider() runs entirely on this async task
                       // but only does string copies + a unique_ptr swap (no
                       // TLS/JSON work), so it's safe here, unlike forceRefresh().
                       if (weatherManager_ && llmChanged) {
                           weatherManager_->configureLlmDecider(llmEnabled, llmBaseUrl, llmApiKey,
-                                                               llmModel, llmType, llmTimeout);
+                                                               llmModel, llmType, llmTimeout,
+                                                               llmPrompt);
                       }
                   }
 
@@ -1351,7 +1362,15 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   // Note: getCpuFreqMHz and getFlashChipSize are not in HAL, keeping as ESP calls for now
                   jsonDoc["cpu_freq_mhz"] = hal->getCpuFreqMHz();
                   jsonDoc["flash_size"] = hal->getFlashChipSize();
-                  
+
+                  // Last reboot reason. esp_reset_reason() reflects the most
+                  // recent reset (kept in RTC memory across a reboot), so this
+                  // is why the board came back up this boot. BROWNOUT=9,
+                  // PANIC=4, *_WDT=5/6/7, POWERON=1, SW=3.
+                  uint8_t resetCode = hal->getResetReason();
+                  jsonDoc["reset_reason_code"] = resetCode;
+                  jsonDoc["reset_reason"] = resetReasonToString(resetCode);
+
                   // WiFi information (if connected)
                   if (wifiController.isConnected()) {
                       jsonDoc["wifi_rssi"] = wifiController.getRSSI();

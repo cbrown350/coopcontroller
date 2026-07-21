@@ -1,6 +1,14 @@
 import { createSignal, onMount, Show } from 'solid-js'
 import { authenticatedFetch, setAuthCredentials, clearAuthCredentials } from './utils/api'
 
+// Built-in LLM judgment-guidance default. Must stay in sync with
+// LlmWeatherDecider::defaultJudgmentGuidance() in
+// lib/WeatherManager/LlmWeatherDecider.cpp. Shown pre-populated in the UI so
+// users edit from the firmware default; sending this exact text back is
+// equivalent to "use default" (the firmware treats it as a custom override,
+// which is fine — it's the same words).
+const DEFAULT_LLM_PROMPT = "Default to letting them out. Block only for genuine risk during the open window: thunderstorms (lightning + predator activity), sustained moderate-or-heavier rain, heavy snow, sustained wind at or above 25 mph (can blow a lightweight bird over the fence when spooked), feels_like at or above 108F (heatstroke risk), or feels_like at or below 10F. A brief sprinkle, light drizzle, or scattered showers with wind below 25 mph and feels_like between 10F and 108F are NOT reasons to keep them in — the birds tolerate light rain and have dry shelter steps away. The \"Rain\" category in the forecast spans a trace to a downpour; weigh it alongside precip_prob and wind, not as a hard block. Keep the reason short and cite the actual values."
+
 function Settings() {
   const [ssid, setSsid] = createSignal('')
   const [password, setPassword] = createSignal('')
@@ -147,6 +155,7 @@ function Settings() {
   const [showLlmApiKey, setShowLlmApiKey] = createSignal(false)
   const [llmModel, setLlmModel] = createSignal('')
   const [llmTimeoutSeconds, setLlmTimeoutSeconds] = createSignal<number | null>(15)
+  const [llmPromptOverride, setLlmPromptOverride] = createSignal('')
   const [llmTestLoading, setLlmTestLoading] = createSignal(false)
   const [llmTestResult, setLlmTestResult] = createSignal<{success: boolean, message: string} | null>(null)
 
@@ -323,6 +332,9 @@ function Settings() {
       setLlmApiKey('')
       setLlmModel(settings.llm_model ?? '')
       setLlmTimeoutSeconds(settings.llm_timeout_seconds ?? 15)
+      // Pre-populate with the firmware default when unset, so the user edits
+      // from a known-good starting point (the same text buildPrompt injects).
+      setLlmPromptOverride(settings.llm_prompt_override ?? DEFAULT_LLM_PROMPT)
 
       // Load notification settings
       setTelegramEnabled(settings.telegram_enabled ?? false)
@@ -491,6 +503,7 @@ function Settings() {
         llm_base_url: llmBaseUrl() ?? '',
         llm_model: llmModel() ?? '',
         llm_timeout_seconds: llmTimeoutSeconds() ?? 15,
+        llm_prompt_override: llmPromptOverride() ?? '',
         water_flow_error_timeout_seconds: waterFlowErrorTimeoutSeconds() ?? 120,
         water_meter_timeout_seconds: waterMeterTimeoutSeconds() ?? 300,
         telegram_enabled: telegramEnabled() ?? false,
@@ -1931,6 +1944,30 @@ function Settings() {
                   <div class="fieldset-label">Per-request timeout (5-60s, default 15).</div>
                 </fieldset>
               </div>
+              <fieldset class="fieldset mt-2">
+                <legend class="fieldset-legend">Custom judgment guidance</legend>
+                <div class="flex items-center justify-between gap-2 mb-1">
+                  <div class="fieldset-label">
+                    Only this guidance paragraph is editable — the firmware always
+                    injects the current time, weather data, and JSON instruction.
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-xs"
+                    onClick={() => setLlmPromptOverride(DEFAULT_LLM_PROMPT)}>
+                    Reset to default
+                  </button>
+                </div>
+                <textarea
+                  value={llmPromptOverride()}
+                  onInput={(e) => setLlmPromptOverride(e.currentTarget.value)}
+                  rows={8}
+                  maxlength={2048}
+                  class="textarea textarea-bordered w-full font-mono text-sm"
+                  placeholder={DEFAULT_LLM_PROMPT} />
+                <div class="fieldset-label">
+                  Edit the risk thresholds above to tune how the model decides.
+                  Saving an empty box is fine — it falls back to the firmware default.
+                </div>
+              </fieldset>
               <div class="mt-2">
                 <button type="button" class="btn btn-accent btn-soft btn-sm"
                   onClick={handleTestLlmConnection}

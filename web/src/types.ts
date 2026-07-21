@@ -84,6 +84,8 @@ export interface SystemStatus {
   wifi_ip?: string;
   wifi_mac?: string;
   wifi_bssid?: string;
+  reset_reason?: string;
+  reset_reason_code?: number;
 }
 
 export interface DoorStatus {
@@ -166,6 +168,7 @@ export interface Settings {
   llm_api_key?: string;
   llm_model?: string;
   llm_timeout_seconds?: number;
+  llm_prompt_override?: string;
 }
 
 export interface WeatherCurrent {

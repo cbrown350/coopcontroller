@@ -1255,6 +1255,24 @@ function Status() {
                       {systemStatus()?.cpu_freq_mhz || 0} MHz | Flash: {((systemStatus()?.flash_size || 0) / 1024 / 1024).toFixed(1)} MB
                     </div>
                   </div>
+
+                  <Show when={systemStatus()?.reset_reason}>
+                    <div class="stat">
+                      <div class="stat-title">Last Reboot</div>
+                      <div
+                        class="stat-value text-xl"
+                        classList={{
+                          // Power-on (1) and software restart (3) are benign;
+                          // everything else (panic=4, watchdog=5/6/7, brownout=9,
+                          // power glitch=14) suggests trouble worth attention.
+                          "text-warning": [4, 5, 6, 7, 9, 14, 15].includes(systemStatus()?.reset_reason_code ?? -1),
+                        }}
+                      >
+                        {systemStatus()?.reset_reason}
+                      </div>
+                      <div class="stat-desc">code {systemStatus()?.reset_reason_code ?? "?"}</div>
+                    </div>
+                  </Show>
                   
                   <Show when={(systemStatus()?.wifi_rssi || 0) !== 0}>
                     <div class="stat">

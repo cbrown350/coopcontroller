@@ -1478,6 +1478,7 @@ TEST_F(SettingsManagerTest, LlmSettingsSerializedInJson) {
     EXPECT_TRUE(json.indexOf("llm_base_url") >= 0);
     EXPECT_TRUE(json.indexOf("llm_model") >= 0);
     EXPECT_TRUE(json.indexOf("llm_timeout_seconds") >= 0);
+    EXPECT_TRUE(json.indexOf("llm_prompt_override") >= 0);
 }
 
 TEST_F(SettingsManagerTest, LlmSettingsLoadedFromJson) {
@@ -1489,7 +1490,8 @@ TEST_F(SettingsManagerTest, LlmSettingsLoadedFromJson) {
         "llm_base_url": "http://localhost:8000",
         "llm_api_key": "kO7dkihVsUVeb",
         "llm_model": "mlx-community/Qwen3.6-35B-A3B-6bit",
-        "llm_timeout_seconds": 15
+        "llm_timeout_seconds": 15,
+        "llm_prompt_override": "Custom guidance text here"
     })";
     mockHal.setFileContent(json.c_str(), json.length());
 
@@ -1500,6 +1502,31 @@ TEST_F(SettingsManagerTest, LlmSettingsLoadedFromJson) {
     EXPECT_STREQ(sm.getLlmApiKey().c_str(), "kO7dkihVsUVeb");
     EXPECT_STREQ(sm.getLlmModel().c_str(), "mlx-community/Qwen3.6-35B-A3B-6bit");
     EXPECT_EQ(sm.getLlmTimeoutSeconds(), 15u);
+    EXPECT_STREQ(sm.getLlmPromptOverride().c_str(), "Custom guidance text here");
+}
+
+TEST_F(SettingsManagerTest, LlmPromptOverrideRoundTripsAndSerializes) {
+    sm.setLlmPromptOverride("Never block unless it's actively hailing.");
+    String json = sm.toJson();
+    EXPECT_TRUE(json.indexOf("llm_prompt_override") >= 0);
+    EXPECT_TRUE(json.indexOf("hailing") >= 0);
+
+    // Empty override (firmware default sentinel) also round-trips cleanly.
+    sm.setLlmPromptOverride("");
+    String jsonEmpty = sm.toJson();
+    // ArduinoJson emits "key":"" with no space; match space-insensitively.
+    EXPECT_TRUE(jsonEmpty.indexOf("llm_prompt_override") >= 0);
+    EXPECT_STREQ(sm.getLlmPromptOverride().c_str(), "");
+}
+
+TEST_F(SettingsManagerTest, LlmPromptOverrideClampedToMaxLength) {
+    // Setter must cap at 2048 chars so the prompt + settings file stay bounded
+    // on the ESP32. Anything longer should be truncated, not rejected.
+    String longText;
+    for (int i = 0; i < 3000; i++) longText += 'x';
+    EXPECT_EQ(longText.length(), 3000u);
+    sm.setLlmPromptOverride(longText);
+    EXPECT_EQ(sm.getLlmPromptOverride().length(), 2048u);
 }
 
 // ============================================================================
