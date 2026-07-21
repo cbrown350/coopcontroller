@@ -1157,7 +1157,6 @@ String HAL_ESP32::httpPost(const String& url, const String& jsonBody, unsigned l
 
   // Read headers
   bool headerDone = false;
-  unsigned long lastActivity = ::millis();
   while (client.connected() && !headerDone) {
     if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
     if (client.available()) {
@@ -1166,7 +1165,6 @@ String HAL_ESP32::httpPost(const String& url, const String& jsonBody, unsigned l
       if (line.length() == 0) {
         headerDone = true;
       }
-      lastActivity = ::millis();
     } else {
       delay(10);
     }
@@ -1184,9 +1182,7 @@ String HAL_ESP32::httpPost(const String& url, const String& jsonBody, unsigned l
     if (client.available()) {
       String line = client.readStringUntil('\n');
       response += line;
-      lastActivity = ::millis();
     } else {
-      if (::millis() - lastActivity > 1000) break;
       delay(10);
     }
   }
@@ -1298,21 +1294,23 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
     return "";
   }
 
-  // Body
+  // Body. The inter-byte idle gap is the full remaining request budget, NOT a
+  // fixed 1 s: an LLM provider (Ollama Cloud gemma4:31b) routinely thinks for
+  // 2-5 s before emitting the first token, and a 1 s idle gap made ~32% of real
+  // weather-prompt calls return empty ("no usable reply, rule fallback" on the
+  // status page) while the trivial test-button prompt still passed. The overall
+  // deadline (startTime + timeout_ms) still bounds the call end-to-end.
   String response;
-  unsigned long lastActivity = ::millis();
   while (::millis() < deadline) {
     int c = (useTls ? tlsHolder->read() : plainHolder->read());
     if (c < 0) {
       bool connected = useTls ? tlsHolder->connected() : plainHolder->connected();
       int avail = useTls ? tlsHolder->available() : plainHolder->available();
       if (!connected && avail == 0) break;
-      if (::millis() - lastActivity > 1000) break;
       delay(1);
       continue;
     }
     response += (char)c;
-    lastActivity = ::millis();
     if (response.length() > 16384) break;  // cap: don't let a huge reply eat RAM
   }
 
