@@ -1348,9 +1348,16 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   JsonDocument jsonDoc;
                   
                   // Memory information
-                  jsonDoc["heap_free"] = hal->getFreeHeap();
+                  uint32_t heapFree = hal->getFreeHeap();
+                  uint32_t heapMaxAlloc = hal->getMaxAllocHeap();
+                  jsonDoc["heap_free"] = heapFree;
                   jsonDoc["heap_size"] = hal->getHeapSize();
-                  jsonDoc["heap_used_percent"] = 100.0 - (100.0 * hal->getFreeHeap() / hal->getHeapSize());
+                  jsonDoc["heap_used_percent"] = 100.0 - (100.0 * heapFree / hal->getHeapSize());
+                  // Largest contiguous block + fragmentation gap. Diverges from
+                  // heap_free under fragmentation; heap_max_alloc is the number
+                  // that actually gates a large contiguous alloc (mbedtls TLS ctx).
+                  jsonDoc["heap_max_alloc"] = heapMaxAlloc;
+                  jsonDoc["heap_frag_gap"] = heapFree > heapMaxAlloc ? heapFree - heapMaxAlloc : 0;
                   
                   // Uptime
                   unsigned long uptimeSeconds = millis() / 1000;

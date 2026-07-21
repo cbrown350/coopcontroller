@@ -941,7 +941,16 @@ void setup() // NOSONAR - complexity ok
             }
             
             uint32_t minFreeHeap = hal.getMinFreeHeap();
-            logger.logfInfo("Heap: %u free, %u min, %.1f%% used", heapFree, minFreeHeap, heapUsedPercent);
+            // Largest contiguous block (getMaxAllocHeap) is logged alongside total
+            // free to expose heap fragmentation: under fragmentation this value
+            // decays toward zero while heapFree stays flat, which is the leading
+            // indicator for the TLS-alloc-fails-then-NULL-deref crash. The
+            // frag gap (heapFree - maxAlloc) makes the divergence easy to eyeball.
+            uint32_t maxAllocHeap = hal.getMaxAllocHeap();
+            logger.logfInfo("Heap: %u free, %u min, %u maxblk, %u fraggap, %.1f%% used",
+                            heapFree, minFreeHeap, maxAllocHeap,
+                            heapFree > maxAllocHeap ? heapFree - maxAllocHeap : 0,
+                            heapUsedPercent);
         }
     }
 }

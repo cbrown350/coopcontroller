@@ -14,9 +14,9 @@ using namespace fakeit;
 
 // Test fixture for Logger
 class LoggerTest : public ::testing::Test {
+protected:
     MockHAL* mockHal;
 
-protected:
     void SetUp() override {
         // Create new MockHAL instance for this test
         mockHal = new MockHAL();
@@ -247,6 +247,84 @@ TEST_F(LoggerTest, SingletonPattern) {
 
     // Both references should point to the same instance
     EXPECT_EQ(&logger1, &logger2);
+}
+
+// Syslog UDP rate-limiter tests.
+//
+// Root cause (validated on the test board 2026-07-21): a burst of log lines
+// fires one WiFiUDP send per line; under network-buffer pressure those fail
+// with ENOMEM and starve lwIP until AsyncTCP can't accept HTTP (soft wedge).
+// The Logger now caps syslog UDP to one packet per SYSLOG_MIN_SEND_INTERVAL_MS
+// (200 ms). These tests pin that behavior: a burst at a fixed millis() emits
+// exactly one packet; advancing millis() past the window allows the next one;
+// serial + the in-RAM buffer are never throttled.
+// Helper: prime the limiter into a known "just sent at time t" state. The
+// Logger is a singleton whose rate-limit state (last-send time, suppressed
+// count, sent-once flag) persists across tests, so each test first drains that
+// state to a clean baseline: send one line at a known time, flush any pending
+// "suppressed" summary by sending again well past the window, then reset the
+// mock counter. After this, lastSyslogSendMs_ == primeTime and there is no
+// pending suppressed count.
+static void primeSyslogLimiter(Logger& lg, unsigned long& clock, unsigned long primeTime) {
+    clock = primeTime - 1000;           // before the window
+    lg.logInfo("prime-1");              // may emit a stale suppressed-summary + this line
+    clock = primeTime;                  // still >200ms later than prime-1
+    lg.logInfo("prime-2");              // guaranteed send; clears suppressed, sets last=primeTime
+    SimpleSyslog::resetSendCount();     // baseline: 0 sends, last=primeTime, suppressed=0
+}
+
+TEST_F(LoggerTest, SyslogUdpIsRateLimitedUnderBurst) {
+    Logger& logger_instance = Logger::getInstance();
+
+    // Force the syslog path live: real server so syslog != nullptr, WiFi up.
+    logger_instance.reconfigureSyslog("192.168.2.202", 514, "TestHost");
+    mockHal->setWiFiConnected(true);
+
+    // Controllable clock.
+    unsigned long clock = 0;
+    When(Method(ArduinoFake(), millis)).AlwaysDo([&clock]() { return clock; });
+
+    // Baseline: limiter just sent at t=100000, nothing pending.
+    primeSyslogLimiter(logger_instance, clock, 100000);
+
+    // Freeze time inside the SAME window and hammer 100 lines (the flood).
+    clock = 100050;  // 50 ms after prime — well within the 200 ms window
+    for (int i = 0; i < 100; ++i) {
+        logger_instance.logfWarning("Both Hall sensors active - burst %d", i);
+    }
+
+    // ZERO UDP sends should have escaped: all 100 are inside the window after a
+    // send already went out at prime time. (The flood is fully suppressed.)
+    EXPECT_EQ(SimpleSyslog::sendCount, 0);
+
+    // But every line is still in the local circular buffer — nothing lost
+    // locally. The last burst line must be present in the JSON view.
+    String json = logger_instance.getLogsAsJson();
+    EXPECT_TRUE(json.indexOf("burst 99") >= 0);
+}
+
+TEST_F(LoggerTest, SyslogUdpResumesAfterIntervalElapses) {
+    Logger& logger_instance = Logger::getInstance();
+    logger_instance.reconfigureSyslog("192.168.2.202", 514, "TestHost");
+    mockHal->setWiFiConnected(true);
+
+    unsigned long clock = 0;
+    When(Method(ArduinoFake(), millis)).AlwaysDo([&clock]() { return clock; });
+
+    // Baseline: just sent at t=500000, nothing pending.
+    primeSyslogLimiter(logger_instance, clock, 500000);
+
+    // A line inside the window is suppressed (no send).
+    clock = 500100;  // +100 ms, within 200 ms window
+    logger_instance.logInfo("line B (suppressed)");
+    EXPECT_EQ(SimpleSyslog::sendCount, 0);
+
+    // Advance past the window; the next line is allowed again. Because one line
+    // was suppressed, the limiter also emits a one-line "N suppressed" summary,
+    // so this produces TWO sends: the summary + the line itself.
+    clock = 500100 + 250;  // > SYSLOG_MIN_SEND_INTERVAL_MS (200) since last send
+    logger_instance.logInfo("line C (allowed)");
+    EXPECT_EQ(SimpleSyslog::sendCount, 2);  // suppressed-summary + line C
 }
 
 // Concurrency regression test for the cross-core logging race.

@@ -290,6 +290,18 @@ public:
   virtual uint32_t getMinFreeHeap() = 0;
 
   /**
+   * @brief Get the largest contiguous free heap block (bytes).
+   *
+   * This is distinct from getFreeHeap(): total free heap can stay high while
+   * this value erodes under fragmentation. A large contiguous allocation (e.g.
+   * the mbedtls TLS context in WiFiClientSecure) fails when this drops below
+   * its size even though total free looks healthy. Tracked to diagnose the
+   * "runs fine for hours, then crashes on page loads" fragmentation pattern.
+   * @return Largest allocatable contiguous block in bytes.
+   */
+  virtual uint32_t getMaxAllocHeap() = 0;
+
+  /**
    * @brief Get chip model string
    * @return Chip model (e.g., "ESP32-D0WDQ6")
    */

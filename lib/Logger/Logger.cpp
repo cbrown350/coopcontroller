@@ -94,11 +94,39 @@ void Logger::logWithLevel(const String &message, LogLevel level) const
     const char* msgCStr = fullMessage.c_str();
     if (msgCStr == nullptr) msgCStr = "[LOG_ALLOC_FAIL]";
 
-    // Print to serial with timestamp and level
+    // Print to serial with timestamp and level. Serial output and the circular
+    // buffer below are ALWAYS written in full — only the syslog UDP fan-out is
+    // rate-limited, so no log line is ever lost locally.
     hal->SerialPrintf("[%lu] %s\n", timestamp, msgCStr);
 
-    if (syslog != nullptr && hal->WiFiIsConnected())
-      syslog->printf(FAC_USER, PRI_DEBUG, const_cast<char*>("([%lu] %s)"), timestamp, msgCStr); // NOSONAR
+    if (syslog != nullptr && hal->WiFiIsConnected()) {
+      // Rate-limit outbound syslog UDP to at most one packet per
+      // SYSLOG_MIN_SEND_INTERVAL_MS. A burst of log lines (e.g. per-loop sensor
+      // wiring-error spam, amplified when a TLS connect fails) would otherwise
+      // fire one WiFiUDP send per line; under buffer pressure those fail with
+      // ENOMEM and starve lwIP until AsyncTCP can't accept HTTP (soft wedge —
+      // see SYSLOG_MIN_SEND_INTERVAL_MS). Throttling decouples log rate from
+      // send rate and breaks that amplification loop. Uses millis() (monotonic,
+      // wraparound-safe via unsigned subtraction), independent of NTP time.
+      unsigned long nowMs = millis();
+      bool sendNow = !syslogSentOnce_ ||
+                     (nowMs - lastSyslogSendMs_) >= SYSLOG_MIN_SEND_INTERVAL_MS;
+      if (sendNow) {
+        // If sends were suppressed since the last one, note how many so the
+        // remote log shows the gap instead of silently dropping lines.
+        if (syslogSuppressedCount_ > 0) {
+          syslog->printf(FAC_USER, PRI_DEBUG, // NOSONAR
+                         const_cast<char*>("([%lu] [INFO] %u syslog msgs suppressed (rate limit))"),
+                         timestamp, (unsigned)syslogSuppressedCount_);
+          syslogSuppressedCount_ = 0;
+        }
+        syslog->printf(FAC_USER, PRI_DEBUG, const_cast<char*>("([%lu] %s)"), timestamp, msgCStr); // NOSONAR
+        lastSyslogSendMs_ = nowMs;
+        syslogSentOnce_ = true;
+      } else {
+        syslogSuppressedCount_++;
+      }
+    }
 
     // Generate UUID for this log entry
     uuidGenerator.generate();

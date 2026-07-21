@@ -89,6 +89,36 @@ private:
   /// const. Not used from ISRs (verified: no ISR in the codebase logs).
   mutable std::recursive_mutex logMutex_;
 
+  /// @brief Minimum interval (ms) between outbound syslog UDP packets.
+  ///
+  /// Rate-limits ONLY the syslog UDP fan-out — serial output and the in-RAM
+  /// circular buffer (the /logs web view) are always written in full. Root
+  /// cause it addresses (validated on the test board 2026-07-21): a burst of
+  /// log lines (e.g. the per-loop "Both Hall sensors active" wiring-error spam,
+  /// amplified when an outbound TLS connect fails) fires one WiFiUDP
+  /// beginPacket/endPacket per line. Under network-buffer pressure each send
+  /// fails with ENOMEM (errno 12); the failed sends drain lwIP's shared UDP
+  /// buffer pool faster than it refills, starving AsyncTCP so it can no longer
+  /// accept inbound HTTP — a soft wedge (firmware keeps running, web dies, does
+  /// not self-recover). Capping UDP to one packet per this interval decouples
+  /// app-log rate from send rate and breaks the amplification. 200 ms = max 5
+  /// syslog packets/sec, far below the flood rate but ample for real events.
+  static constexpr unsigned long SYSLOG_MIN_SEND_INTERVAL_MS = 200;
+
+  /// millis() timestamp of the last syslog UDP send actually attempted.
+  /// mutable: throttling happens inside the const logWithLevel(). Guarded by
+  /// logMutex_ (only ever touched while that lock is held).
+  mutable unsigned long lastSyslogSendMs_ = 0;
+  /// False until the first syslog send; the first one is always allowed
+  /// regardless of the millis() window (so a fresh boot always reaches syslog
+  /// even before SYSLOG_MIN_SEND_INTERVAL_MS has elapsed, and desktop tests
+  /// with an unmocked millis()==0 still see the first send).
+  mutable bool syslogSentOnce_ = false;
+  /// Count of syslog UDP sends suppressed by the rate limiter since the last
+  /// one that got through; surfaced on the next send so nothing vanishes
+  /// silently ("... (N syslog msgs suppressed)").
+  mutable uint32_t syslogSuppressedCount_ = 0;
+
   /**
    * @brief Private constructor for singleton
    */

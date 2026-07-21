@@ -108,6 +108,11 @@ uint32_t HAL_ESP32::getHeapSize() { return ESP.getHeapSize(); }
 
 uint32_t HAL_ESP32::getMinFreeHeap() { return ESP.getMinFreeHeap(); }
 
+// Largest contiguous internal-RAM block (heap_caps_get_largest_free_block).
+// Diverges from getFreeHeap() under fragmentation; this is the number that
+// actually gates a big contiguous alloc like the mbedtls TLS context.
+uint32_t HAL_ESP32::getMaxAllocHeap() { return ESP.getMaxAllocHeap(); }
+
 const char *HAL_ESP32::getChipModel() { return ESP.getChipModel(); }
 
 uint8_t HAL_ESP32::getResetReason() {
@@ -821,6 +826,12 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
                   (unsigned)ESP.getFreeHeap(), (unsigned)TLS_CLIENT_MIN_FREE_HEAP);
     return nullptr;
   }
+
+  // Boundary diagnostic: record the true contiguous/free values at the exact
+  // TLS-alloc moment. Kept from the fragmentation investigation — cheap, and it
+  // pins the last-known heap state before any network op if one is needed.
+  Serial.printf("[HAL_ESP32] createSecureClient: alloc TLS ctx (free %u, max_alloc %u)\r\n",
+                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 
   try {
     // Construct inside try: WiFiClientSecure allocates the sslclient context

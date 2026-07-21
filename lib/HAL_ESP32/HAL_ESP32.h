@@ -65,6 +65,7 @@ public:
   void restart() override;
   uint32_t getHeapSize() override;
   uint32_t getMinFreeHeap() override;
+  uint32_t getMaxAllocHeap() override;
   const char *getChipModel() override;
   uint8_t getResetReason() override;
   uint32_t getCpuFreqMHz() override;
