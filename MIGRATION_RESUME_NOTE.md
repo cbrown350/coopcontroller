@@ -144,15 +144,54 @@ downloads — verify before relying on OTA install on 3.x. This needs a deeper
 fix (fork ssl_client.cpp to add a blocking recv, or a different HTTP client) and
 is deferred. The crash-fix value of the migration is not blocked by it.
 
-### Feature validation on USB board 192.168.2.99 (in progress / done)
+### Feature validation on USB board 192.168.2.99 (done)
 
 - WiFi connect (BSSID-preferred, Browns): OK, RSSI -67, IP .99.
-- Heap telemetry: ~119KB free / 55KB max_alloc, healthy under load.
+- Heap telemetry: ~85-119KB free / 55KB max_alloc, healthy under load.
 - Door/pump/light/buzzer control endpoints: OK (actions acknowledged).
 - Sun times: 06:10 / 20:56 (correct for Smithfield UT).
 - Settings persistence (POST /update_settings + readback): OK.
-- Reset-reason display: OK ("Power-on", code 1).
+- Reset-reason display: OK ("Power-on" code 1 clean boot; "Panic / exception"
+  code 4 correctly shown after the lwIP assert below).
 - Weather fetch (TLS): OK — 91.1°F Clouds, forecast retrieved.
 - LLM decider (TLS): OK — connection test passes, decider active.
 - OTA check (TLS): FAILS — truncation above; documented as known issue.
-- Crash repro (realistic_load.sh 1500s + crash_watch.py): see results below.
+
+### Crash repro results (realistic_load.sh: 8 web workers + TLS nudges every 20s, 1500s)
+
+**Run 1 (framework migration + lean mbedtls only, no TLS-serialize/watchdog):**
+wedged at ~180s — firmware loop alive (serial still emitting) but NO ping,
+NO HTTP; unrecoverable without a physical reset; the wedge also CORRUPTED the
+LittleFS settings partition (board rebooted into AP mode with defaults on next
+power cycle). A parallel web-only test (6 workers, NO outbound TLS) survived
+623s clean with zero incidents — isolates the wedge trigger to concurrent
+OUTBOUND TLS, not web load. See memory `soft-wedge-is-tls-gated-not-web.md`.
+
+**Fix applied (commit 4b66638):** `HAL_ESP32::createSecureClient` refuses a new
+TLS handshake while one is already in flight (serializes outbound TLS — callers
+already retry on their own schedule on a null client). `main.cpp` adds a
+network-responsive watchdog: every 15s, a plain-TCP self-probe to the board's
+own web server port; reboot after 90s of continuous failure while the loop is
+alive (catches the case where `WiFi.status()` still claims connected but lwIP
+can't accept).
+
+**Run 2 (with the fix): the unrecoverable wedge is GONE.** Instead the board
+hits a different, self-recovering failure 6 times over 1500s (~once per 4 min):
+`assert failed: tcp_receive lwip/src/core/tcp_in.c:1450 (tcp_receive: wrong
+state)` — a genuine lwIP TCP-PCB state-machine assertion inside IDF 5.5.4's
+lwIP (confirmed by decoded backtrace: panic_abort → __assert_func → tcp_receive
+→ tcp_process → tcp_input → ip4_input → tcpip_thread, entirely inside the `tiT`
+lwIP task, not application code). Each panic self-reboots cleanly within
+~15-30s; HTTP never showed sustained downtime to 60s-granularity polling;
+**settings/LittleFS survive intact across all 6 reboots** (verified
+`/get_settings` post-test: ssid/door_auto_close/hostname all correct).
+
+**Verdict:** net-positive but not a zero-incident PASS. Went from "permanent
+wedge + data corruption" to "self-recovering panic + data integrity preserved"
+under an adversarial 8-worker+TLS stress load far heavier than real
+coop-controller usage (occasional user + periodic weather/LLM/MQTT polling).
+Ship with this as a documented residual risk; the `tcp_receive: wrong state`
+signature is a new lead for a future session (likely lwIP TCP PCB corruption
+from concurrent TLS teardown racing inbound connection churn — same family as
+memory `wifi-panic-root-cause-tls-race-and-modem-sleep` but now inside lwIP
+itself rather than mbedtls/x509 teardown).
