@@ -1,5 +1,12 @@
 # Framework Migration — Resume Note (fix/framework-migration-v2)
 
+**STATUS 2026-07-21 EOD: DO NOT DEPLOY. OTA is broken** (manifest fetch
+truncates, root cause unknown — see "BLOCKING BUG" section below). The
+addHeader crash and the TLS heap-pressure crash are both fixed and validated.
+The soft-wedge is converted to a self-recovering panic (not a full fix, but a
+major improvement) under a load test far heavier than real usage. Next
+session: fix OTA, re-verify, then this is ready to ship.
+
 **Branch created:** 2026-07-21, off `master` @ `e92b92d` (v0.8.3 — includes the
 `getMaxAllocHeap` instrumentation + syslog rate limiter, which the migration
 validation needs).
@@ -126,23 +133,77 @@ ssl_client.cpp still links):
 Aggressive trims (ECP curves, key exchanges) link-fail and are NOT used. With
 this config, weather + LLM TLS succeed; heap ~119KB free / 55KB max_alloc.
 
-### Known issue: OTA manifest check truncates on 3.x (NOT blocking the migration)
+### BLOCKING BUG: OTA manifest check truncates on 3.x — root cause NOT yet found, do not deploy
 
 `/update/check` fetches `api.github.com/.../releases/latest` (~14KB JSON over
-TLS, multiple TLS records). On 3.x the body truncates at ~6-8KB →
-`IncompleteInput`/`InvalidInput` parse error. Prod (.8, 2.x firmware) parses it
-fine, so this is a 3.x regression. Root cause: `WiFiClientSecure::read()` guards
-on `available() > 0` (line 273), and `available()` peeks `mbedtls_ssl_read(NULL,
-0)` which returns 0 between TLS records WITHOUT fetching the next record from
-the socket — so `read()` returns -1 and the loop times out waiting for data that
-needs a blocking socket recv to arrive. Attempts that did NOT fix it:
-keep-alive header, `readBytes()` (same guard), 1s/5s no-progress grace windows,
-symmetric 16KB/16KB buffers. Weather/LLM/Telegram TLS (small, single-record
-responses) are unaffected. OTA *install* (httpGetStream, binary download) uses
-the same `available()`-gated loop and likely has the same issue for large
-downloads — verify before relying on OTA install on 3.x. This needs a deeper
-fix (fork ssl_client.cpp to add a blocking recv, or a different HTTP client) and
-is deferred. The crash-fix value of the migration is not blocked by it.
+TLS, multiple TLS records). On 3.x the body truncates at ~2.8-8.6KB (varies run
+to run) → `IncompleteInput`/`InvalidInput` parse error. Prod (.8, 2.x firmware)
+parses it fine, so this is a 3.x regression, and it means **OTA is broken on
+this branch** — do not merge/deploy until fixed and `/update/check` verified to
+return `check_ok: true` with a correct `available_version`.
+
+**Earlier theory in this note was WRONG and should not be trusted:** it claimed
+`WiFiClientSecure::available()` peeks `mbedtls_ssl_read(NULL, 0)` without
+fetching the next record from the socket. Direct inspection of the real
+mbedtls source this session
+(`~/.platformio/packages/framework-espidf/components/mbedtls/mbedtls/library/ssl_msg.c`,
+`mbedtls_ssl_read()` ~line 5921) shows this is false: whenever
+`ssl->in_offt == NULL` (no buffered application-data record), `mbedtls_ssl_read`
+unconditionally calls `mbedtls_ssl_read_record()` regardless of the requested
+`len` — so a `len=0` peek DOES drive a real socket read and DOES fetch the next
+record. The truncation has some other cause. Do not resume by patching around
+the peeze theory; start by re-deriving the actual failure point.
+
+**What's confirmed:**
+- GitHub sends the correct `Content-Length: 14321`, uncompressed (verified via
+  curl with the same `User-Agent: CoopController-OTA` header the board sends —
+  no gzip, HTTP/2 downgrades fine to HTTP/1.1).
+- The response fits in a single TLS record (14321 < 16384 max record size), so
+  this is not a multi-record boundary issue in the TLS layer itself.
+- Board reads stop early and cleanly (no error, no exception) — `httpGet()`
+  just returns a short string.
+- Weather/LLM/Telegram TLS (small responses, <2KB) are unaffected — this only
+  shows up on bodies in the multi-KB range.
+
+**What did NOT fix it (all tried and reverted this session):** `Connection:
+keep-alive` instead of `close`; `readBytes()` instead of raw `read()`; 1s/5s
+no-progress grace windows before giving up; symmetric 16KB/16KB
+`SSL_IN_CONTENT_LEN`/`SSL_OUT_CONTENT_LEN` (vs the asymmetric 16K/4K in the
+committed lean config); serializing outbound TLS (the unrelated fix for the
+soft-wedge, committed anyway since it's independently correct).
+
+**Where to look next:**
+1. Instrument `HAL_ESP32::httpGet()` (lib/HAL_ESP32/HAL_ESP32.cpp) to log, on
+   every loop iteration of the body-read loop: `client.available()`,
+   `response.length()`, `contentLength`, and `client.connected()`. Get a
+   byte-by-byte account of exactly where and why the loop exits early — the
+   prior session's diagnostics kept getting lost to serial-capture unreliability
+   (see "Serial capture is unreliable" note below) rather than actually proving
+   the exit condition.
+2. Check whether the *headers* are being mis-parsed — `readHttpLine()`
+   (HAL_ESP32.cpp ~line 792) reads byte-by-byte via `client.read()` in a loop
+   with its own `!client.connected() && available()==0` exit condition. If a
+   header read exits early, `contentLength` could end up wrong or the code could
+   start reading body bytes that are actually still header, desyncing everything
+   downstream. This was never directly verified.
+3. Consider testing with a *different* HTTPS endpoint serving a similar-sized
+   body (not GitHub) to rule out anything GitHub-specific (HTTP/2 downgrade
+   quirks, TCP_NODELAY behavior, etc.).
+4. Verify OTA *install* (`httpGetStream()`, same file, binary firmware
+   download) has the same or a different failure mode — it reads much larger
+   bodies (~1.6MB) and was never tested this session because the manifest check
+   never got far enough to reach it.
+5. `mbedtls_ssl_read` source is at
+   `~/.platformio/packages/framework-espidf/components/mbedtls/mbedtls/library/ssl_msg.c`
+   if the bug turns out to be inside mbedtls itself rather than in our HAL code.
+
+**Serial capture is unreliable for this investigation:** `serial_cap.py` (pyserial,
+scratchpad/) reliably drops lines under load — multiple attempts this session to
+capture `Serial.printf` diagnostics from `httpGet()`'s read loop failed
+silently (empty grep results) even though the board was provably running the
+diagnostic build. Prefer echoing findings into an HTTP-readable field (e.g.
+temporarily embed lengths/state into the `/update/check_result` error string,
+as done partway through this session) over trusting the serial log.
 
 ### Feature validation on USB board 192.168.2.99 (done)
 
@@ -155,7 +216,8 @@ is deferred. The crash-fix value of the migration is not blocked by it.
   code 4 correctly shown after the lwIP assert below).
 - Weather fetch (TLS): OK — 91.1°F Clouds, forecast retrieved.
 - LLM decider (TLS): OK — connection test passes, decider active.
-- OTA check (TLS): FAILS — truncation above; documented as known issue.
+- OTA check (TLS): FAILS — truncation, root cause not found, **BLOCKS
+  deployment**. See "BLOCKING BUG" section above.
 
 ### Crash repro results (realistic_load.sh: 8 web workers + TLS nudges every 20s, 1500s)
 
