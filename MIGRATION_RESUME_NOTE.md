@@ -1,11 +1,12 @@
 # Framework Migration — Resume Note (fix/framework-migration-v2)
 
-**STATUS 2026-07-21 EOD: DO NOT DEPLOY. OTA is broken** (manifest fetch
-truncates, root cause unknown — see "BLOCKING BUG" section below). The
-addHeader crash and the TLS heap-pressure crash are both fixed and validated.
-The soft-wedge is converted to a self-recovering panic (not a full fix, but a
-major improvement) under a load test far heavier than real usage. Next
-session: fix OTA, re-verify, then this is ready to ship.
+**STATUS 2026-07-22: OTA CHECK FIXED and reliable (5/5 on USB board
+192.168.2.99). OTA INSTALL still broken by a deep IDF 5.5.4 lwIP TCP stall
+on large TLS downloads — see "BLOCKING BUG (install path)" below.** The
+addHeader crash, the TLS heap-pressure crash, and the OTA check are all fixed
+and validated. The soft-wedge is converted to a self-recovering panic under a
+load test far heavier than real usage. Next session: resolve the install path
+(needs an IDF/lwIP fix or an ElegantOTA-as-primary fallback), then ship.
 
 **Branch created:** 2026-07-21, off `master` @ `e92b92d` (v0.8.3 — includes the
 `getMaxAllocHeap` instrumentation + syslog rate limiter, which the migration
@@ -133,77 +134,117 @@ ssl_client.cpp still links):
 Aggressive trims (ECP curves, key exchanges) link-fail and are NOT used. With
 this config, weather + LLM TLS succeed; heap ~119KB free / 55KB max_alloc.
 
-### BLOCKING BUG: OTA manifest check truncates on 3.x — root cause NOT yet found, do not deploy
+### RESOLVED: OTA manifest check truncates on 3.x — FIXED 2026-07-22
 
-`/update/check` fetches `api.github.com/.../releases/latest` (~14KB JSON over
-TLS, multiple TLS records). On 3.x the body truncates at ~2.8-8.6KB (varies run
-to run) → `IncompleteInput`/`InvalidInput` parse error. Prod (.8, 2.x firmware)
-parses it fine, so this is a 3.x regression, and it means **OTA is broken on
-this branch** — do not merge/deploy until fixed and `/update/check` verified to
-return `check_ok: true` with a correct `available_version`.
+`/update/check` now returns `check_ok: true, available_version: "0.8.3"`
+reliably (5/5 on USB board 192.168.2.99 against the real prod endpoint).
 
-**Earlier theory in this note was WRONG and should not be trusted:** it claimed
-`WiFiClientSecure::available()` peeks `mbedtls_ssl_read(NULL, 0)` without
-fetching the next record from the socket. Direct inspection of the real
-mbedtls source this session
-(`~/.platformio/packages/framework-espidf/components/mbedtls/mbedtls/library/ssl_msg.c`,
-`mbedtls_ssl_read()` ~line 5921) shows this is false: whenever
-`ssl->in_offt == NULL` (no buffered application-data record), `mbedtls_ssl_read`
-unconditionally calls `mbedtls_ssl_read_record()` regardless of the requested
-`len` — so a `len=0` peek DOES drive a real socket read and DOES fetch the next
-record. The truncation has some other cause. Do not resume by patching around
-the peeze theory; start by re-deriving the actual failure point.
+**Root cause (different from both earlier theories in this note):** two things
+compounding.
+1. The default manifest URL was `api.github.com/repos/<repo>/releases/latest`,
+   a ~14KB body. On this IDF 5.5.4 lwIP stack, sustained TLS transfers of more
+   than a few KB stall mid-transfer (see the install-path section below — same
+   root cause). The 883-byte `version_manifest.json` published as a release
+   asset is small enough to arrive in one burst before the stall.
+2. The body-read loop terminated on `connected()==false`. On 3.x,
+   `NetworkClientSecure::connected()` and `available()` both call
+   `data_to_read()` → `mbedtls_ssl_read(NULL, 0)` (a peek); on a transient peek
+   error `available()` calls `stop()`, flipping `_connected=false` and
+   truncating a still-flowing body. 2.x tolerated this; 3.x does not. (The
+   earlier retracted theory that the len=0 peek can't fetch the next record was
+   false — `ssl_msg.c:5921` shows it unconditionally calls
+   `mbedtls_ssl_read_record` when `in_offt==NULL`. The truncation was the
+   `stop()`-on-transient-error path, not the peek itself.)
 
-**What's confirmed:**
-- GitHub sends the correct `Content-Length: 14321`, uncompressed (verified via
-  curl with the same `User-Agent: CoopController-OTA` header the board sends —
-  no gzip, HTTP/2 downgrades fine to HTTP/1.1).
-- The response fits in a single TLS record (14321 < 16384 max record size), so
-  this is not a multi-record boundary issue in the TLS layer itself.
-- Board reads stop early and cleanly (no error, no exception) — `httpGet()`
-  just returns a short string.
-- Weather/LLM/Telegram TLS (small responses, <2KB) are unaffected — this only
-  shows up on bodies in the multi-KB range.
+**Fix shipped (841/841 desktop tests pass, firmware builds):**
+- Default manifest URL → `https://github.com/<repo>/releases/latest/download/
+  version_manifest.json` (302-redirects 2 hops to release-assets.
+  githubusercontent.com / Azure Blob; body is the ~883-byte
+  version_manifest.json). The api.github.com URL still works if a user sets
+  `manifest_url` explicitly.
+- Rewrote `HAL_ESP32::httpGet()` body loop: drive by `available()+read()` only,
+  NEVER terminate on `connected()` while Content-Length is unmet, bail on a 5s
+  no-progress window. Same pattern applied to `httpGetStream()`.
+- Added Transfer-Encoding: chunked dechunking in `httpGet()` (GitHub alternates
+  between Content-Length and chunked for the same URL).
+- Bumped `CONFIG_LWIP_TCP_WND_DEFAULT` (5760→21504), `TCP_SND_BUF_DEFAULT`
+  (5744→16384), `TCP_RECVMBOX_SIZE` (6→48), `TCPIP_RECVMBOX_SIZE` (32→96) in
+  `build_scripts/lean_mbedtls.sdkconfig` (helps marginally; not the root fix).
+- HTTP-readable diagnostics: `g_http_get_diag` (global in HAL_ESP32.cpp) is
+  written by httpGet/httpGetStream and surfaced in the `/update/check_result`
+  and `/update/status` error fields. Format decodes exit reason, bytes got,
+  contentLength, chunked flag, per-iteration available/connected samples. Kept
+  (do not remove) — see "Serial capture is unreliable" below.
 
-**What did NOT fix it (all tried and reverted this session):** `Connection:
-keep-alive` instead of `close`; `readBytes()` instead of raw `read()`; 1s/5s
-no-progress grace windows before giving up; symmetric 16KB/16KB
-`SSL_IN_CONTENT_LEN`/`SSL_OUT_CONTENT_LEN` (vs the asymmetric 16K/4K in the
-committed lean config); serializing outbound TLS (the unrelated fix for the
-soft-wedge, committed anyway since it's independently correct).
+### BLOCKING BUG (install path): IDF 5.5.4 lwIP stalls large TLS downloads
 
-**Where to look next:**
-1. Instrument `HAL_ESP32::httpGet()` (lib/HAL_ESP32/HAL_ESP32.cpp) to log, on
-   every loop iteration of the body-read loop: `client.available()`,
-   `response.length()`, `contentLength`, and `client.connected()`. Get a
-   byte-by-byte account of exactly where and why the loop exits early — the
-   prior session's diagnostics kept getting lost to serial-capture unreliability
-   (see "Serial capture is unreliable" note below) rather than actually proving
-   the exit condition.
-2. Check whether the *headers* are being mis-parsed — `readHttpLine()`
-   (HAL_ESP32.cpp ~line 792) reads byte-by-byte via `client.read()` in a loop
-   with its own `!client.connected() && available()==0` exit condition. If a
-   header read exits early, `contentLength` could end up wrong or the code could
-   start reading body bytes that are actually still header, desyncing everything
-   downstream. This was never directly verified.
-3. Consider testing with a *different* HTTPS endpoint serving a similar-sized
-   body (not GitHub) to rule out anything GitHub-specific (HTTP/2 downgrade
-   quirks, TCP_NODELAY behavior, etc.).
-4. Verify OTA *install* (`httpGetStream()`, same file, binary firmware
-   download) has the same or a different failure mode — it reads much larger
-   bodies (~1.6MB) and was never tested this session because the manifest check
-   never got far enough to reach it.
-5. `mbedtls_ssl_read` source is at
-   `~/.platformio/packages/framework-espidf/components/mbedtls/mbedtls/library/ssl_msg.c`
-   if the bug turns out to be inside mbedtls itself rather than in our HAL code.
+`/update/install` downloads `firmware.bin` (~1.4MB) via `httpGetStream()` from
+`release-assets.githubusercontent.com` (Azure Blob). It stalls at 0-1371 bytes
+(one TLS record at most), then `available()` returns 0 permanently while
+`connected()` stays true. Diagnostic (from `/update/status`):
+`stream got=0..1371 clen=1440352 stalled=1 connAtStall=1 maxAvail=1371
+firstFew=1371,0,0,0,0,0`.
+
+The peer sends one or a few TCP segments then stops, while keeping the TCP
+connection open — the board's ACK / window-update isn't getting the sender to
+continue. This is the same lwIP bug family as the `tcp_receive: wrong state`
+assert (see the crash repro section below).
+
+**Host/size matrix (all via the board's TLS client, 2026-07-22):**
+| body size | host | result |
+|-----------|------|--------|
+| 883 B | Azure Blob (releases/latest/download) | works 5/5 |
+| 4.8 KB | raw.githubusercontent.com (Fastly) | works |
+| 13.6 KB | raw.githubusercontent.com (Fastly) | works |
+| 14 KB | api.github.com | stalls ~7 KB |
+| 573 KB | raw.githubusercontent.com (Fastly) | stalls ~7.7 KB |
+| 1.4 MB | Azure Blob (firmware.bin) | stalls 0-1371 B |
+
+The stall is **size-related, not host-specific**: small bodies that arrive in a
+single burst always work; sustained multi-KB transfers stall. The threshold
+varies by host (Fastly tolerates ~13 KB; Azure/api.github stall lower).
+
+**What was tried for the install path and did NOT fix it:**
+- `CONFIG_LWIP_TCP_WND_DEFAULT`: 5760 → 16384 → 21504 (no effect).
+- `CONFIG_LWIP_TCP_RECVMBOX_SIZE`: 6 → 24 → 48; `TCPIP_RECVMBOX_SIZE`: 32 → 96
+  (no effect).
+- Ranged downloads (many small `Range:` requests, each on a fresh TLS
+  connection): Azure supports `206`/`Accept-Ranges`, but a 1.4 MB firmware
+  needs hundreds of TLS handshakes = minutes, which trips the 5 s task watchdog
+  AND exceeds the install timeout. `HAL_ESP32::downloadRangeChunk()` is in place
+  but DISABLED (`RANGED_THRESHOLD = 0xFFFFFFFF`) — kept for a future platform
+  fix. Reusing one keep-alive connection for many ranges was NOT tried.
+- Tighter drain loop (no delay / yield-only / 2 KB buffer / yield every 4 KB):
+  no effect.
+- WIFI_PS_NONE was already set (not the cause).
+
+**What DID help on the install path (kept):**
+- Per-read socket timeout clamped to 2 s (`client.setTimeout(2000)` in
+  `httpGetStream`): stopped the "Task watchdog" reboot that happened when a
+  stalled read blocked for the full 60-120 s caller timeout. The install now
+  fails CLEANLY with a diagnostic instead of rebooting.
+- Robust read loop (no premature `connected()`-based termination).
+
+**Where to look next (future session):**
+1. The real fix is an IDF/lwIP fix — bump the pioarduino platform to a tag with
+   a newer IDF once one ships that addresses the `tcp_receive: wrong state` /
+   sustained-receive stall, OR patch lwIP. App-level workarounds are exhausted.
+2. Consider making ElegantOTA (manual .bin upload via `/ota/upload`, already
+   integrated as "Advanced" in the web UI) the primary install path and
+   documenting the UpdateManager `httpGetStream` path as broken-on-3.x until
+   the lwIP fix lands. Prod has historically used ElegantOTA for flashing
+   anyway (see memory `elegantota-filesystem-flash-wipes-settings`).
+3. If ranged downloads are revisited: try keep-alive on ONE connection issuing
+   many Range requests (avoid per-chunk handshake), and unsubscribe the loop
+   task from the task watchdog during the install. Both untested.
 
 **Serial capture is unreliable for this investigation:** `serial_cap.py` (pyserial,
 scratchpad/) reliably drops lines under load — multiple attempts this session to
 capture `Serial.printf` diagnostics from `httpGet()`'s read loop failed
 silently (empty grep results) even though the board was provably running the
-diagnostic build. Prefer echoing findings into an HTTP-readable field (e.g.
-temporarily embed lengths/state into the `/update/check_result` error string,
-as done partway through this session) over trusting the serial log.
+diagnostic build. Prefer echoing findings into an HTTP-readable field (the
+`g_http_get_diag`-via-error-field pattern committed this session) over trusting
+the serial log.
 
 ### Feature validation on USB board 192.168.2.99 (done)
 

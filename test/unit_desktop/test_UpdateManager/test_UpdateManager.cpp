@@ -315,14 +315,18 @@ TEST_F(UpdateManagerTest, Begin_InitializesWithProvidedUrl) {
     EXPECT_EQ(status.status, UpdateStatus::IDLE);
 }
 
-TEST_F(UpdateManagerTest, Begin_AutoConstructsRedirectFreeGithubApiUrl) {
+TEST_F(UpdateManagerTest, Begin_AutoConstructsReleaseAssetManifestUrl) {
     um.begin(&mockHal, "");
     mockHal.setHttpGetResponse(GITHUB_API_RELEASE);
 
     um.checkForUpdates();
 
+    // Default manifest URL is the tag-independent release-asset manifest, which
+    // 302-redirects to the small version_manifest.json. See UpdateManager::
+    // setManifestUrl for why this replaced the api.github.com releases/latest
+    // default (stalls mid-transfer on the 3.x mbedtls stack).
     EXPECT_EQ(mockHal.getLastHttpGetUrl(),
-              String("https://api.github.com/repos/cbrown350/coopcontroller/releases/latest"));
+              String("https://github.com/cbrown350/coopcontroller/releases/latest/download/version_manifest.json"));
 }
 
 TEST_F(UpdateManagerTest, Begin_SetsInitialStateToIdle) {

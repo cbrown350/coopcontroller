@@ -41,6 +41,22 @@ CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
 # Don't keep peer cert after handshake (frees heap while the connection lives).
 CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n
 
+# ---- lwIP: enlarge the TCP receive window and recv mailbox ----
+# The stock IDF default TCP receive window is 5760 (4*MSS=1436). With that
+# small window, sustained inbound TLS transfers (OTA manifest check from
+# api.github.com, firmware.bin download) stall mid-transfer on arduino-esp32
+# 3.x / IDF 5.5.4: the board reads ~0-9 KB then `available()` reports 0
+# permanently while connected() stays true — the peer sends one or a few
+# segments then stops (board receives, e.g., 1371 bytes of a 1.4 MB firmware
+# and nothing more). Bumping the window to ~16 KB (12*MSS) plus enlarging
+# the TCP recv mailbox (default 6) reduces the conditions that trigger the
+# stall. Note: LWIP_WND_SCALE defaults off (needs SPIRAM) so the window is
+# hard-capped at TCP_WND_DEFAULT — there is no dynamic scaling on this chip.
+CONFIG_LWIP_TCP_WND_DEFAULT=21504
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=16384
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=48
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=96
+
 # ---- Disable big unused IDF components to free static RAM ----
 # Bluetooth (Bluedroid + BLE Mesh is the single biggest static consumer on ESP32).
 CONFIG_BT_ENABLED=n
