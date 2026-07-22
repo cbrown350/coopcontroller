@@ -287,7 +287,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         // Initialize SHA256 context for incremental hashing
         sha_ctx_ = new mbedtls_sha256_context();
         mbedtls_sha256_init((mbedtls_sha256_context*)sha_ctx_);
-        mbedtls_sha256_starts_ret((mbedtls_sha256_context*)sha_ctx_, false);  // false = SHA256 (not SHA224)
+        mbedtls_sha256_starts((mbedtls_sha256_context*)sha_ctx_, false);  // false = SHA256 (not SHA224)
         sha_ctx_initialized_ = true;
 
         // Begin OTA firmware partition
@@ -305,7 +305,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
                 // Update SHA256 hash with incoming data
                 if (sha_ctx_initialized_) {
-                    mbedtls_sha256_update_ret((mbedtls_sha256_context*)sha_ctx_, data, len);
+                    mbedtls_sha256_update((mbedtls_sha256_context*)sha_ctx_, data, len);
                 }
 
                 // Write to OTA partition
@@ -335,7 +335,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         setStatus(UpdateStatus::VERIFYING);
         if (manifest_.firmware.sha256.length() > 0) {
             unsigned char hash[32];
-            mbedtls_sha256_finish_ret((mbedtls_sha256_context*)sha_ctx_, hash);
+            mbedtls_sha256_finish((mbedtls_sha256_context*)sha_ctx_, hash);
             mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
             delete (mbedtls_sha256_context*)sha_ctx_;
             sha_ctx_ = nullptr;
@@ -391,7 +391,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         // Initialize SHA256 context for incremental hashing
         sha_ctx_ = new mbedtls_sha256_context();
         mbedtls_sha256_init((mbedtls_sha256_context*)sha_ctx_);
-        mbedtls_sha256_starts_ret((mbedtls_sha256_context*)sha_ctx_, false);
+        mbedtls_sha256_starts((mbedtls_sha256_context*)sha_ctx_, false);
         sha_ctx_initialized_ = true;
 
         // Stop web server before filesystem OTA to prevent async handlers
@@ -416,7 +416,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
                 // Update SHA256 hash with incoming data
                 if (sha_ctx_initialized_) {
-                    mbedtls_sha256_update_ret((mbedtls_sha256_context*)sha_ctx_, data, len);
+                    mbedtls_sha256_update((mbedtls_sha256_context*)sha_ctx_, data, len);
                 }
 
                 // Write to OTA partition
@@ -448,7 +448,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         setStatus(UpdateStatus::VERIFYING);
         if (manifest_.filesystem.sha256.length() > 0) {
             unsigned char hash[32];
-            mbedtls_sha256_finish_ret((mbedtls_sha256_context*)sha_ctx_, hash);
+            mbedtls_sha256_finish((mbedtls_sha256_context*)sha_ctx_, hash);
             mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
             delete (mbedtls_sha256_context*)sha_ctx_;
             sha_ctx_ = nullptr;

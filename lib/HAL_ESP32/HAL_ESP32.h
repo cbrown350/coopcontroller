@@ -221,6 +221,15 @@ private:
   AsyncWebServer *server_;
   void *sharedStateMutex_;  ///< FreeRTOS mutex for thread-safe shared state access
 
+  // arduino-esp32 3.x made LEDC pin-based: ledcAttach(pin, freq, resolution)
+  // does setup+attach in one call and ledcWrite takes (pin, duty). The HAL
+  // interface is still channel-based (pwmSetup/pwmAttachPin/pwmWrite), so we
+  // remember the configured freq/resolution and the pin bound to each channel
+  // to bridge the two-call HAL pattern onto the one-call 3.x API.
+  uint32_t pwmFreq_ = 0;
+  uint8_t pwmResolution_ = 0;
+  uint8_t pwmPinForChannel_[2] = {0, 0};
+
   // Minimum free heap (bytes) required to even attempt allocating a
   // WiFiClientSecure TLS context, whose mbedtls structures need a sizable
   // contiguous allocation. Below this the constructor's `new` would throw

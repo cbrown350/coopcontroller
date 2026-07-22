@@ -154,9 +154,9 @@ bool HAL_ESP32::wifiBegin(const char *ssid, const char *password) {
   // when stuck in CONNECT_FAILED/DISCONNECTED, where the radio genuinely
   // needs a clean restart to associate again.
   if (WiFiClass::getMode() & WIFI_MODE_STA) {
-    if (WiFiClass::status() == WL_CONNECT_FAILED ||
-        WiFiClass::status() == WL_CONNECTION_LOST ||
-        WiFiClass::status() == WL_DISCONNECTED) {
+    if (WiFi.status() == WL_CONNECT_FAILED ||
+        WiFi.status() == WL_CONNECTION_LOST ||
+        WiFi.status() == WL_DISCONNECTED) {
       WiFiClass::mode(WIFI_OFF);
     }
   }
@@ -168,9 +168,9 @@ bool HAL_ESP32::wifiBegin(const char *ssid, const char *password) {
 bool HAL_ESP32::wifiBeginWithBSSID(const char *ssid, const char *password, const uint8_t *bssid) {
   WiFi.setSleep(WIFI_PS_NONE);
   if (WiFiClass::getMode() & WIFI_MODE_STA) {
-    if (WiFiClass::status() == WL_CONNECT_FAILED ||
-        WiFiClass::status() == WL_CONNECTION_LOST ||
-        WiFiClass::status() == WL_DISCONNECTED) {
+    if (WiFi.status() == WL_CONNECT_FAILED ||
+        WiFi.status() == WL_CONNECTION_LOST ||
+        WiFi.status() == WL_DISCONNECTED) {
       WiFiClass::mode(WIFI_OFF);
     }
   }
@@ -194,7 +194,7 @@ bool HAL_ESP32::wifiSetHostname(const char *hostName_) {
 }
 
 bool HAL_ESP32::wifiIsConnected() {
-  return WiFiClass::status() == WL_CONNECTED;
+  return WiFi.status() == WL_CONNECTED;
 }
 
 String HAL_ESP32::wifiGetSSID() { return WiFi.SSID(); }
@@ -217,7 +217,7 @@ void HAL_ESP32::wifiSetAutoReconnect(bool autoReconnect) {
   WiFi.setAutoReconnect(autoReconnect);
 }
 
-int HAL_ESP32::wifiGetStatus() { return WiFiClass::status(); }
+int HAL_ESP32::wifiGetStatus() { return WiFi.status(); }
 
 int HAL_ESP32::tlsClientsInFlight() {
   return tls_in_flight_.load(std::memory_order_acquire);
@@ -721,15 +721,21 @@ void HAL_ESP32::webServerEnd() {
 // ========================================================================
 
 void HAL_ESP32::pwmSetup(uint8_t channel, uint32_t freq, uint8_t resolution) {
-  ledcSetup(channel, freq, resolution);
+  (void)channel;  // 3.x LEDC is pin-based; channel is opaque in this HAL.
+  pwmFreq_ = freq;
+  pwmResolution_ = resolution;
 }
 
 void HAL_ESP32::pwmAttachPin(uint8_t pin, uint8_t channel) {
-  ledcAttachPin(pin, channel);
+  if (channel < sizeof(pwmPinForChannel_)) {
+    pwmPinForChannel_[channel] = pin;
+  }
+  ledcAttach(pin, pwmFreq_, pwmResolution_);
 }
 
 void HAL_ESP32::pwmWrite(uint8_t channel, uint32_t duty) {
-  ledcWrite(channel, duty);
+  uint8_t pin = (channel < sizeof(pwmPinForChannel_)) ? pwmPinForChannel_[channel] : channel;
+  ledcWrite(pin, duty);
 }
 
 // ========================================================================
@@ -1725,9 +1731,9 @@ bool HAL_ESP32::sha256Verify(const uint8_t *data, size_t data_length,
   mbedtls_sha256_context ctx;
 
   mbedtls_sha256_init(&ctx);
-  mbedtls_sha256_starts_ret(&ctx, false);  // false = SHA256 (not SHA224)
-  mbedtls_sha256_update_ret(&ctx, data, data_length);
-  mbedtls_sha256_finish_ret(&ctx, hash);
+  mbedtls_sha256_starts(&ctx, false);  // false = SHA256 (not SHA224)
+  mbedtls_sha256_update(&ctx, data, data_length);
+  mbedtls_sha256_finish(&ctx, hash);
   mbedtls_sha256_free(&ctx);
 
   // Convert hash to hex string
