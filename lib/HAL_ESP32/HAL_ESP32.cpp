@@ -823,6 +823,18 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
     return nullptr;
   }
 
+  // Serialize outbound TLS: refuse a new handshake while one is already in
+  // flight. Concurrent TLS connections (e.g. weather + LLM + OTA check firing
+  // close together) correlate with the AsyncTCP/lwIP soft-wedge under load
+  // (loop alive, network dead — see memory soft-wedge-is-tls-gated-not-web).
+  // Callers already treat a null client as "try again later" (WeatherManager/
+  // LlmWeatherDecider/UpdateManager retry on their own schedules), so this is
+  // safe to refuse rather than queue.
+  if (tls_in_flight_.load(std::memory_order_acquire) > 0) {
+    Serial.println("[HAL_ESP32] createSecureClient: refusing TLS alloc, another TLS client in flight");
+    return nullptr;
+  }
+
   // Refuse the TLS allocation when free heap is too low or fragmented to hold
   // the mbedtls context. The constructor's internal `new` would otherwise throw
   // std::bad_alloc; with -fexceptions enabled and no catch handler on the loop
