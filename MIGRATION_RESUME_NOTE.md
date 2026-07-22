@@ -84,8 +84,75 @@ build_flags =
 ## Reusable stress tooling (scratchpad)
 
 - `realistic_load.sh <ip> <dur>` — realistic browser+TLS load (the repro).
-- `crash_watch.py <ip> <dur>` — reboot/wedge tally with reset reasons.
+- `crash_watch.py <ip> <dur> [poll_s]` — reboot/wedge tally with reset reasons.
 - `serial_cap.py <port> <baud> <log>` — reconnecting serial capture (use
   `~/.platformio/penv/bin/python`, it has pyserial 3.5).
 - Decode coredumps: `xtensa-esp32-elf-addr2line -pfiaC -e
   .pio/build/esp32-dev/firmware.elf <frames>`.
+
+## 2026-07-21 session findings (this branch, fix/framework-migration-v2)
+
+### Migration applied — pioarduino 55.03.39 (arduino-esp32 3.3.9 / IDF 5.5.4 / mbedtls 3.x)
+
+- `platform` → pioarduino `55.03.39` tag. **Pinned to a tag, NOT the rolling
+  `stable` zip**: the rolling zip's framework spec drifts, triggering pioarduino's
+  reinstall path, which crashes under Python 3.14 (`exists(None)` in
+  `safe_framework_cleanup`). A pinned tag gives a deterministic package spec.
+- `build_type = release` + explicit `-Os -g` for esp32-dev: the larger 3.x
+  toolchain image is ~34KB too big for the 0x1B0000 OTA partition in debug (PIO
+  debug injects `-Og`, overriding `-Os`). Image is ~1580 KB, ~148 KB headroom.
+- 3.x API code changes: `WiFiClass::status()` → `WiFi.status()` (4 sites incl.
+  the v0.8.x wifi-connect guard cluster the prior attempt missed); LEDC
+  channel→pin-based (`ledcAttach`/`ledcWrite`) bridged via HAL members; mbedtls
+  `_ret`→non-`_ret` SHA256 (HAL + UpdateManager + desktop mock aliases); IDF 5.x
+  `esp_task_wdt_config_t` + `esp_task_wdt_reconfigure` fallback, moved before
+  `wifiController.begin`.
+- `build_scripts/ensure_pioarduino_backup.py` (pre:): works around the pioarduino
+  `checkprogsize` restore race that intermittently fails non-LTO builds.
+- **841/841 desktop tests pass.**
+
+### TLS heap pressure — RESOLVED with a conservative lean config
+
+Stock pioarduino mbedtls is fat: with ~90KB free but only ~34-55KB largest
+contiguous block, the TLS handshake fails with `(-10368) X509 - Allocation of
+memory failed` (weather) and `(-17040) RSA BIGNUM alloc failed` (LLM/ollama).
+Fix: `custom_sdkconfig = file://build_scripts/lean_mbedtls.sdkconfig` with ONLY
+the link-safe trims (keeps the full cipher/curve set so NetworkClientSecure's
+ssl_client.cpp still links):
+  - `CONFIG_BT_ENABLED=n` + BLE Mesh off — the single biggest static-RAM win.
+  - `CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096` (from 16384) — frees ~12KB per TLS
+    context. IN stays at 16384 (server responses can approach 16KB).
+  - `CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n`.
+Aggressive trims (ECP curves, key exchanges) link-fail and are NOT used. With
+this config, weather + LLM TLS succeed; heap ~119KB free / 55KB max_alloc.
+
+### Known issue: OTA manifest check truncates on 3.x (NOT blocking the migration)
+
+`/update/check` fetches `api.github.com/.../releases/latest` (~14KB JSON over
+TLS, multiple TLS records). On 3.x the body truncates at ~6-8KB →
+`IncompleteInput`/`InvalidInput` parse error. Prod (.8, 2.x firmware) parses it
+fine, so this is a 3.x regression. Root cause: `WiFiClientSecure::read()` guards
+on `available() > 0` (line 273), and `available()` peeks `mbedtls_ssl_read(NULL,
+0)` which returns 0 between TLS records WITHOUT fetching the next record from
+the socket — so `read()` returns -1 and the loop times out waiting for data that
+needs a blocking socket recv to arrive. Attempts that did NOT fix it:
+keep-alive header, `readBytes()` (same guard), 1s/5s no-progress grace windows,
+symmetric 16KB/16KB buffers. Weather/LLM/Telegram TLS (small, single-record
+responses) are unaffected. OTA *install* (httpGetStream, binary download) uses
+the same `available()`-gated loop and likely has the same issue for large
+downloads — verify before relying on OTA install on 3.x. This needs a deeper
+fix (fork ssl_client.cpp to add a blocking recv, or a different HTTP client) and
+is deferred. The crash-fix value of the migration is not blocked by it.
+
+### Feature validation on USB board 192.168.2.99 (in progress / done)
+
+- WiFi connect (BSSID-preferred, Browns): OK, RSSI -67, IP .99.
+- Heap telemetry: ~119KB free / 55KB max_alloc, healthy under load.
+- Door/pump/light/buzzer control endpoints: OK (actions acknowledged).
+- Sun times: 06:10 / 20:56 (correct for Smithfield UT).
+- Settings persistence (POST /update_settings + readback): OK.
+- Reset-reason display: OK ("Power-on", code 1).
+- Weather fetch (TLS): OK — 91.1°F Clouds, forecast retrieved.
+- LLM decider (TLS): OK — connection test passes, decider active.
+- OTA check (TLS): FAILS — truncation above; documented as known issue.
+- Crash repro (realistic_load.sh 1500s + crash_watch.py): see results below.

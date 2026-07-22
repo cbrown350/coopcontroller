@@ -1,0 +1,58 @@
+# Conservative IDF/mbedtls config for the pioarduino platform (arduino-esp32
+# 3.3.9 / IDF 5.5.4 / mbedtls 3.x).
+#
+# Goal: relieve heap pressure so the TLS handshake succeeds. Stock pioarduino
+# ships a fat config; with ~90KB free but only ~34-55KB largest contiguous
+# block, the X509 cert parse during the handshake fails with
+# `(-10368) X509 - Allocation of memory failed` (observed on the USB board
+# against api.openweathermap.org and ollama.com, 2026-07-21).
+#
+# CONSERVATIVE BY DESIGN — this file applies ONLY the trims proven link-safe on
+# this project. An earlier attempt trimmed ECP curves and key exchanges; that
+# link-failed because NetworkClientSecure's ssl_client.cpp is tightly coupled
+# to the stock cipher/curve set (undefined refs to ssl_init, start_ssl_client,
+# etc.). So here we keep the FULL cipher/curve set and only cut:
+#   - Bluetooth (Bluedroid + BLE Mesh — the single biggest static-RAM consumer,
+#     and unused by this project).
+#   - TLS I/O buffers 16KB -> 8KB in / 4KB out (~24KB freed per TLS context,
+#     directly relieving the handshake heap pressure). Our responses are small
+#     JSON (<16KB); 8K/4K is plenty.
+#   - Don't keep peer cert after handshake (frees heap while conn lives).
+#
+# Kept (what our endpoints use: openweather, ollama, telegram, mailjet, github):
+#   ALL ECP curves, ALL key exchanges, TLS 1.2, RSA, ECDSA, AES-GCM/CCM, SHA256.
+#
+# Referenced via custom_sdkconfig = file://... in platformio.ini. The pioarduino
+# builder reads it, triggers a one-time recompile of the IDF/mbedtls libs from
+# source, and writes the generated full config to ./sdkconfig.defaults
+# (gitignored). This file is NOT overwritten — only sdkconfig.defaults is.
+
+# ---- mbedTLS: shrink the TLS OUT buffer only ----
+# Default I/O buffers are 16384 each (32KB per TLS context). The IN buffer stays
+# at 16384: server responses (e.g. GitHub's ~14KB releases/latest manifest) can
+# approach 16KB. The OUT buffer only carries our small HTTP requests, so 4KB is
+# plenty and frees ~12KB per TLS context — that headroom is what lets the RSA
+# handshake succeed (stock 32KB-per-context OOM'd with -10368 / -17040).
+CONFIG_MBEDTLS_SSL_MAX_CONTENT_LEN=16384
+CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN=y
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
+
+# Don't keep peer cert after handshake (frees heap while the connection lives).
+CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n
+
+# ---- Disable big unused IDF components to free static RAM ----
+# Bluetooth (Bluedroid + BLE Mesh is the single biggest static consumer on ESP32).
+CONFIG_BT_ENABLED=n
+CONFIG_BTDM_CTRL_MODE_BTDM=n
+CONFIG_BT_NIMBLE_ENABLED=n
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BLE_MESH=n
+
+# PPP over serial (not used).
+CONFIG_LWIP_PPP_SUPPORT=n
+
+# esp-modbus component asserts FMB_MASTER_MAX_API_BLOCKING_TIME_MS >=
+# FMB_MASTER_TIMEOUT_MS_RESPOND. We don't use modbus; set blocking high so the
+# assertion holds if the component still compiles.
+CONFIG_FMB_MASTER_MAX_API_BLOCKING_TIME_MS=15000

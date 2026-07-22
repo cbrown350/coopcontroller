@@ -968,6 +968,10 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     //      fragmentation on this memory-constrained device.
     // Content-Length bounds the read exactly when present; the cap protects the
     // loop-task heap for responses that omit it.
+    // NOTE (3.x): on arduino-esp32 3.3.9 / mbedtls 3.x this loop can truncate a
+    // multi-record response short of Content-Length — see the known-issue note
+    // in MIGRATION_RESUME_NOTE.md. Weather/LLM/Telegram TLS (small responses,
+    // single record) are unaffected.
     const size_t maxBody = 65535;  // JSON payloads are small; binaries use httpGetStream
     if (contentLength > 0) {
       response.reserve((size_t)contentLength < maxBody ? (size_t)contentLength : maxBody);
