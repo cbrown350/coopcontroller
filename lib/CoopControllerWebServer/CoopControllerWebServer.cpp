@@ -22,6 +22,32 @@
 #include <ElegantOTA.h>
 #include <ArduinoOTA.h>
 
+String escapeJsonString(const String &input) {
+    String out;
+    out.reserve(input.length());
+    for (size_t i = 0; i < input.length(); i++) {
+        char c = input[i];
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            case '\b': out += "\\b";  break;
+            case '\f': out += "\\f";  break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[7];
+                    snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out += c;
+                }
+        }
+    }
+    return out;
+}
+
 // Validate a WiFi BSSID preference string. Accepts colon or hyphen separated
 // hex (XX:XX:XX:XX:XX:XX / XX-XX-... ) or 12 contiguous hex digits. Empty
 // string is valid (means auto-select). Returns true and fills normalized
@@ -1235,7 +1261,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                           // Write log entries one at a time
                           while (state->current < state->total && written < maxLen) {
-                              int bufIdx = (state->startIndex + static_cast<int>(state->current)) % 150;
+                              int bufIdx = (state->startIndex + static_cast<int>(state->current)) % Logger::getMaxLogEntries();
                               // getLogEntryAt returns a by-value snapshot taken under
                               // the log mutex; binding it to a const ref extends the
                               // temporary's lifetime for this iteration so the main
@@ -1245,16 +1271,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                               String point;
                               if (state->current > 0) point += ",";
                               point += "{\"uuid\":\"";
-                              point += entry.uuid;
+                              point += escapeJsonString(entry.uuid);
                               point += "\",\"timestamp\":";
                               point += String(entry.timestamp);
                               point += ",\"message\":\"";
-                              // Escape quotes and backslashes in message
-                              for (size_t i = 0; entry.message[i] != '\0'; i++) {
-                                  char c = entry.message[i];
-                                  if (c == '"' || c == '\\') point += '\\';
-                                  point += c;
-                              }
+                              point += escapeJsonString(entry.message);
                               point += "\",\"level\":\"";
                               point += logger.logLevelToString(entry.level);
                               point += "\"}";

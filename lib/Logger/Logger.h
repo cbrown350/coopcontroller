@@ -48,7 +48,7 @@ struct LogEntry
  *
  * - Singleton pattern for global access
  * - Multiple log levels (VERBOSE, DEBUG, INFO, WARNING, ERROR)
- * - Circular buffer for log entries (150 entries max)
+ * - Circular buffer for log entries (MAX_LOG_ENTRIES max)
  * - JSON export for web API
  * - Syslog integration for remote logging
  * - UUID generation for each log entry
@@ -62,7 +62,7 @@ class Logger
 {
 private:
   IHAL* hal;                                 ///< Hardware abstraction layer
-  static const int MAX_LOG_ENTRIES = 150;    ///< Maximum number of log entries in buffer
+  static const int MAX_LOG_ENTRIES = 50;     ///< Maximum number of log entries in buffer
   mutable LogEntry logBuffer[MAX_LOG_ENTRIES]; ///< Circular buffer for log entries
   mutable int currentIndex;                  ///< Current index in circular buffer
   mutable int totalEntries;                  ///< Total entries logged (for overflow detection)
@@ -193,9 +193,17 @@ public:
   /**
    * @brief Get current number of log entries
    *
-   * @return Number of entries in buffer (max 150)
+   * @return Number of entries in buffer (max MAX_LOG_ENTRIES)
    */
   int getLogCount() const;
+
+  /**
+   * @brief Get the circular buffer's fixed capacity
+   *
+   * Callers that iterate the buffer by raw index (e.g. the /logs chunked
+   * streaming handler) must wrap against this, not a hardcoded constant.
+   */
+  static int getMaxLogEntries() { return MAX_LOG_ENTRIES; }
 
   /**
    * @brief Get a copy of a log entry by raw buffer index (for chunked streaming)

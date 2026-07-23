@@ -164,6 +164,20 @@ TEST_F(LoggerTest, LogBufferLimit) {
     EXPECT_TRUE(json.indexOf("Message 159 ") >= 0);
 }
 
+TEST_F(LoggerTest, LogBufferRetainsMostRecentFiftyEntries) {
+    Logger& logger_instance = Logger::getInstance();
+
+    for (int i = 0; i < 60; ++i) {
+        logger_instance.logfInfo("Message %d", i);
+    }
+
+    EXPECT_EQ(logger_instance.getLogCount(), 50);
+
+    String json = logger_instance.getLogsAsJson();
+    EXPECT_EQ(json.indexOf("Message 9"), -1);
+    EXPECT_NE(json.indexOf("Message 59"), -1);
+}
+
 // Test log level to string conversion
 TEST_F(LoggerTest, LogLevelToString) {
     Logger& logger_instance = Logger::getInstance();

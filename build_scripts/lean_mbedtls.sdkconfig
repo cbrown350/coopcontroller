@@ -65,6 +65,22 @@ CONFIG_BT_NIMBLE_ENABLED=n
 CONFIG_BT_BLUEDROID_ENABLED=n
 CONFIG_BLE_MESH=n
 
+# Ethernet. The project is WiFi-only (no ETH HAL references anywhere in src/lib).
+# The ETH MAC/PHY driver reserves several KB of static DRAM even when unused;
+# disabling it would free static RAM and raise the largest-contiguous-block
+# ceiling (pinned at 55284 bytes on prod, below what ESPAsyncWebServer addHeader
+# / mbedtls X509 parse need under concurrent TLS+web load — observed prod
+# panics 2026-07-22). HOWEVER disabling ETH_USE_ESP32_EMAC / ETH_USE_SPI_ETHERNET
+# (the selectors that force ETH_ENABLED=y) breaks the espressif__lan867x managed
+# component (an ETH PHY driver pulled in transitively, unused by this project),
+# which fails to find esp_eth_driver.h. Reverted until the unused managed
+# components (lan867x, lan86xx_common, esp_rainmaker, esp_modem) are pruned.
+# The web-send heap gate in HAL_ESP32.cpp (ESP32WebResponseWrapper::send) is
+# the active fix for the bad_alloc death spiral in the meantime.
+# CONFIG_ETH_ENABLED=n
+# CONFIG_ETH_USE_ESP32_EMAC=n
+# CONFIG_ETH_USE_SPI_ETHERNET=n
+
 # PPP over serial (not used).
 CONFIG_LWIP_PPP_SUPPORT=n
 

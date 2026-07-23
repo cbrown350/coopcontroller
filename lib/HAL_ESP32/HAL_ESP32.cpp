@@ -13,6 +13,7 @@
 #include <esp32-hal-ledc.h> // For LEDC functions
 #include <esp_system.h>     // For esp_reset_reason()
 #include <esp_task_wdt.h>   // For esp_task_wdt_reset()
+#include <esp_heap_caps.h>  // For ordinary-malloc heap capacity
 #include <Preferences.h>      // For NVS access
 #include <mbedtls/sha256.h>  // For SHA256 verification
 #include <freertos/semphr.h>  // For FreeRTOS mutex
@@ -24,6 +25,21 @@
 // diagnosable over HTTP without trusting serial capture (which drops lines
 // under load on this board). Written ONLY by httpGet; read by UpdateManager.
 String g_http_get_diag = "";  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+// Minimum largest-contiguous ordinary-malloc block required to attempt building
+// a full AsyncWebServer response (beginResponse + addHeader). Below
+// this, the response send paths send a minimal 500 instead of risking a
+// bad_alloc that, via __cxa_allocate_exception failure, reaches std::terminate
+// and reboots the board. Decoded prod backtrace 2026-07-22: panic_abort <-
+// std::terminate <- __cxa_allocate_exception <- operator new <-
+// AsyncWebServerRequest::beginResponse. File-scope (not a HAL_ESP32 member) so
+// the ESP32WebResponseWrapper class can see it.
+//
+static constexpr uint32_t WEB_RESP_MIN_MAX_ALLOC = 32768;
+
+static uint32_t getDefaultMaxAllocHeap() {
+  return heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
+}
 
 /**
  * @brief Constructor
@@ -114,10 +130,11 @@ uint32_t HAL_ESP32::getHeapSize() { return ESP.getHeapSize(); }
 
 uint32_t HAL_ESP32::getMinFreeHeap() { return ESP.getMinFreeHeap(); }
 
-// Largest contiguous internal-RAM block (heap_caps_get_largest_free_block).
-// Diverges from getFreeHeap() under fragmentation; this is the number that
-// actually gates a big contiguous alloc like the mbedtls TLS context.
-uint32_t HAL_ESP32::getMaxAllocHeap() { return ESP.getMaxAllocHeap(); }
+// Largest contiguous ordinary-malloc block. ESP.getMaxAllocHeap() includes
+// internal 8-bit IRAM pools unavailable to malloc()/operator new, so it can
+// overstate the allocation headroom that AsyncWebServer and mbedtls actually
+// have (observed on the USB board: 55284 reported vs 38900 usable under TLS).
+uint32_t HAL_ESP32::getMaxAllocHeap() { return getDefaultMaxAllocHeap(); }
 
 const char *HAL_ESP32::getChipModel() { return ESP.getChipModel(); }
 
@@ -438,6 +455,25 @@ public:
 
   void send(int code, const char *contentType, const char *body) override {
     if (request_ == nullptr || responseSent_) return;
+    // Heap gate: beginResponse + addHeader allocate via operator new inside
+    // ESPAsyncWebServer (std::list emplace_back for headers). Under the heap
+    // fragmentation this board sees at boot (max_alloc pinned ~55KB, and it
+    // drops further while a TLS context is live), that new can throw bad_alloc.
+    // The handler-level try/catch can't always catch it: __cxa_allocate_exception
+    // itself allocates and can fail too, hitting std::terminate -> abort ->
+    // panic reboot (decoded prod backtrace 2026-07-22: panic_abort <-
+    // std::terminate <- __cxa_allocate_exception <- operator new <-
+    // AsyncWebServerRequest::beginResponse). Refuse the full response when the
+    // largest contiguous block is too small, and send a minimal 500 instead so
+    // the request fails gracefully instead of taking down the device.
+    uint32_t maxAllocHeap = getDefaultMaxAllocHeap();
+    if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
+      Serial.printf("[HAL_ESP32] send: default_max_alloc %u too low, sending 500\r\n",
+                    (unsigned)maxAllocHeap);
+      request_->send(500, "text/plain", "low memory");
+      responseSent_ = true;
+      return;
+    }
     AsyncWebServerResponse *response = request_->beginResponse(code, contentType, body);
     if (response == nullptr) return;
     // Add any custom headers
@@ -450,6 +486,16 @@ public:
 
   void sendFile(const char *path, const char *contentType) override {
     if (request_ == nullptr || responseSent_) return;
+    // Same heap gate as send(): beginResponse + addHeader allocate via operator
+    // new and can throw bad_alloc under fragmentation. See send().
+    uint32_t maxAllocHeap = getDefaultMaxAllocHeap();
+    if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
+      Serial.printf("[HAL_ESP32] sendFile: default_max_alloc %u too low, sending 500\r\n",
+                    (unsigned)maxAllocHeap);
+      request_->send(500, "text/plain", "low memory");
+      responseSent_ = true;
+      return;
+    }
     // For file sending, headers need to be added differently
     // AsyncWebServer's send(LittleFS, path) doesn't support custom headers easily
     // We'll create a response manually if we have custom headers
@@ -482,6 +528,16 @@ public:
 
   void sendChunked(int code, const char* contentType, ChunkedFillCallback callback) override {
     if (request_ == nullptr) return;
+    // Same heap gate as send(): beginChunkedResponse + addHeader allocate via
+    // operator new and can throw bad_alloc under fragmentation. See send().
+    uint32_t maxAllocHeap = getDefaultMaxAllocHeap();
+    if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
+      Serial.printf("[HAL_ESP32] sendChunked: default_max_alloc %u too low, sending 500\r\n",
+                    (unsigned)maxAllocHeap);
+      request_->send(500, "text/plain", "low memory");
+      responseSent_ = true;
+      return;
+    }
     auto response = request_->beginChunkedResponse(contentType,
         [callback](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
             // This filler runs on the async_tcp task per chunk; a throw here
@@ -851,9 +907,9 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
     return nullptr;
   }
 
-  // Boundary diagnostic: record the true contiguous/free values at the exact
-  // TLS-alloc moment. Kept from the fragmentation investigation — cheap, and it
-  // pins the last-known heap state before any network op if one is needed.
+  // Boundary diagnostic: heap state at the exact TLS-alloc moment. Now that
+  // getMaxAllocHeap() reports the malloc-default pool (not the broad internal
+  // pool), max_alloc is the true largest block a TLS context could occupy.
   Serial.printf("[HAL_ESP32] createSecureClient: alloc TLS ctx (free %u, max_alloc %u)\r\n",
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 
@@ -1613,18 +1669,30 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   if (portIndex != -1) { port = host.substring(portIndex + 1).toInt(); host = host.substring(0, portIndex); }
 
   unsigned long startTime = ::millis();
+  // A TLS connect/handshake is a blocking call inside NetworkClientSecure, so
+  // it cannot feed the 30s loop-task watchdog. Bound it below that timeout;
+  // response waiting below remains allowed to use the caller's full budget and
+  // feeds the watchdog while it does so.
+  unsigned long tlsConnectTimeoutMs = timeout_ms > 15000UL ? 15000UL : timeout_ms;
 
   // Plain HTTP path uses a non-TLS WiFiClient so LAN endpoints (Rapid-MLX on
   // :8000, local Ollama on :11434) work — httpPost() above is TLS-only.
   std::unique_ptr<WiFiClient> plainHolder;
   SecureClientPtr tlsHolder;
   if (useTls) {
-    tlsHolder = createSecureClient(timeout_ms);
+    tlsHolder = createSecureClient(tlsConnectTimeoutMs);
     if (tlsHolder == nullptr) {
       Serial.println("[HAL_ESP32] httpPostAuth: TLS client unavailable (low memory), aborting");
       return "";
     }
-    if (!tlsHolder->connect(host.c_str(), port, timeout_ms)) return "";
+    if (!tlsHolder->connect(host.c_str(), port, tlsConnectTimeoutMs)) {
+      char errorText[128] = {};
+      int errorCode = tlsHolder->lastError(errorText, sizeof(errorText));
+      Serial.printf("[HAL_ESP32] httpPostAuth: TLS connect failed host=%s err=%d (%s) free=%u max_alloc=%u\r\n",
+                    host.c_str(), errorCode, errorText,
+                    (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+      return "";
+    }
   } else {
     // Same WiFi-connected + low-heap guards as the TLS path: skip the request
     // entirely if the link is down (no point POSTing over a dead STA) or if
@@ -1667,6 +1735,12 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
     String line;
     unsigned long deadline = startTime + timeout_ms;
     while (::millis() < deadline) {
+      // httpPostAuth runs from loopTask for weather/LLM work. A cloud model can
+      // legitimately wait tens of seconds before its first response byte; feed
+      // the subscribed task watchdog while this deadline-bounded external I/O
+      // wait is intentional. The TLS socket timeout remains capped at 15s, so
+      // no single read can mask a genuine task hang past the 30s watchdog.
+      esp_task_wdt_reset();
       int c = client->read();
       if (c < 0) {
         if (!client->connected() && client->available() == 0) break;
@@ -1693,6 +1767,9 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   }
 
   if (statusCode < 200 || statusCode >= 300) {
+    Serial.printf("[HAL_ESP32] httpPostAuth: non-2xx status=%d host=%s free=%u max_alloc=%u\r\n",
+                  statusCode, host.c_str(),
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
     if (useTls) tlsHolder->stop(); else plainHolder->stop();
     return "";
   }
@@ -1705,6 +1782,9 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   // deadline (startTime + timeout_ms) still bounds the call end-to-end.
   String response;
   while (::millis() < deadline) {
+    // See readLine(): this is bounded external model I/O on loopTask, so feed
+    // the task watchdog while waiting for the configured request deadline.
+    esp_task_wdt_reset();
     int c = (useTls ? tlsHolder->read() : plainHolder->read());
     if (c < 0) {
       bool connected = useTls ? tlsHolder->connected() : plainHolder->connected();
@@ -1718,6 +1798,11 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   }
 
   if (useTls) tlsHolder->stop(); else plainHolder->stop();
+  if (response.length() == 0) {
+    Serial.printf("[HAL_ESP32] httpPostAuth: 2xx but empty body host=%s timeout=%lu elapsed=%lu free=%u max_alloc=%u\r\n",
+                  host.c_str(), timeout_ms, (unsigned long)(::millis() - startTime),
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  }
   return response;
 }
 

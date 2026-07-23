@@ -353,6 +353,8 @@ void setup() // NOSONAR - complexity ok
                 logger.logfInfo("Timezone auto-detected from coordinates (%.2f, %.2f): %s", lat, lon, tzPosix.c_str());
             }
         }
+        IPAddress ntpAddress;
+        WiFi.hostByName(ntpServer, ntpAddress);
         if (tzPosix.length() > 0) {
             configTzTime(tzPosix.c_str(), ntpServer);
             logger.logfInfo("Timezone set via POSIX string: %s", tzPosix.c_str());

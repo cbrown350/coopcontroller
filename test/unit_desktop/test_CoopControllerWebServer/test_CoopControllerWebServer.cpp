@@ -398,4 +398,30 @@ TEST(ResetReasonTest, UnknownCodeFallsBackGracefully) {
     EXPECT_STREQ(resetReasonToString(255), "Other");
 }
 
+// /logs endpoint bug: a log message containing a raw newline (e.g. from a
+// multi-line httpGet diagnostic or a Telegram command echo) produced an
+// unescaped control character inside the JSON string literal, which fails
+// JSON.parse() client-side ("Bad control character in string literal").
+// escapeJsonString must escape quotes/backslashes (already handled before)
+// AND all control characters 0x00-0x1F per RFC 8259.
+TEST(EscapeJsonStringTest, EscapesNewlineAndCarriageReturn) {
+    EXPECT_STREQ(escapeJsonString("line1\nline2").c_str(), "line1\\nline2");
+    EXPECT_STREQ(escapeJsonString("a\rb").c_str(), "a\\rb");
+}
+
+TEST(EscapeJsonStringTest, EscapesTabAndOtherControlChars) {
+    EXPECT_STREQ(escapeJsonString("a\tb").c_str(), "a\\tb");
+    // A generic control byte (not one of the named escapes) uses \u00XX form.
+    EXPECT_STREQ(escapeJsonString(String("a") + String((char)0x01) + String("b")).c_str(), "a\\u0001b");
+}
+
+TEST(EscapeJsonStringTest, StillEscapesQuotesAndBackslashes) {
+    EXPECT_STREQ(escapeJsonString("say \"hi\"").c_str(), "say \\\"hi\\\"");
+    EXPECT_STREQ(escapeJsonString("C:\\path").c_str(), "C:\\\\path");
+}
+
+TEST(EscapeJsonStringTest, LeavesPlainTextUnchanged) {
+    EXPECT_STREQ(escapeJsonString("plain message").c_str(), "plain message");
+}
+
 // Note: main function is provided by desktop_main.cpp
