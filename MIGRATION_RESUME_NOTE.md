@@ -1,5 +1,26 @@
 # Framework Migration — Resume Note (fix/framework-migration-v2)
 
+**STATUS 2026-07-23: async_tcp bad_alloc crash family ROOT-CAUSED AND FIXED.**
+Four prior sessions treated this as one unsolvable OOM problem while iterating
+on app-level heap gates. This session found three distinct, previously-missed
+root causes (Logger's 45.7KB static buffer, a genuine SNTP/DNS boot-order race,
+and ESPAsyncWebServer's own throwing `new` in its TCP-accept path — patched via
+`build_scripts/patch_async_webserver.py`) and fixed all three. Stress-tested
+(8 workers + weather/OTA/LLM TLS, 25 min): **zero bad_alloc panics**, down from
+3-4 per run previously. A distinct residual (Task-watchdog resets under extreme
+sustained load — async_tcp's LittleFS reads vs. raw mbedtls ECDH handshake math,
+both exceeding the 30s watchdog) was reduced 4→2 crashes via async_tcp core-
+pinning and accepted as documented residual (self-recovering, no data loss, not
+hit at realistic usage levels). Full details: project memory
+`async-tcp-crash-root-caused-and-fixed.md`.
+
+**OTA INSTALL still broken** by the deep IDF 5.5.4 lwIP TCP stall on large TLS
+downloads documented below — separate, unresolved issue, needs an IDF/lwIP fix
+or ElegantOTA-as-primary fallback.
+
+<details>
+<summary>Original 2026-07-22 status (superseded above, kept for history)</summary>
+
 **STATUS 2026-07-22: OTA CHECK FIXED and reliable (5/5 on USB board
 192.168.2.99). OTA INSTALL still broken by a deep IDF 5.5.4 lwIP TCP stall
 on large TLS downloads — see "BLOCKING BUG (install path)" below.** The
@@ -7,6 +28,8 @@ addHeader crash, the TLS heap-pressure crash, and the OTA check are all fixed
 and validated. The soft-wedge is converted to a self-recovering panic under a
 load test far heavier than real usage. Next session: resolve the install path
 (needs an IDF/lwIP fix or an ElegantOTA-as-primary fallback), then ship.
+
+</details>
 
 **Branch created:** 2026-07-21, off `master` @ `e92b92d` (v0.8.3 — includes the
 `getMaxAllocHeap` instrumentation + syslog rate limiter, which the migration
