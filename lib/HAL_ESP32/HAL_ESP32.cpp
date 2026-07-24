@@ -13,11 +13,33 @@
 #include <esp32-hal-ledc.h> // For LEDC functions
 #include <esp_system.h>     // For esp_reset_reason()
 #include <esp_task_wdt.h>   // For esp_task_wdt_reset()
+#include <esp_heap_caps.h>  // For ordinary-malloc heap capacity
 #include <Preferences.h>      // For NVS access
 #include <mbedtls/sha256.h>  // For SHA256 verification
 #include <freertos/semphr.h>  // For FreeRTOS mutex
 #include <exception>          // For std::exception in web-handler guards
 #include "HttpRequestBuilder.h"  // Shared GET request builder (adds User-Agent)
+
+// Last-read-loop diagnostic from HAL_ESP32::httpGet, surfaced through
+// /update/check_result so the OTA-truncation bug (framework-migration-v2) is
+// diagnosable over HTTP without trusting serial capture (which drops lines
+// under load on this board). Written ONLY by httpGet; read by UpdateManager.
+String g_http_get_diag = "";  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+// Minimum largest-contiguous ordinary-malloc block required to attempt building
+// a full AsyncWebServer response (beginResponse + addHeader). Below
+// this, the response send paths send a minimal 500 instead of risking a
+// bad_alloc that, via __cxa_allocate_exception failure, reaches std::terminate
+// and reboots the board. Decoded prod backtrace 2026-07-22: panic_abort <-
+// std::terminate <- __cxa_allocate_exception <- operator new <-
+// AsyncWebServerRequest::beginResponse. File-scope (not a HAL_ESP32 member) so
+// the ESP32WebResponseWrapper class can see it.
+//
+static constexpr uint32_t WEB_RESP_MIN_MAX_ALLOC = 32768;
+
+static uint32_t getDefaultMaxAllocHeap() {
+  return heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
+}
 
 /**
  * @brief Constructor
@@ -108,10 +130,11 @@ uint32_t HAL_ESP32::getHeapSize() { return ESP.getHeapSize(); }
 
 uint32_t HAL_ESP32::getMinFreeHeap() { return ESP.getMinFreeHeap(); }
 
-// Largest contiguous internal-RAM block (heap_caps_get_largest_free_block).
-// Diverges from getFreeHeap() under fragmentation; this is the number that
-// actually gates a big contiguous alloc like the mbedtls TLS context.
-uint32_t HAL_ESP32::getMaxAllocHeap() { return ESP.getMaxAllocHeap(); }
+// Largest contiguous ordinary-malloc block. ESP.getMaxAllocHeap() includes
+// internal 8-bit IRAM pools unavailable to malloc()/operator new, so it can
+// overstate the allocation headroom that AsyncWebServer and mbedtls actually
+// have (observed on the USB board: 55284 reported vs 38900 usable under TLS).
+uint32_t HAL_ESP32::getMaxAllocHeap() { return getDefaultMaxAllocHeap(); }
 
 const char *HAL_ESP32::getChipModel() { return ESP.getChipModel(); }
 
@@ -154,9 +177,9 @@ bool HAL_ESP32::wifiBegin(const char *ssid, const char *password) {
   // when stuck in CONNECT_FAILED/DISCONNECTED, where the radio genuinely
   // needs a clean restart to associate again.
   if (WiFiClass::getMode() & WIFI_MODE_STA) {
-    if (WiFiClass::status() == WL_CONNECT_FAILED ||
-        WiFiClass::status() == WL_CONNECTION_LOST ||
-        WiFiClass::status() == WL_DISCONNECTED) {
+    if (WiFi.status() == WL_CONNECT_FAILED ||
+        WiFi.status() == WL_CONNECTION_LOST ||
+        WiFi.status() == WL_DISCONNECTED) {
       WiFiClass::mode(WIFI_OFF);
     }
   }
@@ -168,9 +191,9 @@ bool HAL_ESP32::wifiBegin(const char *ssid, const char *password) {
 bool HAL_ESP32::wifiBeginWithBSSID(const char *ssid, const char *password, const uint8_t *bssid) {
   WiFi.setSleep(WIFI_PS_NONE);
   if (WiFiClass::getMode() & WIFI_MODE_STA) {
-    if (WiFiClass::status() == WL_CONNECT_FAILED ||
-        WiFiClass::status() == WL_CONNECTION_LOST ||
-        WiFiClass::status() == WL_DISCONNECTED) {
+    if (WiFi.status() == WL_CONNECT_FAILED ||
+        WiFi.status() == WL_CONNECTION_LOST ||
+        WiFi.status() == WL_DISCONNECTED) {
       WiFiClass::mode(WIFI_OFF);
     }
   }
@@ -194,7 +217,7 @@ bool HAL_ESP32::wifiSetHostname(const char *hostName_) {
 }
 
 bool HAL_ESP32::wifiIsConnected() {
-  return WiFiClass::status() == WL_CONNECTED;
+  return WiFi.status() == WL_CONNECTED;
 }
 
 String HAL_ESP32::wifiGetSSID() { return WiFi.SSID(); }
@@ -217,7 +240,7 @@ void HAL_ESP32::wifiSetAutoReconnect(bool autoReconnect) {
   WiFi.setAutoReconnect(autoReconnect);
 }
 
-int HAL_ESP32::wifiGetStatus() { return WiFiClass::status(); }
+int HAL_ESP32::wifiGetStatus() { return WiFi.status(); }
 
 int HAL_ESP32::tlsClientsInFlight() {
   return tls_in_flight_.load(std::memory_order_acquire);
@@ -432,6 +455,25 @@ public:
 
   void send(int code, const char *contentType, const char *body) override {
     if (request_ == nullptr || responseSent_) return;
+    // Heap gate: beginResponse + addHeader allocate via operator new inside
+    // ESPAsyncWebServer (std::list emplace_back for headers). Under the heap
+    // fragmentation this board sees at boot (max_alloc pinned ~55KB, and it
+    // drops further while a TLS context is live), that new can throw bad_alloc.
+    // The handler-level try/catch can't always catch it: __cxa_allocate_exception
+    // itself allocates and can fail too, hitting std::terminate -> abort ->
+    // panic reboot (decoded prod backtrace 2026-07-22: panic_abort <-
+    // std::terminate <- __cxa_allocate_exception <- operator new <-
+    // AsyncWebServerRequest::beginResponse). Refuse the full response when the
+    // largest contiguous block is too small, and send a minimal 500 instead so
+    // the request fails gracefully instead of taking down the device.
+    uint32_t maxAllocHeap = getDefaultMaxAllocHeap();
+    if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
+      Serial.printf("[HAL_ESP32] send: default_max_alloc %u too low, sending 500\r\n",
+                    (unsigned)maxAllocHeap);
+      request_->send(500, "text/plain", "low memory");
+      responseSent_ = true;
+      return;
+    }
     AsyncWebServerResponse *response = request_->beginResponse(code, contentType, body);
     if (response == nullptr) return;
     // Add any custom headers
@@ -444,6 +486,16 @@ public:
 
   void sendFile(const char *path, const char *contentType) override {
     if (request_ == nullptr || responseSent_) return;
+    // Same heap gate as send(): beginResponse + addHeader allocate via operator
+    // new and can throw bad_alloc under fragmentation. See send().
+    uint32_t maxAllocHeap = getDefaultMaxAllocHeap();
+    if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
+      Serial.printf("[HAL_ESP32] sendFile: default_max_alloc %u too low, sending 500\r\n",
+                    (unsigned)maxAllocHeap);
+      request_->send(500, "text/plain", "low memory");
+      responseSent_ = true;
+      return;
+    }
     // For file sending, headers need to be added differently
     // AsyncWebServer's send(LittleFS, path) doesn't support custom headers easily
     // We'll create a response manually if we have custom headers
@@ -476,6 +528,16 @@ public:
 
   void sendChunked(int code, const char* contentType, ChunkedFillCallback callback) override {
     if (request_ == nullptr) return;
+    // Same heap gate as send(): beginChunkedResponse + addHeader allocate via
+    // operator new and can throw bad_alloc under fragmentation. See send().
+    uint32_t maxAllocHeap = getDefaultMaxAllocHeap();
+    if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
+      Serial.printf("[HAL_ESP32] sendChunked: default_max_alloc %u too low, sending 500\r\n",
+                    (unsigned)maxAllocHeap);
+      request_->send(500, "text/plain", "low memory");
+      responseSent_ = true;
+      return;
+    }
     auto response = request_->beginChunkedResponse(contentType,
         [callback](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
             // This filler runs on the async_tcp task per chunk; a throw here
@@ -721,15 +783,21 @@ void HAL_ESP32::webServerEnd() {
 // ========================================================================
 
 void HAL_ESP32::pwmSetup(uint8_t channel, uint32_t freq, uint8_t resolution) {
-  ledcSetup(channel, freq, resolution);
+  (void)channel;  // 3.x LEDC is pin-based; channel is opaque in this HAL.
+  pwmFreq_ = freq;
+  pwmResolution_ = resolution;
 }
 
 void HAL_ESP32::pwmAttachPin(uint8_t pin, uint8_t channel) {
-  ledcAttachPin(pin, channel);
+  if (channel < sizeof(pwmPinForChannel_)) {
+    pwmPinForChannel_[channel] = pin;
+  }
+  ledcAttach(pin, pwmFreq_, pwmResolution_);
 }
 
 void HAL_ESP32::pwmWrite(uint8_t channel, uint32_t duty) {
-  ledcWrite(channel, duty);
+  uint8_t pin = (channel < sizeof(pwmPinForChannel_)) ? pwmPinForChannel_[channel] : channel;
+  ledcWrite(pin, duty);
 }
 
 // ========================================================================
@@ -817,6 +885,18 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
     return nullptr;
   }
 
+  // Serialize outbound TLS: refuse a new handshake while one is already in
+  // flight. Concurrent TLS connections (e.g. weather + LLM + OTA check firing
+  // close together) correlate with the AsyncTCP/lwIP soft-wedge under load
+  // (loop alive, network dead — see memory soft-wedge-is-tls-gated-not-web).
+  // Callers already treat a null client as "try again later" (WeatherManager/
+  // LlmWeatherDecider/UpdateManager retry on their own schedules), so this is
+  // safe to refuse rather than queue.
+  if (tls_in_flight_.load(std::memory_order_acquire) > 0) {
+    Serial.println("[HAL_ESP32] createSecureClient: refusing TLS alloc, another TLS client in flight");
+    return nullptr;
+  }
+
   // Refuse the TLS allocation when free heap is too low or fragmented to hold
   // the mbedtls context. The constructor's internal `new` would otherwise throw
   // std::bad_alloc; with -fexceptions enabled and no catch handler on the loop
@@ -827,9 +907,9 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
     return nullptr;
   }
 
-  // Boundary diagnostic: record the true contiguous/free values at the exact
-  // TLS-alloc moment. Kept from the fragmentation investigation — cheap, and it
-  // pins the last-known heap state before any network op if one is needed.
+  // Boundary diagnostic: heap state at the exact TLS-alloc moment. Now that
+  // getMaxAllocHeap() reports the malloc-default pool (not the broad internal
+  // pool), max_alloc is the true largest block a TLS context could occupy.
   Serial.printf("[HAL_ESP32] createSecureClient: alloc TLS ctx (free %u, max_alloc %u)\r\n",
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 
@@ -919,15 +999,34 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     bool headerDone = false;
     String redirectLocation = "";
     long contentLength = -1;  // -1 = header absent
+    bool chunked = false;
+    // One-shot raw header capture for the 3.x OTA-truncation investigation:
+    // records up to 256 bytes of the raw header block so we can see exactly
+    // what the server sent (Transfer-Encoding: chunked? missing Content-Length?
+    // a header-read desync?). Appended to g_http_get_diag below.
+    String rawHeaders = "";
 
     while (!headerDone && ::millis() < deadline) {
       String line = readHttpLine(client, deadline);
+      if (rawHeaders.length() < 256) {
+        if (rawHeaders.length() > 0) rawHeaders += "|";
+        int trimTo = line.length();
+        if (rawHeaders.length() + trimTo > 256) trimTo = 256 - rawHeaders.length();
+        rawHeaders += line.substring(0, trimTo);
+      }
       if (line.startsWith("Location:") || line.startsWith("location:")) {
         redirectLocation = line.substring(9);
         redirectLocation.trim();
       }
       if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
         contentLength = line.substring(15).toInt();
+      }
+      if (line.startsWith("Transfer-Encoding:")) {
+        // case-insensitive 'chunked' check
+        String te = line.substring(19);
+        te.trim();
+        te.toLowerCase();
+        if (te.indexOf("chunked") >= 0) chunked = true;
       }
       if (line.length() == 0) {
         headerDone = true;
@@ -950,47 +1049,235 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
       return "";
     }
 
-    // Read body in bulk chunks, mirroring the httpGetStream drain loop
-    // (`while connected() OR available()`). The old single-byte read had two
-    // defects on GitHub's ~14 KB releases/latest JSON (the old ~900-byte static
-    // manifest fit in one TLS record and dodged both):
-    //   1. Truncation: it broke on `!connected() && available()==0`, but over
-    //      TLS connected() can flip false while decrypted records are still
-    //      buffering, cutting the body short.
-    //   2. Heap churn: growing a String one char at a time repeatedly reallocates
-    //      the buffer. Reserving from Content-Length and appending chunks reduces
-    //      fragmentation on this memory-constrained device.
-    // Content-Length bounds the read exactly when present; the cap protects the
-    // loop-task heap for responses that omit it.
+    // Read body. On arduino-esp32 3.x / mbedtls 3.x the previous
+    // `(connected() || available())` polling loop truncated multi-record TLS
+    // responses short of Content-Length: NetworkClientSecure::connected() and
+    // available() both call data_to_read() -> mbedtls_ssl_read(NULL,0) (a
+    // peek); on a transient peek error (e.g. a blocked record fetch between
+    // TLS records) available() calls stop(), flipping _connected=false, and
+    // the next while-check then exits the loop while bytes are still on the
+    // wire. 2.x tolerated this; 3.x does not.
+    //
+    // Fix: drive the loop by available()+read() only, and NEVER use
+    // connected() as a terminator while Content-Length is still unmet — it is
+    // the call that triggers stop() on a transient peek error. Treat a genuine
+    // transfer stall as "no available() data AND no read() progress for
+    // NO_PROGRESS_MS" and only then bail. When Content-Length is unknown
+    // (chunked or no header), read until available() and read() both report
+    // nothing for the no-progress window (i.e. clean EOF).
     const size_t maxBody = 65535;  // JSON payloads are small; binaries use httpGetStream
     if (contentLength > 0) {
       response.reserve((size_t)contentLength < maxBody ? (size_t)contentLength : maxBody);
     }
+    // Diagnostic capture for the 3.x OTA-truncation investigation. Track the
+    // exact reason the read loop exited plus the last observed socket state, so
+    // /update/check_result can report WHY a body came up short.
+    int exitReason = 0;        // 1=contentLength met, 2=no-progress, 3=deadline, 4=maxBody
+    int lastAvail = -1;         // last client.available() seen
+    int lastReadN = -999;       // last client.read() return
+    int readErrs = 0;           // count of read() returning <= 0 when avail > 0
+    int iters = 0;              // loop iterations
+    const unsigned long NO_PROGRESS_MS = 5000;  // bail after 5s with zero new bytes
+    unsigned long lastProgress = ::millis();
     uint8_t buf[512];
-    while ((client.connected() || client.available()) && ::millis() < deadline) {
+    while (::millis() < deadline) {
       if (contentLength >= 0 && (long)response.length() >= contentLength) {
+        exitReason = 1;
         break;  // Full declared body received
       }
+      if (response.length() >= maxBody) { exitReason = 4; break; }
+      iters++;
       int avail = client.available();
+      lastAvail = avail;
       if (avail > 0) {
         int want = avail < (int)sizeof(buf) ? avail : (int)sizeof(buf);
         int n = client.read(buf, want);
+        lastReadN = n;
         if (n > 0) {
           response.concat((const char*)buf, (size_t)n);
-          if (response.length() >= maxBody) break;
+          lastProgress = ::millis();
+        } else {
+          readErrs++;
         }
-      } else if (!client.connected()) {
-        break;  // Server closed and no buffered data remains — body complete
       } else {
-        delay(1);
+        // No data right now. Do NOT call connected() to decide termination —
+        // on 3.x that triggers stop() on a transient peek error and truncates
+        // a still-flowing body. Wait briefly and let the next record arrive.
+        delay(2);
+        if (::millis() - lastProgress > NO_PROGRESS_MS) {
+          // Genuine stall: no new bytes for the whole window. Only now is the
+          // transfer done (clean EOF if Content-Length was absent) or failed.
+          exitReason = 2;
+          break;
+        }
       }
     }
+    if (exitReason == 0) {
+      exitReason = (::millis() >= deadline) ? 3 : 1;
+    }
+    // Dechunk the body if the server used Transfer-Encoding: chunked (GitHub's
+    // API alternates between Content-Length and chunked for the same URL; the
+    // chunked form embeds "<hex size>\r\n<data>\r\n0\r\n\r\n" markers that
+    // would otherwise corrupt the JSON parse).
+    if (chunked) {
+      String dechunked;
+      dechunked.reserve(response.length());
+      size_t i = 0;
+      while (i < response.length()) {
+        // Parse hex chunk size up to the next CRLF
+        size_t lineEnd = response.indexOf("\r\n", i);
+        if (lineEnd == (size_t)-1) break;
+        String sizeHex = response.substring(i, lineEnd);
+        sizeHex.trim();
+        // Chunk extensions after ';' are ignored
+        int semi = sizeHex.indexOf(';');
+        if (semi >= 0) sizeHex = sizeHex.substring(0, semi);
+        long chunkSize = strtol(sizeHex.c_str(), nullptr, 16);
+        if (chunkSize <= 0) break;  // 0 or parse failure -> end of chunks
+        size_t dataStart = lineEnd + 2;
+        if (dataStart + (size_t)chunkSize > response.length()) break;  // truncated chunk
+        dechunked.concat(response.c_str() + dataStart, (size_t)chunkSize);
+        i = dataStart + (size_t)chunkSize;
+        // Skip trailing CRLF after chunk data
+        if (i + 2 <= response.length() && response[i] == '\r' && response[i + 1] == '\n') {
+          i += 2;
+        }
+      }
+      response = dechunked;
+    }
+    // Record diagnostic (always; cheap). Decoding in UpdateManager / log:
+    //   exit 1=contentLen-met 2=no-progress 3=deadline 4=maxBody
+    g_http_get_diag = "exit=" + String(exitReason) +
+                      " got=" + String(response.length()) +
+                      " clen=" + String(contentLength) +
+                      " chunked=" + String(chunked ? 1 : 0) +
+                      " iters=" + String(iters) +
+                      " lastAvail=" + String(lastAvail) +
+                      " lastReadN=" + String(lastReadN) +
+                      " readErrs=" + String(readErrs) +
+                      " free=" + String((int)ESP.getFreeHeap()) +
+                      " maxAlloc=" + String((int)ESP.getMaxAllocHeap()) +
+                      " status=" + String(statusCode) +
+                      " hdrs=" + rawHeaders;
 
     client.stop();
     return response;
   }
 
   return ""; // Too many redirects
+}
+
+// Download one [startByte, endByte] inclusive range from `url` (already
+// resolved through any redirects by the caller — for GitHub release assets
+// this is the signed release-assets.githubusercontent.com URL). Reads the
+// 206 Partial Content body, invokes on_data for each chunk with the
+// cumulative byte offset (offsetBase + bytes-in-this-chunk). Returns the
+// number of bytes delivered, or <=0 on failure. Self-contained TLS client
+// so each chunk is its own connection (the whole point — avoids the
+// sustained-transfer stall).
+int HAL_ESP32::downloadRangeChunk(const String& url, uint32_t startByte,
+                                  uint32_t endByte, uint32_t totalLength,
+                                  HttpDataCallback on_data,
+                                  uint32_t offsetBase,
+                                  unsigned long startTime,
+                                  unsigned long timeout_ms) {
+  String currentUrl = url;
+  const int MAX_REDIRECTS = 5;
+  for (int redir = 0; redir <= MAX_REDIRECTS; redir++) {
+    auto holder = createSecureClient(timeout_ms);
+    if (holder == nullptr) return -1;
+    WiFiClientSecure& client = *holder;
+
+    String host = currentUrl;
+    String path = "/";
+    int slashIdx = currentUrl.indexOf("://");
+    if (slashIdx != -1) host = currentUrl.substring(slashIdx + 3);
+    int pathIdx = host.indexOf("/");
+    if (pathIdx != -1) { path = host.substring(pathIdx); host = host.substring(0, pathIdx); }
+    int port = currentUrl.startsWith("http://") ? 80 : 443;
+    int portIdx = host.indexOf(":");
+    if (portIdx != -1) { port = host.substring(portIdx + 1).toInt(); host = host.substring(0, portIdx); }
+
+    // Feed the task watchdog before the TLS handshake — connect() blocks for
+    // 1-2 s and the 5 s WDT would otherwise fire across many chunks.
+    esp_task_wdt_reset();
+    if (!client.connect(host.c_str(), port, timeout_ms)) return -1;
+    esp_task_wdt_reset();
+    client.setTimeout(2000);
+    client.print(buildHttpGetRangeRequest(host, path, startByte, endByte));
+
+    // Status line
+    unsigned long deadline = startTime + timeout_ms;
+    String statusLine;
+    while (client.connected() && ::millis() < deadline) {
+      if (client.available()) { statusLine = client.readStringUntil('\n'); break; }
+      yield();
+    }
+    int sp = statusLine.indexOf(' ');
+    int statusCode = (sp > 0) ? statusLine.substring(sp + 1).toInt() : 0;
+
+    // Headers — capture Content-Length and redirect Location
+    uint32_t bodyLen = 0;
+    String location;
+    bool headerDone = false;
+    while (client.connected() && !headerDone && ::millis() < deadline) {
+      if (client.available()) {
+        String line = client.readStringUntil('\n');
+        line.trim();
+        if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
+          bodyLen = line.substring(15).toInt();
+        }
+        if (line.startsWith("Location:") || line.startsWith("location:")) {
+          location = line.substring(9); location.trim();
+        }
+        if (line.length() == 0) headerDone = true;
+      } else { yield(); }
+    }
+
+    if (statusCode >= 301 && statusCode <= 308 && location.length() > 0) {
+      client.stop();
+      currentUrl = location;
+      continue;
+    }
+    // 206 = Partial Content (ranged OK); 200 = server ignored Range and is
+    // sending the full body (treat as failure for ranged mode — caller will
+    // not know the offset). Anything else is an error.
+    if (statusCode != 206) {
+      client.stop();
+      return -1;
+    }
+
+    // Read bodyLen bytes from the connection. bodyLen is small (<= RANGED_CHUNK),
+    // so this completes in one burst before the stall can develop.
+    uint32_t got = 0;
+    uint8_t buf[1024];
+    unsigned long lastProgress = ::millis();
+    while (got < bodyLen && ::millis() < deadline) {
+      int avail = client.available();
+      if (avail > 0) {
+        int want = avail < (int)sizeof(buf) ? avail : (int)sizeof(buf);
+        if ((uint32_t)want > bodyLen - got) want = bodyLen - got;
+        int n = client.read(buf, want);
+        if (n > 0) {
+          // Cumulative bytes downloaded across all chunks so far (offsetBase)
+          // plus what we've delivered from this chunk (got) plus these n bytes.
+          if (on_data && !on_data(buf, n, offsetBase + got + n, totalLength)) {
+            client.stop();
+            return -1;
+          }
+          got += n;
+          lastProgress = ::millis();
+        }
+      } else {
+        yield();
+        esp_task_wdt_reset();
+        if (::millis() - lastProgress > 5000) break;  // genuine stall
+      }
+    }
+    client.stop();
+    return (int)got;
+  }
+  return -1;
 }
 
 bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
@@ -1037,6 +1324,15 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
     if (!client.connect(host.c_str(), port, timeout_ms)) {
       return false;
     }
+
+    // Clamp the per-read socket timeout to 2 s. The overall transfer deadline
+    // is enforced by our own millis() check below; the socket timeout only
+    // bounds how long a single available()/read() call may block when the
+    // peer has stalled. With the default 60-120 s caller timeout, a stalled
+    // read would block far past the 5 s task watchdog and reboot the board
+    // (observed: "Task watchdog" reset during firmware.bin download). 2 s is
+    // well under the watchdog window and short enough to detect a stall.
+    client.setTimeout(2000);
 
     client.print(buildHttpGetRequest(host, path));
 
@@ -1095,28 +1391,147 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
       return false;
     }
 
-    // Download binary data, passing chunks to callback
-    uint8_t buffer[1024];
+    // Sustained single-connection TLS downloads of large bodies stall
+    // mid-transfer on the pioarduino 3.x / IDF 5.5.4 lwIP stack (the peer
+    // sends one or a few TCP segments then stops while connected() stays
+    // true — observed: 0 to ~9 KB of a 1.4 MB firmware.bin, then nothing).
+    //
+    // A ranged-download workaround (many small Range requests, each on a
+    // fresh connection) is implemented below via downloadRangeChunk(), but
+    // it is currently DISABLED: with chunk sizes small enough to dodge the
+    // stall, a 1.4 MB firmware needs hundreds of TLS handshakes (~minutes),
+    // which both exceeds the install timeout and trips the task watchdog
+    // before completing. The root cause is an IDF 5.5.4 lwIP TCP stall
+    // (same family as the `tcp_receive: wrong state` assert); it needs an
+    // IDF/lwIP fix, not an app-level workaround. RANGED_THRESHOLD is set
+    // impossibly high so the inline path below always runs; the ranged
+    // code is retained for a future platform fix.
+    const uint32_t RANGED_THRESHOLD = 0xFFFFFFFF;
+    const uint32_t RANGED_CHUNK = 6144;  // 6 KB per range request
+    if (contentLength > RANGED_THRESHOLD) {
+      client.stop();
+      uint32_t bytesDownloaded = 0;
+      uint32_t rangeStart = 0;
+      int rangeAttempts = 0;
+      bool rangeFailed = false;
+      while (bytesDownloaded < contentLength && ::millis() - startTime < timeout_ms) {
+        uint32_t rangeEnd = rangeStart + RANGED_CHUNK - 1;
+        if (rangeEnd >= contentLength) rangeEnd = contentLength - 1;
+        // Fetch this one chunk. downloadRangeChunk opens its own TLS client,
+        // follows redirects, reads the 206 body, and invokes on_data with
+        // the cumulative byte offset.
+        int got = downloadRangeChunk(currentUrl, rangeStart, rangeEnd,
+                                     contentLength, on_data, bytesDownloaded,
+                                     startTime, timeout_ms);
+        if (got > 0) {
+          bytesDownloaded += got;
+          rangeStart += got;
+          rangeAttempts = 0;
+          esp_task_wdt_reset();
+          yield();
+        } else {
+          // Retry the same range a few times (transient TLS/TCP hiccups),
+          // then give up.
+          if (++rangeAttempts > 3) { rangeFailed = true; break; }
+          delay(100);
+        }
+      }
+      g_http_get_diag = "stream ranged got=" + String(bytesDownloaded) +
+                        " clen=" + String(contentLength) +
+                        " failed=" + String(rangeFailed ? 1 : 0) +
+                        " chunks=" + String((contentLength + RANGED_CHUNK - 1) / RANGED_CHUNK) +
+                        " timeout=" + String((int)(::millis() - startTime)) +
+                        " free=" + String((int)ESP.getFreeHeap());
+      if (rangeFailed || bytesDownloaded != contentLength) {
+        return false;
+      }
+      return true;
+    }
+
+    // Small body: read inline (single connection).
+    //
+    // On arduino-esp32 3.x / IDF 5.5.4 / mbedtls 3.x, large downloads (the
+    // ~1.4 MB firmware.bin) stall mid-transfer the same way httpGet does:
+    // available() reports 0 permanently after a few KB while connected()
+    // still reports true. The root cause is a TCP-level stall in this lwIP
+    // build under sustained inbound transfer. Mitigations applied here:
+    //   - Drive the loop by available()+read() only; do NOT terminate on
+    //     connected()==false while Content-Length is unmet (connected() calls
+    //     stop() on a transient peek error on 3.x and would truncate).
+    //   - Use a no-progress deadline (separate from the overall timeout) to
+    //     detect a genuine stall and bail, rather than spinning forever.
+    //   - Larger 2 KB read buffer and yield() only every 4 KB / on no-progress
+    //     so the TCP receive buffer is drained promptly (a full recv buffer
+    //     makes lwIP advertise a zero window, which makes the sender stall).
+    uint8_t buffer[2048];
     uint32_t bytesDownloaded = 0;
-    while (client.connected() || client.available()) {
-      if (::millis() - startTime > timeout_ms) { client.stop(); return false; }
-      if (client.available()) {
-        int bytesRead = client.read(buffer, sizeof(buffer));
+    const unsigned long NO_PROGRESS_MS = 5000;
+    unsigned long lastProgress = ::millis();
+    unsigned long lastYield = ::millis();
+    bool stalled = false;
+    // Diagnostics: track how available() behaves to distinguish "peer sent
+    // nothing" (avail always 0) from "peer sent some then stalled".
+    int maxAvail = 0;
+    int zeroAvailCount = 0;
+    int firstFewAvail[6] = {0};
+    int firstFewIdx = 0;
+    int connAtStall = -1;
+    while (::millis() - startTime < timeout_ms) {
+      if (contentLength > 0 && bytesDownloaded >= contentLength) break;
+      int avail = client.available();
+      if (firstFewIdx < 6) firstFewAvail[firstFewIdx++] = avail;
+      if (avail > maxAvail) maxAvail = avail;
+      if (avail > 0) {
+        int want = avail < (int)sizeof(buffer) ? avail : (int)sizeof(buffer);
+        int bytesRead = client.read(buffer, want);
         if (bytesRead > 0) {
           bytesDownloaded += bytesRead;
+          lastProgress = ::millis();
           if (on_data) {
             if (!on_data(buffer, bytesRead, bytesDownloaded, contentLength > 0 ? contentLength : bytesDownloaded)) {
               client.stop();
               return false;
             }
           }
-          esp_task_wdt_reset();  // Feed watchdog during long downloads
-          yield();  // Allow async web server to handle status requests
+          // Yield every ~4 KB or every 200 ms so the async web server can
+          // serve /update/status, but not so often that we stall the drain.
+          if (bytesDownloaded % 4096 < (uint32_t)bytesRead ||
+              ::millis() - lastYield > 200) {
+            esp_task_wdt_reset();
+            yield();
+            lastYield = ::millis();
+          }
         }
       } else {
-        delay(10);
+        // No data right now. Do NOT call connected() to decide termination
+        // (triggers stop() on 3.x). Yield to let lwIP's TCP timer process
+        // ACKs / window updates (a tight spin without yield starves the
+        // tcpip task and the peer stops sending), then retry. Bail only on
+        // a genuine no-progress stall.
+        zeroAvailCount++;
+        yield();
+        esp_task_wdt_reset();
+        lastYield = ::millis();
+        if (::millis() - lastProgress > NO_PROGRESS_MS) {
+          connAtStall = client.connected() ? 1 : 0;
+          stalled = true;
+          break;
+        }
       }
     }
+
+    g_http_get_diag = "stream got=" + String(bytesDownloaded) +
+                      " clen=" + String(contentLength) +
+                      " stalled=" + String(stalled ? 1 : 0) +
+                      " connAtStall=" + String(connAtStall) +
+                      " maxAvail=" + String(maxAvail) +
+                      " zeroAvail=" + String(zeroAvailCount) +
+                      " firstFew=" + String(firstFewAvail[0]) + "," + String(firstFewAvail[1]) +
+                      "," + String(firstFewAvail[2]) + "," + String(firstFewAvail[3]) +
+                      "," + String(firstFewAvail[4]) + "," + String(firstFewAvail[5]) +
+                      " timeout=" + String((int)(::millis() - startTime)) +
+                      " free=" + String((int)ESP.getFreeHeap()) +
+                      " maxAlloc=" + String((int)ESP.getMaxAllocHeap());
 
     client.stop();
 
@@ -1254,18 +1669,30 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   if (portIndex != -1) { port = host.substring(portIndex + 1).toInt(); host = host.substring(0, portIndex); }
 
   unsigned long startTime = ::millis();
+  // A TLS connect/handshake is a blocking call inside NetworkClientSecure, so
+  // it cannot feed the 30s loop-task watchdog. Bound it below that timeout;
+  // response waiting below remains allowed to use the caller's full budget and
+  // feeds the watchdog while it does so.
+  unsigned long tlsConnectTimeoutMs = timeout_ms > 15000UL ? 15000UL : timeout_ms;
 
   // Plain HTTP path uses a non-TLS WiFiClient so LAN endpoints (Rapid-MLX on
   // :8000, local Ollama on :11434) work — httpPost() above is TLS-only.
   std::unique_ptr<WiFiClient> plainHolder;
   SecureClientPtr tlsHolder;
   if (useTls) {
-    tlsHolder = createSecureClient(timeout_ms);
+    tlsHolder = createSecureClient(tlsConnectTimeoutMs);
     if (tlsHolder == nullptr) {
       Serial.println("[HAL_ESP32] httpPostAuth: TLS client unavailable (low memory), aborting");
       return "";
     }
-    if (!tlsHolder->connect(host.c_str(), port, timeout_ms)) return "";
+    if (!tlsHolder->connect(host.c_str(), port, tlsConnectTimeoutMs)) {
+      char errorText[128] = {};
+      int errorCode = tlsHolder->lastError(errorText, sizeof(errorText));
+      Serial.printf("[HAL_ESP32] httpPostAuth: TLS connect failed host=%s err=%d (%s) free=%u max_alloc=%u\r\n",
+                    host.c_str(), errorCode, errorText,
+                    (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+      return "";
+    }
   } else {
     // Same WiFi-connected + low-heap guards as the TLS path: skip the request
     // entirely if the link is down (no point POSTing over a dead STA) or if
@@ -1308,6 +1735,12 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
     String line;
     unsigned long deadline = startTime + timeout_ms;
     while (::millis() < deadline) {
+      // httpPostAuth runs from loopTask for weather/LLM work. A cloud model can
+      // legitimately wait tens of seconds before its first response byte; feed
+      // the subscribed task watchdog while this deadline-bounded external I/O
+      // wait is intentional. The TLS socket timeout remains capped at 15s, so
+      // no single read can mask a genuine task hang past the 30s watchdog.
+      esp_task_wdt_reset();
       int c = client->read();
       if (c < 0) {
         if (!client->connected() && client->available() == 0) break;
@@ -1334,6 +1767,9 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   }
 
   if (statusCode < 200 || statusCode >= 300) {
+    Serial.printf("[HAL_ESP32] httpPostAuth: non-2xx status=%d host=%s free=%u max_alloc=%u\r\n",
+                  statusCode, host.c_str(),
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
     if (useTls) tlsHolder->stop(); else plainHolder->stop();
     return "";
   }
@@ -1346,6 +1782,9 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   // deadline (startTime + timeout_ms) still bounds the call end-to-end.
   String response;
   while (::millis() < deadline) {
+    // See readLine(): this is bounded external model I/O on loopTask, so feed
+    // the task watchdog while waiting for the configured request deadline.
+    esp_task_wdt_reset();
     int c = (useTls ? tlsHolder->read() : plainHolder->read());
     if (c < 0) {
       bool connected = useTls ? tlsHolder->connected() : plainHolder->connected();
@@ -1359,6 +1798,11 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   }
 
   if (useTls) tlsHolder->stop(); else plainHolder->stop();
+  if (response.length() == 0) {
+    Serial.printf("[HAL_ESP32] httpPostAuth: 2xx but empty body host=%s timeout=%lu elapsed=%lu free=%u max_alloc=%u\r\n",
+                  host.c_str(), timeout_ms, (unsigned long)(::millis() - startTime),
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  }
   return response;
 }
 
@@ -1725,9 +2169,9 @@ bool HAL_ESP32::sha256Verify(const uint8_t *data, size_t data_length,
   mbedtls_sha256_context ctx;
 
   mbedtls_sha256_init(&ctx);
-  mbedtls_sha256_starts_ret(&ctx, false);  // false = SHA256 (not SHA224)
-  mbedtls_sha256_update_ret(&ctx, data, data_length);
-  mbedtls_sha256_finish_ret(&ctx, hash);
+  mbedtls_sha256_starts(&ctx, false);  // false = SHA256 (not SHA224)
+  mbedtls_sha256_update(&ctx, data, data_length);
+  mbedtls_sha256_finish(&ctx, hash);
   mbedtls_sha256_free(&ctx);
 
   // Convert hash to hex string

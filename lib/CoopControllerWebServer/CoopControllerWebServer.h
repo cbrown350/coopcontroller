@@ -20,6 +20,19 @@
 #include "WeatherManager.h"
 
 /**
+ * @brief Escape a string for embedding in a JSON string literal.
+ *
+ * Escapes quotes, backslashes, and all control characters (0x00-0x1F) per
+ * RFC 8259 — an unescaped control character (e.g. a raw newline from a log
+ * message assembled with '\n') makes the surrounding JSON document invalid
+ * and breaks any client-side JSON.parse().
+ *
+ * @param input Raw string to escape.
+ * @return Escaped string, safe to place between double quotes in JSON.
+ */
+String escapeJsonString(const String &input);
+
+/**
  * @brief Web server for chicken coop controller
  *
  * Provides HTTP REST API and web interface for monitoring and controlling

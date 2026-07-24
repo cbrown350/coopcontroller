@@ -188,6 +188,16 @@ public:
   String httpGet(const String& url, unsigned long timeout_ms = 10000) override;
   bool httpGetStream(const String& url, HttpDataCallback on_data,
                      unsigned long timeout_ms = 60000) override;
+
+  // Download one inclusive [startByte, endByte] range from `url` over a fresh
+  // TLS connection, delivering bytes via on_data (cumulative offset =
+  // offsetBase + bytes-in-chunk). Returns bytes delivered, or <=0 on failure.
+  // Used by httpGetStream to fetch large release assets as small Range chunks,
+  // sidestepping the sustained-transfer TCP stall on this lwIP build.
+  int downloadRangeChunk(const String& url, uint32_t startByte, uint32_t endByte,
+                         uint32_t totalLength, HttpDataCallback on_data,
+                         uint32_t offsetBase, unsigned long startTime,
+                         unsigned long timeout_ms);
   String httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms = 10000) override;
   String httpPostAuth(const String& url, const String& jsonBody,
                       const String& bearerToken, const String& extraHeaders,
@@ -220,6 +230,15 @@ public:
 private:
   AsyncWebServer *server_;
   void *sharedStateMutex_;  ///< FreeRTOS mutex for thread-safe shared state access
+
+  // arduino-esp32 3.x made LEDC pin-based: ledcAttach(pin, freq, resolution)
+  // does setup+attach in one call and ledcWrite takes (pin, duty). The HAL
+  // interface is still channel-based (pwmSetup/pwmAttachPin/pwmWrite), so we
+  // remember the configured freq/resolution and the pin bound to each channel
+  // to bridge the two-call HAL pattern onto the one-call 3.x API.
+  uint32_t pwmFreq_ = 0;
+  uint8_t pwmResolution_ = 0;
+  uint8_t pwmPinForChannel_[2] = {0, 0};
 
   // Minimum free heap (bytes) required to even attempt allocating a
   // WiFiClientSecure TLS context, whose mbedtls structures need a sizable

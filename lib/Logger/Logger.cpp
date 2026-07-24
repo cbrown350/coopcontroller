@@ -6,6 +6,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <cassert>
+#include <cstring>
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -109,7 +110,18 @@ void Logger::logWithLevel(const String &message, LogLevel level) const
       // send rate and breaks that amplification loop. Uses millis() (monotonic,
       // wraparound-safe via unsigned subtraction), independent of NTP time.
       unsigned long nowMs = millis();
-      bool sendNow = !syslogSentOnce_ ||
+      // CRASH: lines from crashDiagnosticsCheck (lib/HAL_ESP32/CrashDiagnostics.cpp)
+      // are rare, high-value, and emitted as a tight burst during boot — exactly
+      // when the rate limiter would otherwise swallow them, leaving the panic
+      // site unobservable (only "Coredump erased after reading" survived on prod,
+      // 2026-07-22). Exempt them so the Task/PC/Cause/Backtrace/ELF lines always
+      // reach syslog. They are ~5 lines once per boot, not a flood source.
+      // NOTE: msgCStr includes the "[ERROR] " level prefix, so search for the
+      // marker substring rather than strncmp at offset 0 (the first shipped
+      // version of this exemption checked offset 0 and never matched — no-op).
+      bool crashLine = (level == LogLevel::ERROR) &&
+                       strstr(msgCStr, "CRASH:") != nullptr;
+      bool sendNow = crashLine || !syslogSentOnce_ ||
                      (nowMs - lastSyslogSendMs_) >= SYSLOG_MIN_SEND_INTERVAL_MS;
       if (sendNow) {
         // If sends were suppressed since the last one, note how many so the

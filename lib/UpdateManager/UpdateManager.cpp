@@ -7,6 +7,14 @@
 #include <Update.h>
 #include <mbedtls/sha256.h>
 
+// Defined in HAL_ESP32.cpp. Empty on desktop test builds (no HAL_ESP32), so the
+// linkage only resolves on the ESP32 target. On desktop, UpdateManager links
+// against a mock HAL that never calls httpGet, so the symbol is absent — guard
+// use with #ifdef ESP_PLATFORM.
+#ifdef ESP_PLATFORM
+extern String g_http_get_diag;
+#endif
+
 void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
     hal_ = hal;
 
@@ -36,14 +44,30 @@ void UpdateManager::begin(IHAL* hal, const String& manifest_url) {
 }
 
 void UpdateManager::setManifestUrl(const String& manifest_url) {
-    // Use the provided URL, or build the redirect-free GitHub releases API URL
-    // from the compiled-in repo when empty.
+    // Use the provided URL when set; otherwise build the default from the
+    // compiled-in repo.
+    //
+    // Default is the tag-independent release-asset manifest:
+    //   https://github.com/<repo>/releases/latest/download/version_manifest.json
+    // which 302-redirects (2 hops, via github.com -> release-assets.
+    // githubusercontent.com / Azure blob) to the small (~900 byte) project
+    // version_manifest.json published by the release workflow.
+    //
+    // Why not api.github.com/repos/<repo>/releases/latest (the previous
+    // default): on the pioarduino 3.x / IDF 5.5.4 / mbedtls 3.x stack that
+    // body (~14 KB) stalls mid-transfer — the board reads ~7-9 KB then
+    // available() reports 0 permanently and the manifest parse fails. The
+    // stall is specific to api.github.com's serving behavior with this lwIP
+    // stack; raw.githubusercontent.com and release-assets.githubusercontent.com
+    // (Fastly / Azure) do not exhibit it. The release-asset manifest is served
+    // from the latter, so it reads reliably. The GitHub API URL still works
+    // if a user configures it explicitly (manifest_url setting).
     if (manifest_url.length() > 0) {
         manifest_url_ = manifest_url;
     } else {
         String repo = githubRepo;
         manifest_url_ = repo.length() > 0
-            ? "https://api.github.com/repos/" + repo + "/releases/latest"
+            ? "https://github.com/" + repo + "/releases/latest/download/version_manifest.json"
             : "";
     }
 }
@@ -137,7 +161,13 @@ void UpdateManager::checkForUpdates() {
     // Fetch manifest JSON
     String manifestJson = hal_->httpGet(manifest_url_, 15000);
     if (manifestJson.length() == 0) {
-        setError(UpdateError::NET_ERROR, "Failed to fetch manifest from: " + manifest_url_);
+        String msg = "Failed to fetch manifest from: " + manifest_url_;
+#ifdef ESP_PLATFORM
+        if (g_http_get_diag.length() > 0) {
+            msg += " | httpGet: " + g_http_get_diag;
+        }
+#endif
+        setError(UpdateError::NET_ERROR, msg);
         last_check_time_ = hal_->millis();
         return;
     }
@@ -146,15 +176,29 @@ void UpdateManager::checkForUpdates() {
     JsonDocument doc;
     DeserializationError jsonError = deserializeJson(doc, manifestJson);
     if (jsonError) {
-        // Log the body length + first bytes so a parse failure is diagnosable
-        // (truncation, TLS garbage, HTML error page, gzip, etc.) instead of a
-        // bare "InvalidInput".
-        String preview = manifestJson.substring(0, 200);
+        // Fold body length + first bytes + tail bytes into the HTTP-readable
+        // error message (not just syslog) so truncation is diagnosable through
+        // /update/check_result without relying on serial capture (which drops
+        // lines under load on this board). Tail bytes reveal where the body
+        // was cut: a clean JSON fragment mid-token = truncation; '>' or '<'
+        // = HTML error page; 0x1f 0x8b = gzip.
+        String preview = manifestJson.substring(0, 120);
         preview.replace("\r", "\\r");
         preview.replace("\n", "\\n");
-        logger.logError("Manifest body length: " + String(manifestJson.length()) +
-                        ", first 200 bytes: " + preview);
-        setError(UpdateError::MANIFEST_PARSE, "Failed to parse manifest JSON: " + String(jsonError.c_str()));
+        String tail = manifestJson.length() > 120
+            ? manifestJson.substring(manifestJson.length() - 80)
+            : "";
+        tail.replace("\r", "\\r");
+        tail.replace("\n", "\\n");
+        String msg = "Parse " + String(jsonError.c_str()) +
+                     " | body_len=" + String(manifestJson.length()) +
+                     " | head=" + preview + " | tail=" + tail;
+#ifdef ESP_PLATFORM
+        if (g_http_get_diag.length() > 0) {
+            msg += " | httpGet: " + g_http_get_diag;
+        }
+#endif
+        setError(UpdateError::MANIFEST_PARSE, msg);
         last_check_time_ = hal_->millis();
         return;
     }
@@ -287,7 +331,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         // Initialize SHA256 context for incremental hashing
         sha_ctx_ = new mbedtls_sha256_context();
         mbedtls_sha256_init((mbedtls_sha256_context*)sha_ctx_);
-        mbedtls_sha256_starts_ret((mbedtls_sha256_context*)sha_ctx_, false);  // false = SHA256 (not SHA224)
+        mbedtls_sha256_starts((mbedtls_sha256_context*)sha_ctx_, false);  // false = SHA256 (not SHA224)
         sha_ctx_initialized_ = true;
 
         // Begin OTA firmware partition
@@ -305,7 +349,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
                 // Update SHA256 hash with incoming data
                 if (sha_ctx_initialized_) {
-                    mbedtls_sha256_update_ret((mbedtls_sha256_context*)sha_ctx_, data, len);
+                    mbedtls_sha256_update((mbedtls_sha256_context*)sha_ctx_, data, len);
                 }
 
                 // Write to OTA partition
@@ -325,7 +369,13 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             sha_ctx_ = nullptr;
             sha_ctx_initialized_ = false;
             hal_->otaAbort();
-            setError(UpdateError::DOWNLOAD_FAILED, "Firmware download failed or incomplete");
+            String msg = "Firmware download failed or incomplete";
+#ifdef ESP_PLATFORM
+            if (g_http_get_diag.length() > 0) {
+                msg += " | httpGetStream: " + g_http_get_diag;
+            }
+#endif
+            setError(UpdateError::DOWNLOAD_FAILED, msg);
             return;
         }
 
@@ -335,7 +385,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         setStatus(UpdateStatus::VERIFYING);
         if (manifest_.firmware.sha256.length() > 0) {
             unsigned char hash[32];
-            mbedtls_sha256_finish_ret((mbedtls_sha256_context*)sha_ctx_, hash);
+            mbedtls_sha256_finish((mbedtls_sha256_context*)sha_ctx_, hash);
             mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
             delete (mbedtls_sha256_context*)sha_ctx_;
             sha_ctx_ = nullptr;
@@ -391,7 +441,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         // Initialize SHA256 context for incremental hashing
         sha_ctx_ = new mbedtls_sha256_context();
         mbedtls_sha256_init((mbedtls_sha256_context*)sha_ctx_);
-        mbedtls_sha256_starts_ret((mbedtls_sha256_context*)sha_ctx_, false);
+        mbedtls_sha256_starts((mbedtls_sha256_context*)sha_ctx_, false);
         sha_ctx_initialized_ = true;
 
         // Stop web server before filesystem OTA to prevent async handlers
@@ -416,7 +466,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
                 // Update SHA256 hash with incoming data
                 if (sha_ctx_initialized_) {
-                    mbedtls_sha256_update_ret((mbedtls_sha256_context*)sha_ctx_, data, len);
+                    mbedtls_sha256_update((mbedtls_sha256_context*)sha_ctx_, data, len);
                 }
 
                 // Write to OTA partition
@@ -448,7 +498,7 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         setStatus(UpdateStatus::VERIFYING);
         if (manifest_.filesystem.sha256.length() > 0) {
             unsigned char hash[32];
-            mbedtls_sha256_finish_ret((mbedtls_sha256_context*)sha_ctx_, hash);
+            mbedtls_sha256_finish((mbedtls_sha256_context*)sha_ctx_, hash);
             mbedtls_sha256_free((mbedtls_sha256_context*)sha_ctx_);
             delete (mbedtls_sha256_context*)sha_ctx_;
             sha_ctx_ = nullptr;

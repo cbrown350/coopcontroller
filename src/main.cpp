@@ -237,6 +237,31 @@ void setup() // NOSONAR - complexity ok
     sensorManager.begin(TEMP_METER_PIN, TEMP_METER_2_PIN);
     pumpController.begin(&sensorManager, &sensorManager, OUT_PUMP_PIN);
     buzzerController.begin(BUZZER_B_PIN);
+
+    // Initialize the Task Watchdog Timer before wifiController.begin, whose
+    // WiFi connect/retry loop calls esp_task_wdt_reset(). On IDF 5.x
+    // (arduino-esp32 3.x) the TWDT is auto-initialized at boot and subscribes
+    // the idle tasks, so esp_task_wdt_init() returns ESP_ERR_INVALID_STATE on
+    // the first call; esp_task_wdt_reconfigure() reconfigures the already-
+    // running TWDT. idle_core_mask=0 unsubscribes the idle tasks so only the
+    // loop task (added below) is watched, matching the old 2.x behavior.
+    int watchdogTimeout = settingsManager.getWatchdogTimeoutSeconds();
+    esp_task_wdt_config_t wdtConfig = {
+        .timeout_ms = static_cast<uint32_t>(watchdogTimeout) * 1000U,
+        .idle_core_mask = 0,
+        .trigger_panic = true
+    };
+    esp_err_t wdtResult = esp_task_wdt_init(&wdtConfig);
+    if (wdtResult == ESP_ERR_INVALID_STATE) {
+        wdtResult = esp_task_wdt_reconfigure(&wdtConfig);
+    }
+    if (wdtResult == ESP_OK) {
+        esp_task_wdt_add(nullptr); // Add current task (loop) to WDT watch
+        logger.logfInfo("Task Watchdog Timer initialized with %d second timeout", watchdogTimeout);
+    } else {
+        logger.logfError("Failed to initialize Task Watchdog Timer: %s", esp_err_to_name(wdtResult));
+    }
+
     wifiController.begin(&hal, &settingsManager, &buzzerController, apPasswd);
     doorController.begin(&buzzerController, &sunriseSunset);
     // Apply persisted door settings to the controller runtime. This fixes the
@@ -303,16 +328,6 @@ void setup() // NOSONAR - complexity ok
         logger.logError(msg);
     });
 
-    // Initialize Task Watchdog Timer
-    int watchdogTimeout = settingsManager.getWatchdogTimeoutSeconds();
-    
-    if (esp_err_t wdtResult = esp_task_wdt_init(watchdogTimeout, true); wdtResult == ESP_OK) { // timeout in seconds, panic on timeout
-        esp_task_wdt_add(nullptr); // Add current task (loop) to WDT watch
-        logger.logfInfo("Task Watchdog Timer initialized with %d second timeout", watchdogTimeout);
-    } else {
-        logger.logfError("Failed to initialize Task Watchdog Timer: %s", esp_err_to_name(wdtResult));
-    }
-
     // Only sync NTP if connected to WiFi (not in AP mode)
     if (wifiController.isConnected()) {
         logger.logInfo("NTP time synchronization started");
@@ -338,6 +353,8 @@ void setup() // NOSONAR - complexity ok
                 logger.logfInfo("Timezone auto-detected from coordinates (%.2f, %.2f): %s", lat, lon, tzPosix.c_str());
             }
         }
+        IPAddress ntpAddress;
+        WiFi.hostByName(ntpServer, ntpAddress);
         if (tzPosix.length() > 0) {
             configTzTime(tzPosix.c_str(), ntpServer);
             logger.logfInfo("Timezone set via POSIX string: %s", tzPosix.c_str());
@@ -567,11 +584,54 @@ void setup() // NOSONAR - complexity ok
             serialEventRun();
 
         // Feed the watchdog timer at the start of each loop iteration
-        esp_task_wdt_reset();    
-        
+        esp_task_wdt_reset();
+
         // Update WiFi controller every loop iteration (handles internal timing)
         wifiController.update();
-        
+
+        // Network-responsive watchdog: the pioarduino 3.x migration killed the
+        // addHeader bad_alloc panic but unmasked a pre-existing AsyncTCP/lwIP soft-
+        // wedge — the firmware loop keeps running but the network stack dies (no
+        // ping, no HTTP) and the WifiController's own reconnect logic never
+        // recovers it. The wedge can leave WiFi.status() reporting "connected"
+        // while lwIP cannot accept, so a self-HTTP accept probe is the reliable
+        // signal: a plain WiFiClient connecting to our own web server port must
+        // succeed. Probe every ~15 s; if it fails for NET_WEDGE_TIMEOUT_MS while
+        // the loop is alive, reboot. The threshold is well above a normal TLS
+        // handshake so a busy moment does not trip it.
+        static unsigned long lastNetOkMs = 0;
+        static unsigned long lastProbeMs = 0;
+        static bool watchdogArmed = false;
+        static constexpr unsigned long NET_PROBE_INTERVAL_MS = 15000;   // 15 s
+        static constexpr unsigned long NET_WEDGE_TIMEOUT_MS = 90000;    // 90 s
+        unsigned long nowMs = millis();
+        if (nowMs - lastProbeMs >= NET_PROBE_INTERVAL_MS) {
+            lastProbeMs = nowMs;
+            bool ok = false;
+            if (hal.wifiIsConnected()) {
+                // Plain TCP connect to our own web server. If lwIP can still
+                // accept, this returns true immediately. Wrap in try because the
+                // connect can throw under the wedge.
+                try {
+                    WiFiClient probe;
+                    probe.setTimeout(2);
+                    ok = probe.connect(WiFi.localIP(), 80);
+                    probe.stop();
+                } catch (...) {
+                    ok = false;
+                }
+            }
+            if (ok) {
+                lastNetOkMs = nowMs;
+                watchdogArmed = true;
+            } else if (watchdogArmed && nowMs - lastNetOkMs > NET_WEDGE_TIMEOUT_MS) {
+                logger.logfError("Network watchdog: self-HTTP probe failed >%lus — rebooting",
+                                 (unsigned long)(NET_WEDGE_TIMEOUT_MS / 1000));
+                delay(200);  // let the log line flush
+                ESP.restart();
+            }
+        }
+
         // Log watchdog status every 1000 loops for verbose logging
         static unsigned long loopCount = 0;
         loopCount++;
