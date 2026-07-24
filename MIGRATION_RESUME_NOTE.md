@@ -1,18 +1,40 @@
-# Framework Migration — Resume Note (fix/framework-migration-v2)
+# Framework Migration — Resume Note (fix/framework-migration-v2, released as v0.9.0)
 
-**STATUS 2026-07-23: async_tcp bad_alloc crash family ROOT-CAUSED AND FIXED.**
-Four prior sessions treated this as one unsolvable OOM problem while iterating
-on app-level heap gates. This session found three distinct, previously-missed
-root causes (Logger's 45.7KB static buffer, a genuine SNTP/DNS boot-order race,
-and ESPAsyncWebServer's own throwing `new` in its TCP-accept path — patched via
-`build_scripts/patch_async_webserver.py`) and fixed all three. Stress-tested
-(8 workers + weather/OTA/LLM TLS, 25 min): **zero bad_alloc panics**, down from
-3-4 per run previously. A distinct residual (Task-watchdog resets under extreme
-sustained load — async_tcp's LittleFS reads vs. raw mbedtls ECDH handshake math,
-both exceeding the 30s watchdog) was reduced 4→2 crashes via async_tcp core-
-pinning and accepted as documented residual (self-recovering, no data loss, not
-hit at realistic usage levels). Full details: project memory
-`async-tcp-crash-root-caused-and-fixed.md`.
+**STATUS 2026-07-23 (updated, released as v0.9.0): shipped to production based
+on REALISTIC-load validation, not because the crash is fully eliminated.**
+
+The async_tcp bad_alloc crash family found and fixed earlier the same day
+(Logger's 45.7KB static buffer, an SNTP/DNS boot-order race, ESPAsyncWebServer's
+own throwing `new` in its TCP-accept path — `build_scripts/patch_async_webserver.py`)
+is durably fixed: zero bad_alloc panics across every stress run this session,
+including reruns on a fresh checkout. Don't re-litigate that part.
+
+**The "residual Task-watchdog crash, reduced 4→2 via core-pinning, accepted as
+rare" characterization from earlier the same day was WRONG** — an independent
+same-day re-run of the identical script got **17 crashes/25min**, not 2. Two
+follow-up fixes were tried under an 8-worker adversarial stress test:
+- `CONFIG_LITTLEFS_CACHE_SIZE` 512→4096 (`build_scripts/lean_mbedtls.sdkconfig`):
+  real fix, cut the flash-read-stall crash family 17→9. **Kept, shipped in
+  v0.9.0.**
+- `CONFIG_COMPILER_CXX_EXCEPTIONS_EMG_POOL_SIZE` 0→1024: tried, made no
+  measurable difference (9→10) because most remaining crashes are ordinary
+  uncaught `throw` (not the `nothrow` pattern this pool helps), and the board
+  was observed getting stuck in a permanent post-crash low-memory 500-state
+  that never self-recovered. **Reverted, NOT in v0.9.0.**
+
+**The decision to ship anyway:** a separate 25-min test simulating REALISTIC
+1-2 user concurrency (not 8 workers) — `scratchpad/realistic_light_load.sh` —
+ran completely clean: zero crashes, heap never fluctuated, no wedge. The
+8-worker crash and the low-memory wedge are real, unfixed bugs, but they only
+manifest at a concurrency level far beyond this board's actual usage. User
+made an informed call to ship v0.9.0 on that basis, not because the underlying
+bug is solved. Full details: project memory `two-partial-fixes-crash-still-not-solved.md`.
+
+**Before touching this crash family again:** re-read
+`two-partial-fixes-crash-still-not-solved.md` first — it documents which
+specific backtrace patterns each prior fix did and didn't address, and why
+"emergency exception pool" is not a universal fix for bad_alloc crashes (only
+helps `nothrow` sites, not plain uncaught throws).
 
 **OTA INSTALL still broken** by the deep IDF 5.5.4 lwIP TCP stall on large TLS
 downloads documented below — separate, unresolved issue, needs an IDF/lwIP fix

@@ -88,3 +88,34 @@ CONFIG_LWIP_PPP_SUPPORT=n
 # FMB_MASTER_TIMEOUT_MS_RESPOND. We don't use modbus; set blocking high so the
 # assertion holds if the component still compiles.
 CONFIG_FMB_MASTER_MAX_API_BLOCKING_TIME_MS=15000
+
+# ---- LittleFS: enlarge the read cache to cut flash-read stalls ----
+# Default cache_size is 512 bytes; every read op on an open file pulls at most
+# that much before issuing another esp_partition_read() call, and EACH call
+# goes through spi_flash_disable_interrupts_caches_and_other_cpu() (cache_utils.c),
+# which briefly halts the OTHER core's scheduler (flash/cache access must be
+# cache-exclusive across both cores). Serving one ~130KB static asset (the web
+# UI's JS bundle) at 512B/read means ~250 of these stalls for a single request.
+# Under concurrent web load this starves whichever core is running loopTask
+# long enough to trip its 30s task watchdog (decoded backtrace 2026-07-23:
+# async_tcp -> spi_flash_disable_interrupts_caches_and_other_cpu <-
+# esp_partition_read <- littlefs_esp_part_read <- lfs_dir_fetchmatch/lfs_file_opencfg,
+# i.e. the serveStatic() path). Must be a divisor of block_size (4096) and a
+# multiple of read/write size (128); valid values are 128/256/512/1024/2048/4096.
+# 4096 (whole-block caching) cuts flash reads per file ~8x. Cost: a few KB of
+# RAM per open file handle (LittleFS keeps one cache buffer per open file, plus
+# shared read/program caches) -- negligible against the ~160KB free heap this
+# board runs with; does not touch the app partition or add static RAM (unlike
+# the mbedtls/BT trims above, this is a per-open-file heap cost, paid only
+# while a file is open).
+CONFIG_LITTLEFS_CACHE_SIZE=4096
+
+# NOTE: a CONFIG_COMPILER_CXX_EXCEPTIONS_EMG_POOL_SIZE=1024 override was tried
+# here 2026-07-23 (reserve a small pool so __cxa_allocate_exception can't itself
+# fail-to-terminate inside a nothrow allocation under heap pressure) and
+# REVERTED same day: it didn't move the crash count (9->10 in the same 25-min
+# repro) because most of the observed bad_alloc crashes are ordinary uncaught
+# THROWING `new` (AsyncWebServerResponse::addHeader, _parseReqHeader), not the
+# `new (std::nothrow)` pattern this pool actually helps -- see project memory
+# two-partial-fixes-crash-still-not-solved.md. Don't re-add without first
+# confirming a NEW backtrace is genuinely the nothrow-at-tcp_poll pattern.
