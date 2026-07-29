@@ -67,6 +67,7 @@
 #include "MQTTManager.h"
 #include "WeatherManager.h"
 #include "CrashDiagnostics.h"
+#include "CrashBreadcrumbs.h"
 
 
 /**
@@ -327,6 +328,13 @@ void setup() // NOSONAR - complexity ok
     crashDiagnosticsCheck([](const char* msg) {
         logger.logError(msg);
     });
+
+    // Report retained breadcrumbs from the previous boot (if any), then
+    // record the current boot event. No-op in non-diagnostic builds.
+    crashBreadcrumbReport([](const char* msg) {
+        logger.logWarning(msg);
+    });
+    crashBreadcrumbRecord(CRUMB_BOOT, hal.getResetReason(), hal.getFreeHeap());
 
     // Only sync NTP if connected to WiFi (not in AP mode)
     if (wifiController.isConnected()) {
@@ -930,6 +938,10 @@ void setup() // NOSONAR - complexity ok
         // OTA update: check for deferred install requests every loop,
         // and periodic auto-update checks based on settings interval
         updateManager.update();
+
+        // Diagnostic heap-pressure controller update (no-op in release builds).
+        // Runs on the main loop so pressure allocations never happen on async_tcp.
+        crashBreadcrumbPressureUpdate();
 
         // Poll Telegram bot for incoming commands, but only when free heap is
         // healthy. Each poll allocates a WiFiClientSecure TLS context + JSON
