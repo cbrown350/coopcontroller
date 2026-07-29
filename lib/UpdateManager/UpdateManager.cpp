@@ -2,6 +2,7 @@
 #include "Logger.h"
 #include "SettingsManager.h"
 #include "config.h"
+#include "CrashBreadcrumbs.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Update.h>
@@ -156,10 +157,14 @@ void UpdateManager::checkForUpdates() {
     current_operation_start_ = hal_->millis();
     last_check_ok_ = false;  // set true only after a successful fetch+parse below
 
+    crashBreadcrumbRecord(CRUMB_UPDATE_START, hal_->getFreeHeap(), hal_->getMaxAllocHeap());  // set true only after a successful fetch+parse below
+
     logger.logInfo("Checking for updates from: " + manifest_url_);
 
     // Fetch manifest JSON
+    crashBreadcrumbRecord(CRUMB_UPDATE_HTTP_BEFORE, hal_->getFreeHeap(), hal_->getMaxAllocHeap());
     String manifestJson = hal_->httpGet(manifest_url_, 15000);
+    crashBreadcrumbRecord(CRUMB_UPDATE_HTTP_AFTER, (uint32_t)manifestJson.length(), hal_->getFreeHeap());
     if (manifestJson.length() == 0) {
         String msg = "Failed to fetch manifest from: " + manifest_url_;
 #ifdef ESP_PLATFORM
@@ -173,8 +178,10 @@ void UpdateManager::checkForUpdates() {
     }
 
     // Parse manifest JSON
+    crashBreadcrumbRecord(CRUMB_UPDATE_JSON_BEFORE, (uint32_t)manifestJson.length(), hal_->getFreeHeap());
     JsonDocument doc;
     DeserializationError jsonError = deserializeJson(doc, manifestJson);
+    crashBreadcrumbRecord(CRUMB_UPDATE_JSON_AFTER, hal_->getFreeHeap(), hal_->getMaxAllocHeap());
     if (jsonError) {
         // Fold body length + first bytes + tail bytes into the HTTP-readable
         // error message (not just syslog) so truncation is diagnosable through
@@ -256,6 +263,7 @@ void UpdateManager::checkForUpdates() {
     }
 
     last_check_time_ = hal_->millis();
+    crashBreadcrumbRecord(CRUMB_UPDATE_END, hal_->getFreeHeap(), hal_->getMaxAllocHeap());
 
     // Compare versions
     if (manifest_.latest_version.length() == 0) {
@@ -555,6 +563,7 @@ void UpdateManager::requestCheck() {
     status_ = UpdateStatus::CHECKING; // primitive write; lets UI poll immediately
     last_check_ok_ = false;
     logger.logInfo("Update check requested (deferred to main loop)");
+    crashBreadcrumbRecord(CRUMB_UPDATE_REQUESTED, 0, 0);
 }
 
 void UpdateManager::requestInstall(bool skip_filesystem, bool force) {

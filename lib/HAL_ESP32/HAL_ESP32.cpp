@@ -19,6 +19,7 @@
 #include <freertos/semphr.h>  // For FreeRTOS mutex
 #include <exception>          // For std::exception in web-handler guards
 #include "HttpRequestBuilder.h"  // Shared GET request builder (adds User-Agent)
+#include "CrashBreadcrumbs.h"
 
 // Last-read-loop diagnostic from HAL_ESP32::httpGet, surfaced through
 // /update/check_result so the OTA-truncation bug (framework-migration-v2) is
@@ -35,7 +36,7 @@ String g_http_get_diag = "";  // NOLINT(cppcoreguidelines-avoid-non-const-global
 // AsyncWebServerRequest::beginResponse. File-scope (not a HAL_ESP32 member) so
 // the ESP32WebResponseWrapper class can see it.
 //
-static constexpr uint32_t WEB_RESP_MIN_MAX_ALLOC = 32768;
+static constexpr uint32_t WEB_RESP_MIN_MAX_ALLOC = 8192;
 
 static uint32_t getDefaultMaxAllocHeap() {
   return heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
@@ -913,6 +914,8 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
   Serial.printf("[HAL_ESP32] createSecureClient: alloc TLS ctx (free %u, max_alloc %u)\r\n",
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 
+  crashBreadcrumbRecord(CRUMB_TLS_ALLOC_BEFORE, ESP.getFreeHeap(), getDefaultMaxAllocHeap());
+
   try {
     // Construct inside try: WiFiClientSecure allocates the sslclient context
     // with `new`, which can throw even above the threshold under fragmentation.
@@ -932,9 +935,11 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
     // stick high unless a client is genuinely alive.
     tls_in_flight_.fetch_add(1, std::memory_order_acq_rel);
     auto* raw = client.release();
+    crashBreadcrumbRecord(CRUMB_TLS_ALLOC_SUCCESS, ESP.getFreeHeap(), getDefaultMaxAllocHeap());
     return SecureClientPtr(raw, TlsClientDeleter(&tls_in_flight_));
   } catch (...) {
     Serial.println("[HAL_ESP32] createSecureClient: exception during TLS client allocation");
+    crashBreadcrumbRecord(CRUMB_TLS_ALLOC_EXCEPTION, ESP.getFreeHeap(), getDefaultMaxAllocHeap());
     return nullptr;
   }
 }

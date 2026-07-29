@@ -2,6 +2,7 @@
 #include "config.h"
 #include "IHAL.h"
 #include "build_timestamp.h"
+#include "CrashBreadcrumbs.h"
 
 #include "Logger.h"
 #include "SensorManager.h"
@@ -1428,11 +1429,45 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                       jsonDoc["wifi_mac"] = hal->wifiGetMacAddress();
                       jsonDoc["wifi_bssid"] = "N/A";
                   }
-                  
+
                   String jsonResponse;
                   serializeJson(jsonDoc, jsonResponse);
                   response->send(200, "application/json", jsonResponse.c_str());
               });
+
+#ifdef COOP_CRASH_DIAGNOSTICS
+    // Diagnostic heap-pressure controller endpoints (test board only).
+    // POST /diagnostics/heap_pressure?target_max_block=<bytes>&duration_ms=<ms>
+    // GET  /diagnostics/heap_pressure
+    hal->webServerOn("/diagnostics/heap_pressure", HAL_WebRequestMethod::HTTP_POST,
+              [](IWebRequest *request, IWebResponse *response) {
+                  String t = request->param("target_max_block");
+                  String d = request->param("duration_ms");
+                  if (t.length() == 0 || d.length() == 0) {
+                      response->send(400, "text/plain", "missing target_max_block or duration_ms");
+                      return;
+                  }
+                  crashBreadcrumbPressureRequest(
+                      (uint32_t)strtoul(t.c_str(), nullptr, 10),
+                      (uint32_t)strtoul(d.c_str(), nullptr, 10));
+                  response->send(202, "text/plain", "pressure requested");
+              });
+
+    hal->webServerOn("/diagnostics/heap_pressure", HAL_WebRequestMethod::HTTP_GET,
+              [](IWebRequest *request, IWebResponse *response) {
+                  auto s = crashBreadcrumbPressureStatus();
+                  JsonDocument doc;
+                  doc["active"] = s.active;
+                  doc["target_max_block"] = s.target_max_block;
+                  doc["deadline_ms"] = s.deadline_ms;
+                  doc["allocated_blocks"] = s.allocated_blocks;
+                  doc["free_heap"] = s.free_heap;
+                  doc["max_block"] = s.max_block;
+                  String json;
+                  serializeJson(doc, json);
+                  response->send(200, "application/json", json.c_str());
+              });
+#endif
     
     // Version endpoint
     hal->webServerOn("/version", HAL_WebRequestMethod::HTTP_GET,
