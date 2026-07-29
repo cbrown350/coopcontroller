@@ -7,7 +7,9 @@ loads the Update page, requests /update/check, polls /update/status, reads
 supports a second client and bounded heap-pressure requests.
 
 Safety: hard-refuses host 192.168.2.8 (production), coopcontroller.local,
-and any host resolving to the production IP. Only the test board may be tested.
+and any host resolving to the production IP. Fails closed on DNS resolution
+errors. Disables HTTP redirects to prevent SSRF via redirect. Only the test
+board may be tested.
 
 Usage:
     python3 run_workload.py --host 192.168.2.99 --duration 3600 --clients 1 --output run.jsonl
@@ -22,6 +24,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 PRODUCTION_IP = "192.168.2.8"
 PRODUCTION_HOSTS = {"192.168.2.8", "coopcontroller.local"}
@@ -38,6 +41,14 @@ BROWSER_HEADERS = {
     "Cache-Control": "max-age=0",
 }
 
+# Custom opener that refuses to follow redirects (SSRF defense).
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # never follow redirects
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(NoRedirectHandler)
+
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -48,28 +59,38 @@ def now_ms():
 
 
 def check_host_safety(host):
-    """Refuse production targets."""
+    """Refuse production targets. Fails closed on DNS errors."""
     if host in PRODUCTION_HOSTS:
         print(f"REFUSING production host: {host}", file=sys.stderr)
         sys.exit(1)
+    # Check ALL resolved addresses, not just the first.
     try:
-        resolved = socket.gethostbyname(host)
-        if resolved == PRODUCTION_IP:
-            print(f"REFUSING: {host} resolves to production IP {PRODUCTION_IP}", file=sys.stderr)
-            sys.exit(1)
-    except socket.gaierror:
-        pass  # might be a .local that mDNS hasn't resolved yet
+        infos = socket.getaddrinfo(host, 80, socket.AF_INET, socket.SOCK_STREAM)
+        for family, _, _, _, sockaddr in infos:
+            ip = sockaddr[0]
+            if ip == PRODUCTION_IP:
+                print(f"REFUSING: {host} resolves to production IP {PRODUCTION_IP}", file=sys.stderr)
+                sys.exit(1)
+    except socket.gaierror as e:
+        # Fail closed: if we can't resolve the host to verify it's safe, refuse.
+        # mDNS (.local) should resolve by the time the tool runs; if not, the
+        # user should pass the IP directly.
+        print(f"REFUSING: cannot resolve {host} ({e}) — pass the test board's IP directly", file=sys.stderr)
+        sys.exit(1)
 
 
 def http_get(host, path, timeout=5):
-    """Simple GET returning (status_code, latency_ms, parsed_json_or_none, error)."""
+    """Simple GET returning (status_code, latency_ms, parsed_json_or_none, error).
+
+    Uses a no-redirect opener to prevent SSRF via HTTP redirect.
+    """
     url = f"http://{host}{path}"
     headers = dict(BROWSER_HEADERS)
     headers["Host"] = host
     req = urllib.request.Request(url, headers=headers)
     start = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with NO_REDIRECT_OPENER.open(req, timeout=timeout) as resp:
             body = resp.read()
             latency = (time.monotonic() - start) * 1000
             try:
