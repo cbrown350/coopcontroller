@@ -125,12 +125,29 @@ def detect_reboot(status_data, prev_uptime):
 
 
 def client_worker(host, duration_s, client_id, output, stop_event):
-    """Simulate one browser-equivalent client doing the Update+Logs sequence."""
+    """Simulate one browser-equivalent client doing the Update+Logs sequence.
+
+    Loads the full SPA (HTML shell + JS bundle + CSS from LittleFS) like a
+    real browser, then makes API calls. The 130KB JS bundle served from
+    LittleFS triggers spi_flash_disable_interrupts stalls on every read —
+    this is the real-world memory pressure pattern that crashes the board.
+    """
     end_time = time.monotonic() + duration_s
     prev_uptime = None
 
+    # Static assets a browser loads on every page navigation. These are
+    # served from LittleFS via serveStatic(), and the 130KB JS bundle in
+    # particular causes repeated flash-read stalls under the async_tcp task.
+    SPA_ASSETS = ["/", "/assets/index-DNUMkO5J.js", "/assets/index-CcDEeZ5t.css"]
+
     while time.monotonic() < end_time and not stop_event.is_set():
         cycle_start = time.monotonic()
+
+        # 0. Load the full SPA like a real browser (LittleFS static assets)
+        for asset_path in SPA_ASSETS:
+            code, lat, _, err = http_get(host, asset_path)
+            log_event(output, client=client_id, phase="static_asset",
+                      path=asset_path, status=code, latency_ms=int(lat), error=err)
 
         # 1. Load version
         code, lat, data, err = http_get(host, "/version")
