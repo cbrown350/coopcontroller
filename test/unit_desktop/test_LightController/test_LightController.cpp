@@ -69,7 +69,7 @@ TEST_F(LightControllerTest, InitializeWithHAL) {
     EXPECT_EQ(mockHAL.pwmSetupResolution, 8U);
     
     EXPECT_TRUE(mockHAL.pwmAttachPinCalled);
-    EXPECT_EQ(mockHAL.pwmAttachPinPin, 25); // OUT_LIGHT_PIN
+    EXPECT_EQ(mockHAL.pwmAttachPinPin, OUT_LIGHT_PIN);
     EXPECT_EQ(mockHAL.pwmAttachPinChannel, 0);
 }
 

@@ -53,8 +53,8 @@ All pins defined in `platformio.ini` as build flags. Inputs/outputs are active h
 |-----|----------|----------|------|-------|
 | 32 | TEMP_METER_PIN | Sensor 1 Input | Input+Pullup | Auto-detects Dallas temp or water meter |
 | 33 | TEMP_METER_2_PIN | Sensor 2 Input | Input+Pullup | Auto-detects Dallas temp or water meter |
-| 26 | OUT_PUMP_PIN | Pump Control | Output | Relay control for water pump |
-| 25 | OUT_LIGHT_PIN | Light Control | PWM Output | LEDC channel 0, 5kHz, 8-bit resolution |
+| 25 | OUT_PUMP_PIN | Pump Control | Output | Pump moved to former light MOSFET after pump MOSFET failure |
+| 26 | OUT_LIGHT_PIN | Light Control | PWM Output | Former pump MOSFET; failed, unused |
 |  | WIFI_LED_B_PIN | WiFi Status LED | Output | Heartbeat when connected, active low |
 |  | BUZZER_B_PIN | Alert Buzzer | Output | Active low |
 |  | OUT_DOOR_A_OPEN_POS_PIN | Door Open Positive | Output | DRV8833 motor control |
@@ -63,6 +63,16 @@ All pins defined in `platformio.ini` as build flags. Inputs/outputs are active h
 |  | DOOR_MANUAL_SWITCH_B_PIN | Manual Door Switch | Input | Momentary switch |
 |  | DOOR_A_HALL_SENSOR_OPEN_B_PIN | Door Open Sensor | Input | Hall effect, active low |
 |  | DOOR_A_HALL_SENSOR_CLOSED_B_PIN | Door Closed Sensor | Input | Hall effect, active low |
+
+### Approved pump/light swap (2026-11-07)
+
+User approved swapping the two existing assignments: `OUT_PUMP_PIN=25` and
+`OUT_LIGHT_PIN=26`. The pump is already wired to the working former light
+MOSFET; the failed former pump MOSFET is unused. Both GPIOs support outputs,
+neither is a boot/flash/input-only pin, and exchanging their exclusive roles
+introduces no pin conflicts. No other firmware behavior or filesystem change
+is intended. Existing hardware-emulator monitoring cables must be exchanged
+between main-controller GPIOs 25 and 26 if that emulator is connected.
 
 ### Pin Safety Rules
 
