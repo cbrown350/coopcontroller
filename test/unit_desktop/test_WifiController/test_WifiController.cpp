@@ -1225,3 +1225,59 @@ TEST_F(WifiControllerTest, CompleteOperationSequence) {
     EXPECT_EQ(status3.ssid, "");  // Disconnect clears SSID
     EXPECT_TRUE(status3.hasConnected);  // hasConnected persists (stored in settings)
 }
+
+TEST_F(WifiControllerTest, ReconnectTimeoutKeepsStaModeWhenPreviouslyConnected) {
+    sm.setAPMode(false);
+    sm.setHasConnected(true);
+    sm.setWifiMaxRetries(2);
+    sm.setWifiRetryDelaySeconds(10);  // 20s reconnect timeout
+
+    mockHAL->setWiFiStatus(WL_CONNECTED);
+    mockHAL->setWiFiSSID("TestSSID");
+    mockHAL->setWiFiLocalIP("192.168.1.100");
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
+
+    // Drop WiFi and start reconnect
+    mockHAL->setWiFiStatus(WL_DISCONNECTED);
+    mockHAL->setMillis(31000);
+    wifiController->update();
+    EXPECT_TRUE(wifiController->getStatus().isReconnecting);
+
+    // Advance past reconnect timeout (31000 + 30000 = 61000; 30s > 20s timeout)
+    mockHAL->setMillis(61000);
+    wifiController->update();
+
+    // Must NOT flip into AP mode when hasConnected is true
+    EXPECT_FALSE(sm.isAPMode());
+    EXPECT_FALSE(wifiController->isInAPMode());
+    EXPECT_FALSE(wifiController->getStatus().isReconnecting);
+}
+
+TEST_F(WifiControllerTest, BssidBlacklistHandlesMillisRollover) {
+    sm.setAPMode(false);
+    sm.setHasConnected(true);
+    sm.setWifiBssidPreference("AA:BB:CC:DD:EE:FF");
+    sm.setWifiMaxRetries(1);
+    sm.setWifiRetryDelaySeconds(1);
+
+    // Start near uint32_t max so millis() wraps across 0 during the 10-min blacklist
+    const unsigned long nearMax = 0xFFFF0000UL;
+    mockHAL->setMillis(nearMax);
+    mockHAL->setWiFiStatus(WL_CONNECTED);
+    wifiController->begin(mockHAL, &sm, mockBuzzer, "CoopAP");
+
+    // Disconnect -> starts reconnect with preferred BSSID
+    mockHAL->setWiFiStatus(WL_DISCONNECTED);
+    mockHAL->setMillis(nearMax + 31000UL);
+    wifiController->update();
+
+    // Timeout preferred BSSID -> blacklists it right before wrap
+    mockHAL->setMillis(nearMax + 62000UL);
+    wifiController->update();
+
+    // Advance 60s past wrap (millis() wrapped around 0): blacklist must STILL be active
+    // so next reconnect cycle uses auto-select (no crash, stays in STA mode)
+    mockHAL->setMillis(nearMax + 122000UL);
+    wifiController->update();
+    EXPECT_FALSE(sm.isAPMode());
+}

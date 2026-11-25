@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <atomic>
 #include <functional>
 
 // Forward declarations - MQTTManager uses PubSubClient internally but
@@ -104,7 +105,9 @@ private:
     MQTTCommandCallback commandCallback_;
 
     // Connection state
+    std::atomic<bool> connected_{false};  ///< Cached connection state (safe to read cross-core)
     bool was_connected_ = false;
+    bool discovery_published_ = false;
     unsigned long last_reconnect_attempt_ = 0;
     unsigned long reconnect_interval_ = 5000;  // Start with 5s, backoff to 60s
     static constexpr unsigned long MAX_RECONNECT_INTERVAL = 60000;

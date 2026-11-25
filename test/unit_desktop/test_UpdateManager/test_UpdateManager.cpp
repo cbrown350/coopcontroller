@@ -1146,3 +1146,36 @@ TEST_F(UpdateManagerTest, NonForceInstall_StillRejectsWhenCurrent) {
     um.installUpdate(false, false); // force=false
     EXPECT_EQ(um.getStatus().status, UpdateStatus::ERROR);
 }
+
+TEST_F(UpdateManagerTest, VersionInfoSizeBytesDefaultsToZero) {
+    VersionInfo info;
+    EXPECT_EQ(info.size_bytes, 0u);
+}
+
+TEST_F(UpdateManagerTest, ParseVersionHandlesLeadingVAndRejectsGarbage) {
+    beginWithUrl();
+    um.setDeviceVersionForTesting("1.0.0");
+
+    // Leading 'v' in project manifest latest_version should be accepted and compared
+    const char* vManifest = R"({"latest_version":"v2.1.0","release_date":"2026-01-01","firmware":{"version":"2.1.0","url":"https://example.com/fw.bin","size_bytes":1024,"sha256":""}})";
+    mockHal.setHttpGetResponse(vManifest);
+    um.checkForUpdates();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::AVAILABLE);
+    EXPECT_EQ(um.getLatestVersion(), "2.1.0");
+
+    // Non-numeric garbage version should NOT be treated as newer
+    const char* badManifest = R"({"latest_version":"2.foo.0","release_date":"2026-01-01","firmware":{"version":"2.foo.0","url":"https://example.com/fw.bin","size_bytes":1024,"sha256":""}})";
+    mockHal.setHttpGetResponse(badManifest);
+    um.checkForUpdates();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::CURRENT);
+    EXPECT_FALSE(um.isUpdateAvailable());
+}
+
+TEST_F(UpdateManagerTest, CheckForUpdatesSurfacesHalHttpError) {
+    beginWithUrl();
+    mockHal.setHttpGetResponse("");
+    mockHal.setLastHttpError("TLS connect failed (-10368)");
+    um.checkForUpdates();
+    EXPECT_EQ(um.getStatus().status, UpdateStatus::ERROR);
+    EXPECT_NE(um.getStatus().error_message.indexOf("-10368"), -1);
+}

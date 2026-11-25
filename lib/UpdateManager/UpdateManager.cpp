@@ -74,36 +74,43 @@ void UpdateManager::setManifestUrl(const String& manifest_url) {
 }
 
 bool UpdateManager::parseVersion(const String& version, int& major, int& minor, int& patch) const {
-    // Parse semantic version: "1.0.5" or "1.0.0-beta"
+    // Parse semantic version: "1.0.5", "v1.0.5", or "1.0.0-beta"
     // Extract major.minor.patch (ignore pre-release and build metadata)
+    String v = version;
+    v.trim();
+    if (v.startsWith("v") || v.startsWith("V")) {
+        v = v.substring(1);
+    }
 
     unsigned int dotCount = 0;
     int firstDot = -1;
     int secondDot = -1;
+    unsigned int coreEnd = v.length();
 
-    for (unsigned int i = 0; i < version.length(); i++) {
-        if (version[i] == '.') {
+    for (unsigned int i = 0; i < v.length(); i++) {
+        char c = v[i];
+        if (c == '.') {
             dotCount++;
             if (dotCount == 1) firstDot = i;
             else if (dotCount == 2) secondDot = i;
-        } else if (version[i] == '-' || version[i] == '+') {
-            // Found pre-release or build metadata
-            if (dotCount < 2) return false; // Invalid format
+            else return false;
+        } else if (c == '-' || c == '+') {
+            if (dotCount < 2) return false;
+            coreEnd = i;
             break;
+        } else if (c < '0' || c > '9') {
+            return false;
         }
     }
 
-    if (dotCount < 2) return false; // Need at least major.minor.patch
-
-    major = version.substring(0, firstDot).toInt();
-    minor = version.substring(firstDot + 1, secondDot).toInt();
-
-    // Find end of patch (stop at '-', '+', or end of string)
-    unsigned int patchEnd = secondDot + 1;
-    while (patchEnd < version.length() && version[patchEnd] >= '0' && version[patchEnd] <= '9') {
-        patchEnd++;
+    if (dotCount != 2 || firstDot <= 0 || secondDot <= firstDot + 1 ||
+        static_cast<unsigned int>(secondDot + 1) >= coreEnd) {
+        return false;
     }
-    patch = version.substring(secondDot + 1, patchEnd).toInt();
+
+    major = v.substring(0, firstDot).toInt();
+    minor = v.substring(firstDot + 1, secondDot).toInt();
+    patch = v.substring(secondDot + 1, coreEnd).toInt();
 
     return true;
 }
@@ -128,6 +135,7 @@ bool UpdateManager::isVersionNewer(const String& current, const String& availabl
 }
 
 void UpdateManager::setStatus(UpdateStatus newStatus, bool clearError) {
+    std::lock_guard<std::mutex> lock(mutex_);
     status_ = newStatus;
     if (clearError) {
         error_ = UpdateError::NONE;
@@ -136,9 +144,12 @@ void UpdateManager::setStatus(UpdateStatus newStatus, bool clearError) {
 }
 
 void UpdateManager::setError(UpdateError error, const String& message) {
-    error_ = error;
-    last_error_message_ = message;
-    status_ = UpdateStatus::ERROR;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        error_ = error;
+        last_error_message_ = message;
+        status_ = UpdateStatus::ERROR;
+    }
     logger.logError("Update error: " + message);
 }
 
@@ -148,32 +159,52 @@ void UpdateManager::checkForUpdates() {
         return;
     }
 
-    if (manifest_url_.length() == 0) {
+    String manifestUrl;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        manifestUrl = manifest_url_;
+    }
+
+    if (manifestUrl.length() == 0) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_check_time_ = hal_->millis();
+        }
         setError(UpdateError::NET_ERROR, "No manifest URL configured");
         return;
     }
 
     setStatus(UpdateStatus::CHECKING, true);
-    current_operation_start_ = hal_->millis();
-    last_check_ok_ = false;  // set true only after a successful fetch+parse below
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        current_operation_start_ = hal_->millis();
+        last_check_ok_ = false;
+    }
 
-    crashBreadcrumbRecord(CRUMB_UPDATE_START, hal_->getFreeHeap(), hal_->getMaxAllocHeap());  // set true only after a successful fetch+parse below
+    crashBreadcrumbRecord(CRUMB_UPDATE_START, hal_->getFreeHeap(), hal_->getMaxAllocHeap());
 
-    logger.logInfo("Checking for updates from: " + manifest_url_);
+    logger.logInfo("Checking for updates from: " + manifestUrl);
 
-    // Fetch manifest JSON
+    // Fetch manifest JSON (no mutex held across network I/O)
     crashBreadcrumbRecord(CRUMB_UPDATE_HTTP_BEFORE, hal_->getFreeHeap(), hal_->getMaxAllocHeap());
-    String manifestJson = hal_->httpGet(manifest_url_, 15000);
+    String manifestJson = hal_->httpGet(manifestUrl, 15000);
     crashBreadcrumbRecord(CRUMB_UPDATE_HTTP_AFTER, (uint32_t)manifestJson.length(), hal_->getFreeHeap());
     if (manifestJson.length() == 0) {
-        String msg = "Failed to fetch manifest from: " + manifest_url_;
+        String halErr = hal_->getLastHttpError();
+        String msg = "Failed to fetch manifest from: " + manifestUrl;
+        if (halErr.length() > 0) {
+            msg += " (" + halErr + ")";
+        }
 #ifdef ESP_PLATFORM
         if (g_http_get_diag.length() > 0) {
             msg += " | httpGet: " + g_http_get_diag;
         }
 #endif
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_check_time_ = hal_->millis();
+        }
         setError(UpdateError::NET_ERROR, msg);
-        last_check_time_ = hal_->millis();
         return;
     }
 
@@ -183,12 +214,6 @@ void UpdateManager::checkForUpdates() {
     DeserializationError jsonError = deserializeJson(doc, manifestJson);
     crashBreadcrumbRecord(CRUMB_UPDATE_JSON_AFTER, hal_->getFreeHeap(), hal_->getMaxAllocHeap());
     if (jsonError) {
-        // Fold body length + first bytes + tail bytes into the HTTP-readable
-        // error message (not just syslog) so truncation is diagnosable through
-        // /update/check_result without relying on serial capture (which drops
-        // lines under load on this board). Tail bytes reveal where the body
-        // was cut: a clean JSON fragment mid-token = truncation; '>' or '<'
-        // = HTML error page; 0x1f 0x8b = gzip.
         String preview = manifestJson.substring(0, 120);
         preview.replace("\r", "\\r");
         preview.replace("\n", "\\n");
@@ -205,35 +230,35 @@ void UpdateManager::checkForUpdates() {
             msg += " | httpGet: " + g_http_get_diag;
         }
 #endif
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_check_time_ = hal_->millis();
+        }
         setError(UpdateError::MANIFEST_PARSE, msg);
-        last_check_time_ = hal_->millis();
         return;
     }
 
-    // Extract either the project's version_manifest.json format or GitHub's
-    // releases/latest API format. Use isNull() rather than String length to
-    // distinguish an absent latest_version member: ArduinoJson converts a
-    // missing member to the literal String "null".
+    UpdateManifest parsed;
     bool githubRelease = doc["latest_version"].isNull() && !doc["tag_name"].isNull();
 
     if (githubRelease) {
         String tag = doc["tag_name"].as<String>();
-        if (tag.startsWith("v")) tag = tag.substring(1);
-        manifest_.latest_version = tag;
-        manifest_.release_date = doc["published_at"].as<String>();
+        if (tag.startsWith("v") || tag.startsWith("V")) tag = tag.substring(1);
+        parsed.latest_version = tag;
+        parsed.release_date = doc["published_at"].as<String>();
 
         JsonArray assets = doc["assets"].as<JsonArray>();
         for (JsonObject asset : assets) {
             String name = asset["name"].as<String>();
             VersionInfo* target = nullptr;
             if (name == "firmware.bin") {
-                target = &manifest_.firmware;
+                target = &parsed.firmware;
             } else if (name == "littlefs.bin") {
-                target = &manifest_.filesystem;
+                target = &parsed.filesystem;
             }
 
             if (target != nullptr) {
-                target->version = manifest_.latest_version;
+                target->version = parsed.latest_version;
                 target->url = asset["browser_download_url"].as<String>();
                 target->size_bytes = asset["size"].as<uint32_t>();
 
@@ -244,42 +269,52 @@ void UpdateManager::checkForUpdates() {
             }
         }
     } else {
-        manifest_.latest_version = doc["latest_version"].as<String>();
-        manifest_.release_date = doc["release_date"].as<String>();
+        String latestVer = !doc["latest_version"].isNull() ? doc["latest_version"].as<String>() : String("");
+        if (latestVer.startsWith("v") || latestVer.startsWith("V")) latestVer = latestVer.substring(1);
+        parsed.latest_version = latestVer;
+        parsed.release_date = !doc["release_date"].isNull() ? doc["release_date"].as<String>() : String("");
 
         if (doc["firmware"].is<JsonObject>()) {
-            manifest_.firmware.version = doc["firmware"]["version"].as<String>();
-            manifest_.firmware.url = doc["firmware"]["url"].as<String>();
-            manifest_.firmware.size_bytes = doc["firmware"]["size_bytes"].as<uint32_t>();
-            manifest_.firmware.sha256 = doc["firmware"]["sha256"].as<String>();
+            parsed.firmware.version = doc["firmware"]["version"].as<String>();
+            parsed.firmware.url = doc["firmware"]["url"].as<String>();
+            parsed.firmware.size_bytes = doc["firmware"]["size_bytes"].as<uint32_t>();
+            parsed.firmware.sha256 = doc["firmware"]["sha256"].as<String>();
         }
 
         if (doc["filesystem"].is<JsonObject>()) {
-            manifest_.filesystem.version = doc["filesystem"]["version"].as<String>();
-            manifest_.filesystem.url = doc["filesystem"]["url"].as<String>();
-            manifest_.filesystem.size_bytes = doc["filesystem"]["size_bytes"].as<uint32_t>();
-            manifest_.filesystem.sha256 = doc["filesystem"]["sha256"].as<String>();
+            parsed.filesystem.version = doc["filesystem"]["version"].as<String>();
+            parsed.filesystem.url = doc["filesystem"]["url"].as<String>();
+            parsed.filesystem.size_bytes = doc["filesystem"]["size_bytes"].as<uint32_t>();
+            parsed.filesystem.sha256 = doc["filesystem"]["sha256"].as<String>();
         }
     }
 
-    last_check_time_ = hal_->millis();
     crashBreadcrumbRecord(CRUMB_UPDATE_END, hal_->getFreeHeap(), hal_->getMaxAllocHeap());
 
-    // Compare versions
-    if (manifest_.latest_version.length() == 0) {
+    if (parsed.latest_version.length() == 0) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_check_time_ = hal_->millis();
+        }
         setError(UpdateError::MANIFEST_PARSE, "Manifest missing latest_version field");
         return;
     }
 
-    // Reached here => manifest fetched and parsed successfully.
-    last_check_ok_ = true;
+    String devVer;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        manifest_ = parsed;
+        last_check_time_ = hal_->millis();
+        last_check_ok_ = true;
+        devVer = device_version_;
+    }
 
-    if (isVersionNewer(device_version_, manifest_.latest_version)) {
+    if (isVersionNewer(devVer, parsed.latest_version)) {
         setStatus(UpdateStatus::AVAILABLE, true);
-        logger.logInfo("Update available: " + device_version_ + " -> " + manifest_.latest_version);
+        logger.logInfo("Update available: " + devVer + " -> " + parsed.latest_version);
     } else {
         setStatus(UpdateStatus::CURRENT, true);
-        logger.logInfo("Firmware is up to date: " + device_version_);
+        logger.logInfo("Firmware is up to date: " + devVer);
     }
 }
 
@@ -326,13 +361,18 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
     current_operation_start_ = hal_->millis();
     logger.logInfo("Starting firmware update to version: " + manifest_.latest_version);
 
+    abort_requested_.store(false, std::memory_order_release);
+
     // --- Install firmware ---
     if (manifest_.firmware.url.length() > 0 && manifest_.firmware.size_bytes > 0) {
-        phase_ = "firmware";
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            phase_ = "firmware";
+            bytes_downloaded_ = 0;
+            total_bytes_ = manifest_.firmware.size_bytes;
+            progress_percent_ = 0;
+        }
         setStatus(UpdateStatus::DOWNLOADING, true);
-        bytes_downloaded_ = 0;
-        total_bytes_ = manifest_.firmware.size_bytes;
-        progress_percent_ = 0;
 
         logger.logInfo("Downloading firmware: " + String((unsigned long)manifest_.firmware.size_bytes) + " bytes");
 
@@ -355,6 +395,9 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
         // Stream download, writing each chunk to OTA partition and updating SHA256
         bool downloadSuccess = hal_->httpGetStream(manifest_.firmware.url,
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
+                if (abort_requested_.load(std::memory_order_acquire)) {
+                    return false;
+                }
                 // Update SHA256 hash with incoming data
                 if (sha_ctx_initialized_) {
                     mbedtls_sha256_update((mbedtls_sha256_context*)sha_ctx_, data, len);
@@ -365,9 +408,12 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
                 if (written != len) {
                     return false; // Write failed, abort download
                 }
-                bytes_downloaded_ = downloaded;
-                total_bytes_ = total;
-                progress_percent_ = total > 0 ? (uint8_t)((downloaded * 100) / total) : 0;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    bytes_downloaded_ = downloaded;
+                    total_bytes_ = total;
+                    progress_percent_ = total > 0 ? (uint8_t)(((uint64_t)downloaded * 100ULL) / total) : 0;
+                }
                 return true;
             }, 120000); // 2 minute timeout for firmware download
 
@@ -377,6 +423,10 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             sha_ctx_ = nullptr;
             sha_ctx_initialized_ = false;
             hal_->otaAbort();
+            if (abort_requested_.load(std::memory_order_acquire)) {
+                setStatus(UpdateStatus::IDLE, true);
+                return;
+            }
             String msg = "Firmware download failed or incomplete";
 #ifdef ESP_PLATFORM
             if (g_http_get_diag.length() > 0) {
@@ -472,6 +522,9 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
 
         bool fsDownloadSuccess = hal_->httpGetStream(manifest_.filesystem.url,
             [this](const uint8_t* data, size_t len, uint32_t downloaded, uint32_t total) -> bool {
+                if (abort_requested_.load(std::memory_order_acquire)) {
+                    return false;
+                }
                 // Update SHA256 hash with incoming data
                 if (sha_ctx_initialized_) {
                     mbedtls_sha256_update((mbedtls_sha256_context*)sha_ctx_, data, len);
@@ -483,9 +536,12 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
                     logger.logError("Filesystem OTA write failed: wrote " + String((unsigned long)written) + "/" + String((unsigned long)len) + " bytes");
                     return false;
                 }
-                bytes_downloaded_ = downloaded;
-                total_bytes_ = total;
-                progress_percent_ = total > 0 ? (uint8_t)((downloaded * 100) / total) : 0;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    bytes_downloaded_ = downloaded;
+                    total_bytes_ = total;
+                    progress_percent_ = total > 0 ? (uint8_t)(((uint64_t)downloaded * 100ULL) / total) : 0;
+                }
                 return true;
             }, 120000);
 
@@ -496,6 +552,10 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
             sha_ctx_initialized_ = false;
             hal_->otaAbort();
             hal_->fsBegin();
+            if (abort_requested_.load(std::memory_order_acquire)) {
+                setStatus(UpdateStatus::IDLE, true);
+                return;
+            }
             setError(UpdateError::DOWNLOAD_FAILED, "Filesystem download failed or incomplete");
             return;
         }
@@ -559,40 +619,60 @@ void UpdateManager::installUpdate(bool skip_filesystem, bool force) {
 }
 
 void UpdateManager::requestCheck() {
-    check_requested_ = true;  // coalesces repeated clicks while pending
-    status_ = UpdateStatus::CHECKING; // primitive write; lets UI poll immediately
-    last_check_ok_ = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        check_requested_ = true;  // coalesces repeated clicks while pending
+        status_ = UpdateStatus::CHECKING; // lets UI poll immediately
+        last_check_ok_ = false;
+    }
     logger.logInfo("Update check requested (deferred to main loop)");
     crashBreadcrumbRecord(CRUMB_UPDATE_REQUESTED, 0, 0);
 }
 
 void UpdateManager::requestInstall(bool skip_filesystem, bool force) {
-    install_requested_ = true;
-    install_skip_filesystem_ = skip_filesystem;
-    install_force_ = force;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        install_skip_filesystem_ = skip_filesystem;
+        install_force_ = force;
+        install_requested_ = true;
+    }
     logger.logInfo("Update install requested (deferred to main loop)");
 }
 
 void UpdateManager::update() {
     if (!hal_) return;
 
-    // Consume a deferred check before the generic busy guard because
-    // requestCheck() marks status CHECKING immediately for UI polling.
-    if (check_requested_) {
-        check_requested_ = false;
+    bool doCheck = false;
+    bool doInstall = false;
+    bool skipFs = false;
+    bool forceInstall = false;
+    bool busy = false;
+    unsigned long lastCheck = 0;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (check_requested_) {
+            check_requested_ = false;
+            doCheck = true;
+        } else if (status_ == UpdateStatus::DOWNLOADING || status_ == UpdateStatus::INSTALLING ||
+                   status_ == UpdateStatus::VERIFYING || status_ == UpdateStatus::CHECKING) {
+            busy = true;
+        } else if (install_requested_) {
+            install_requested_ = false;
+            skipFs = install_skip_filesystem_;
+            forceInstall = install_force_;
+            doInstall = true;
+        }
+        lastCheck = last_check_time_;
+    }
+
+    if (doCheck) {
         checkForUpdates();
         return;
     }
-
-    if (status_ == UpdateStatus::DOWNLOADING || status_ == UpdateStatus::INSTALLING ||
-        status_ == UpdateStatus::VERIFYING || status_ == UpdateStatus::CHECKING) {
-        return; // Already busy
-    }
-
-    // Handle deferred install request from web handler
-    if (install_requested_) {
-        install_requested_ = false;
-        installUpdate(install_skip_filesystem_, install_force_);
+    if (busy) return;
+    if (doInstall) {
+        installUpdate(skipFs, forceInstall);
         return;
     }
 
@@ -601,12 +681,13 @@ void UpdateManager::update() {
     unsigned long checkIntervalMs = (unsigned long)settingsManager.getUpdateCheckIntervalHours() * 3600000UL;
     unsigned long now = hal_->millis();
 
-    if (last_check_time_ == 0 || (now - last_check_time_) >= checkIntervalMs) {
+    if (lastCheck == 0 || (now - lastCheck) >= checkIntervalMs) {
         checkForUpdates();
     }
 }
 
 UpdateStatusSnapshot UpdateManager::getStatus() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     UpdateStatusSnapshot snapshot;
     snapshot.status = status_;
     snapshot.error = error_;
@@ -616,27 +697,36 @@ UpdateStatusSnapshot UpdateManager::getStatus() const {
     snapshot.error_message = last_error_message_;
     snapshot.phase = phase_;
     snapshot.last_check_time = last_check_time_;
-    snapshot.next_check_time = 0; // TODO: Calculate based on settings
+    snapshot.next_check_time = 0;
 
     return snapshot;
 }
 
 String UpdateManager::getDeviceVersion() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return device_version_;
 }
 
 String UpdateManager::getLatestVersion() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return manifest_.latest_version;
 }
 
 bool UpdateManager::isUpdateAvailable() const {
-    if (manifest_.latest_version.length() == 0) {
+    String devVer, latestVer;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        devVer = device_version_;
+        latestVer = manifest_.latest_version;
+    }
+    if (latestVer.length() == 0) {
         return false;
     }
-    return isVersionNewer(device_version_, manifest_.latest_version);
+    return isVersionNewer(devVer, latestVer);
 }
 
 void UpdateManager::toJson(JsonObject& json) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     json["status"] = (int)status_;
     json["error"] = (int)error_;
     json["error_message"] = last_error_message_;
@@ -646,47 +736,66 @@ void UpdateManager::toJson(JsonObject& json) const {
 }
 
 JsonDocument UpdateManager::getCheckResponseJson() const {
+    String manifestUrl, devVer, latestVer, lastErr;
+    unsigned long lastCheck;
+    bool checkOk;
+    UpdateManifest m;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        manifestUrl = manifest_url_;
+        lastCheck = last_check_time_;
+        devVer = device_version_;
+        latestVer = manifest_.latest_version;
+        checkOk = last_check_ok_;
+        lastErr = last_error_message_;
+        m = manifest_;
+    }
+
     JsonDocument doc;
+    doc["manifest_url"] = manifestUrl;
+    doc["last_check_time"] = lastCheck;
+    doc["current_version"] = devVer;
+    doc["available_version"] = latestVer;
+    doc["update_available"] = (latestVer.length() > 0) ? isVersionNewer(devVer, latestVer) : false;
 
-    doc["manifest_url"] = manifest_url_;
-    doc["last_check_time"] = last_check_time_;
-    doc["current_version"] = device_version_;
-    doc["available_version"] = manifest_.latest_version;
-    doc["update_available"] = isUpdateAvailable();
-
-    // Surface whether the MOST RECENT check actually fetched+parsed a manifest
-    // so the UI can distinguish "up to date" (check ok, no newer version) from
-    // "check failed" (fetch/parse error). Uses last_check_ok_ rather than the
-    // presence of manifest_ data, because a failed re-check leaves a stale
-    // manifest_ populated from a prior success. Without this the UI wrongly
-    // showed "Firmware is up to date" with a blank version whenever the fetch
-    // failed.
-    doc["check_ok"] = last_check_ok_;
-    if (!last_check_ok_ && last_error_message_.length() > 0) {
-        doc["error"] = last_error_message_;
+    doc["check_ok"] = checkOk;
+    if (!checkOk && lastErr.length() > 0) {
+        doc["error"] = lastErr;
     }
 
     JsonObject firmware = doc["firmware"].to<JsonObject>();
-    firmware["version"] = manifest_.firmware.version;
-    firmware["url"] = manifest_.firmware.url;
-    firmware["size_bytes"] = manifest_.firmware.size_bytes;
+    firmware["version"] = m.firmware.version;
+    firmware["url"] = m.firmware.url;
+    firmware["size_bytes"] = m.firmware.size_bytes;
 
     JsonObject filesystem = doc["filesystem"].to<JsonObject>();
-    filesystem["version"] = manifest_.filesystem.version;
-    filesystem["url"] = manifest_.filesystem.url;
-    filesystem["size_bytes"] = manifest_.filesystem.size_bytes;
+    filesystem["version"] = m.filesystem.version;
+    filesystem["url"] = m.filesystem.url;
+    filesystem["size_bytes"] = m.filesystem.size_bytes;
 
-    doc["release_date"] = manifest_.release_date;
+    doc["release_date"] = m.release_date;
     doc["github_repo"] = String(githubRepo);
 
     return doc;
 }
 
 JsonDocument UpdateManager::getStatusResponseJson() const {
-    JsonDocument doc;
+    UpdateStatus st;
+    uint8_t progress;
+    String phase, lastErr;
+    unsigned long lastCheck;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        st = status_;
+        progress = progress_percent_;
+        phase = phase_;
+        lastCheck = last_check_time_;
+        lastErr = last_error_message_;
+    }
 
+    JsonDocument doc;
     String statusStr;
-    switch (status_) {
+    switch (st) {
         case UpdateStatus::IDLE: statusStr = "idle"; break;
         case UpdateStatus::CHECKING: statusStr = "checking"; break;
         case UpdateStatus::AVAILABLE: statusStr = "available"; break;
@@ -700,22 +809,35 @@ JsonDocument UpdateManager::getStatusResponseJson() const {
     }
 
     doc["status"] = statusStr;
-    doc["progress"] = progress_percent_;
-    doc["phase"] = phase_;
-    doc["last_check"] = last_check_time_;
-    doc["error"] = last_error_message_;
+    doc["progress"] = progress;
+    doc["phase"] = phase;
+    doc["last_check"] = lastCheck;
+    doc["error"] = lastErr;
 
     return doc;
 }
 
 void UpdateManager::abort() {
-    if (status_ == UpdateStatus::DOWNLOADING || status_ == UpdateStatus::INSTALLING) {
-        setStatus(UpdateStatus::IDLE, true);
+    bool active = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (status_ == UpdateStatus::DOWNLOADING || status_ == UpdateStatus::INSTALLING ||
+            status_ == UpdateStatus::VERIFYING) {
+            abort_requested_.store(true, std::memory_order_release);
+            status_ = UpdateStatus::IDLE;
+            error_ = UpdateError::NONE;
+            last_error_message_ = "";
+            active = true;
+        }
+    }
+    if (active) {
         logger.logWarning("Update operation aborted");
     }
 }
 
 void UpdateManager::reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    abort_requested_.store(false, std::memory_order_release);
     status_ = UpdateStatus::IDLE;
     error_ = UpdateError::NONE;
     last_error_message_ = "";

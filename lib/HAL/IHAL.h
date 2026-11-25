@@ -761,6 +761,16 @@ public:
                               unsigned long timeout_ms = 15000) = 0;
 
   /**
+   * @brief Return human-readable detail from the most recent HTTP/TLS/SMTP call
+   *
+   * Populated by httpGet(), httpGetStream(), httpPost(), httpPostAuth(), and
+   * smtpSend() on failure (e.g., "HTTP 402: Add usage credits...",
+   * "TLS connect failed (-10368): X509 - Allocation of memory failed",
+   * "WiFi not connected"). Cleared at the start of each request.
+   */
+  virtual String getLastHttpError() const { return ""; }
+
+  /**
    * @brief Send email via SMTP with STARTTLS
    *
    * Connects to an SMTP server, performs STARTTLS upgrade, authenticates,

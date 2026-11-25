@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include "IHAL.h"
+#include <atomic>
+#include <mutex>
 
 /**
  * @brief Update status enumeration
@@ -44,10 +46,10 @@ enum class UpdateError {
  * Holds information about a specific version.
  */
 struct VersionInfo {
-    String version;        ///< Version string (e.g., "1.0.0")
-    String url;            ///< Download URL
-    uint32_t size_bytes;   ///< File size in bytes
-    String sha256;         ///< SHA256 checksum
+    String version;          ///< Version string (e.g., "1.0.0")
+    String url;              ///< Download URL
+    uint32_t size_bytes = 0; ///< File size in bytes
+    String sha256;           ///< SHA256 checksum
 };
 
 /**
@@ -97,21 +99,22 @@ struct UpdateStatusSnapshot {
  */
 class UpdateManager {
 private:
-    IHAL* hal_;
-    UpdateStatus status_;
-    UpdateError error_;
+    mutable std::mutex mutex_;
+    IHAL* hal_ = nullptr;
+    UpdateStatus status_ = UpdateStatus::IDLE;
+    UpdateError error_ = UpdateError::NONE;
     UpdateManifest manifest_;
     String device_version_;
     String manifest_url_;
 
     // Progress tracking
-    uint32_t bytes_downloaded_;
-    uint32_t total_bytes_;
-    uint8_t progress_percent_;
+    uint32_t bytes_downloaded_ = 0;
+    uint32_t total_bytes_ = 0;
+    uint8_t progress_percent_ = 0;
 
     // Timing
-    unsigned long last_check_time_;
-    unsigned long current_operation_start_;
+    unsigned long last_check_time_ = 0;
+    unsigned long current_operation_start_ = 0;
 
     // Whether the most recent checkForUpdates() actually fetched+parsed a
     // manifest. Distinct from having a (possibly stale) manifest_ loaded, so a
@@ -127,13 +130,14 @@ private:
 
     // Deferred requests (set by async web handler, executed by main loop)
     bool check_requested_ = false;
-    bool install_requested_;
-    bool install_skip_filesystem_;
-    bool install_force_;
+    bool install_requested_ = false;
+    bool install_skip_filesystem_ = false;
+    bool install_force_ = false;
+    std::atomic<bool> abort_requested_{false};
 
     // SHA256 verification context (for incremental hashing during streaming downloads)
-    void* sha_ctx_;
-    bool sha_ctx_initialized_;
+    void* sha_ctx_ = nullptr;
+    bool sha_ctx_initialized_ = false;
 
     /**
      * @brief Compare two semantic versions
@@ -278,7 +282,10 @@ public:
      *
      * @return Current UpdateManifest
      */
-    UpdateManifest getManifest() const { return manifest_; }
+    UpdateManifest getManifest() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return manifest_;
+    }
 
     /**
      * @brief Get status as JSON

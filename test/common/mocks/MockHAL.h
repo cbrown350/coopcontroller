@@ -589,6 +589,10 @@ public:
         return mockHttpPostAuthResponse;
     }
 
+    String getLastHttpError() const override {
+        return mockLastHttpError;
+    }
+
     String smtpSend(const String& host, uint16_t port,
                      const String& username, const String& password,
                      const String& from, const String& to,
@@ -706,6 +710,7 @@ public:
         lastHttpPostAuthBody = "";
         lastHttpPostAuthToken = "";
         lastHttpPostAuthExtraHeaders = "";
+        mockLastHttpError = "";
         mockSmtpResult = "";
         lastSmtpHost = "";
         lastSmtpPort = 0;
@@ -806,6 +811,7 @@ public:
     void resetHttpPost() { lastHttpPostUrl = ""; lastHttpPostBody = ""; }
 
     void setHttpPostAuthResponse(const String& response) { mockHttpPostAuthResponse = response; }
+    void setLastHttpError(const String& error) { mockLastHttpError = error; }
     String getLastHttpPostAuthUrl() const { return lastHttpPostAuthUrl; }
     String getLastHttpPostAuthBody() const { return lastHttpPostAuthBody; }
     String getLastHttpPostAuthToken() const { return lastHttpPostAuthToken; }
@@ -923,6 +929,7 @@ private:
     String lastHttpPostAuthBody = "";
     String lastHttpPostAuthToken = "";
     String lastHttpPostAuthExtraHeaders = "";
+    String mockLastHttpError = "";
     String mockSmtpResult = "";
     String lastSmtpHost = "";
     uint16_t lastSmtpPort = 0;

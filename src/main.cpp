@@ -544,28 +544,48 @@ void setup() // NOSONAR - complexity ok
                     }
                 }
             }
-            // Number commands (numeric values)
+            // Number commands (numeric values — validate before mutating settings)
             else if (entityId == "temp_threshold_on") {
-                float val = payload.toFloat();
-                // Ensure on threshold <= off threshold
-                if (val > settingsManager.getTempThresholdOffF()) {
-                    settingsManager.setTempThresholdOffF(val);
+                char* endptr = nullptr;
+                float val = strtof(payload.c_str(), &endptr);
+                if (endptr != payload.c_str() && isfinite(val) && val >= -20.0f && val <= 120.0f) {
+                    if (val > settingsManager.getTempThresholdOffF()) {
+                        settingsManager.setTempThresholdOffF(val);
+                    }
+                    if (fabsf(val - settingsManager.getTempThresholdOnF()) > 0.01f) {
+                        settingsManager.setTempThresholdOnF(val);
+                        settingsManager.save();
+                    }
+                } else {
+                    logger.logWarning("MQTT: ignoring invalid temp_threshold_on payload: " + payload);
                 }
-                settingsManager.setTempThresholdOnF(val);
-                settingsManager.save();
             } else if (entityId == "temp_threshold_off") {
-                float val = payload.toFloat();
-                // Ensure off threshold >= on threshold
-                if (val < settingsManager.getTempThresholdOnF()) {
-                    settingsManager.setTempThresholdOnF(val);
+                char* endptr = nullptr;
+                float val = strtof(payload.c_str(), &endptr);
+                if (endptr != payload.c_str() && isfinite(val) && val >= -20.0f && val <= 120.0f) {
+                    if (val < settingsManager.getTempThresholdOnF()) {
+                        settingsManager.setTempThresholdOnF(val);
+                    }
+                    if (fabsf(val - settingsManager.getTempThresholdOffF()) > 0.01f) {
+                        settingsManager.setTempThresholdOffF(val);
+                        settingsManager.save();
+                    }
+                } else {
+                    logger.logWarning("MQTT: ignoring invalid temp_threshold_off payload: " + payload);
                 }
-                settingsManager.setTempThresholdOffF(val);
-                settingsManager.save();
             } else if (entityId == "light_brightness") {
-                int val = payload.toInt();
-                settingsManager.setLightBrightnessPercent(val);
-                lightController.setBrightness(val, TriggerSource::API);
-                settingsManager.save();
+                char* endptr = nullptr;
+                long rawVal = strtol(payload.c_str(), &endptr, 10);
+                if (endptr != payload.c_str() && rawVal >= 0 && rawVal <= 100) {
+                    int val = static_cast<int>(rawVal);
+                    lightController.setBrightness(val, TriggerSource::API);
+                    if (val != settingsManager.getLightBrightnessPercent()) {
+                        settingsManager.setLightBrightnessPercent(val);
+                        settingsManager.save();
+                    }
+                } else {
+                    logger.logWarning("MQTT: ignoring invalid light_brightness payload: " + payload);
+                }
             }
         });
 
@@ -647,19 +667,24 @@ void setup() // NOSONAR - complexity ok
             logger.logfVerbose("Watchdog fed at loop iteration %lu", loopCount);
         }
 
+        // Check if restart is requested (rollover-safe comparison)
+        unsigned long currentTime = millis();
+        if (settingsManager.requestRestartAt > 0 &&
+            static_cast<long>(currentTime - settingsManager.requestRestartAt) >= 0)
+        {
+            logger.logWarning("Restarting device as requested...");
+            delay(500); // Allow time for log/HTTP response to flush
+            hal.restart();
+        }
+
         // Acquire shared state mutex before accessing controller objects.
         // Web handlers on async_tcp (core 0) also acquire this mutex,
         // preventing concurrent access to non-thread-safe Arduino Strings.
+        // If contested, skip controller mutation on this 10ms tick rather than
+        // mutating shared state unlocked.
         bool stateLocked = hal.lockSharedState(100);
 
-        // Check if restart is requested
-        unsigned long currentTime = millis();
-        if (settingsManager.requestRestartAt > 0 && currentTime >= settingsManager.requestRestartAt)
-        {
-            logger.logWarning("Restarting device due to WiFi settings change...");
-            delay(1000); // Allow time for log to be sent
-            hal.restart();
-        }
+        if (stateLocked) {
 
         // Helper: get best available temperature (sensor 1 preferred, fallback to sensor 2)
         auto getBestTemperature = [&sensorManager]() -> float {
@@ -928,7 +953,6 @@ void setup() // NOSONAR - complexity ok
         }
 
         // Release shared state mutex before web server loop and network I/O
-        if (stateLocked) {
             hal.unlockSharedState();
             stateLocked = false;
         }
@@ -938,6 +962,9 @@ void setup() // NOSONAR - complexity ok
         // OTA update: check for deferred install requests every loop,
         // and periodic auto-update checks based on settings interval
         updateManager.update();
+
+        // Process deferred Telegram/Email test notifications off async_tcp
+        notificationManager.update();
 
         // Diagnostic heap-pressure controller update (no-op in release builds).
         // Runs on the main loop so pressure allocations never happen on async_tcp.
@@ -952,12 +979,10 @@ void setup() // NOSONAR - complexity ok
             telegramBot.update();
         }
 
-        // Update weather manager (fetches at its configured interval). Like the
-        // Telegram poll, only run when heap is healthy — the fetch allocates a
-        // WiFiClientSecure TLS context + JSON docs, which under heap pressure can
-        // throw std::bad_alloc and reboot the device (issue #4). WeatherManager
-        // also guards internally, but this keeps the loop-task budget clear.
-        if (hal.getFreeHeap() >= NETWORK_LOW_HEAP_FLOOR) {
+        // Update weather manager (fetches at its configured interval). Also run
+        // immediately if a user-initiated deferred test is pending so the UI
+        // receives a prompt result/error instead of timing out.
+        if (weatherManager.isTestInProgress() || hal.getFreeHeap() >= NETWORK_LOW_HEAP_FLOOR) {
             weatherManager.update();
         }
 

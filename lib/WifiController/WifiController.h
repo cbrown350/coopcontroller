@@ -62,18 +62,18 @@ struct WifiStatus {
  */
 class WifiController {
 private:
-    IHAL* _hal;                        ///< Hardware abstraction layer
-    SettingsManager* settingsManager_;  ///< Settings manager for WiFi credentials
-    BuzzerController* buzzerController_; ///< Buzzer for connection alerts
+    IHAL* _hal = nullptr;                        ///< Hardware abstraction layer
+    SettingsManager* settingsManager_ = nullptr; ///< Settings manager for WiFi credentials
+    BuzzerController* buzzerController_ = nullptr; ///< Buzzer for connection alerts
 
     // WiFi connection monitoring variables
-    unsigned long lastWifiCheck;        ///< Last time connection was checked
-    unsigned long wifiReconnectStart;   ///< When reconnect attempts started
-    unsigned long wifiAPModeStart;      ///< When AP mode was activated
-    bool isReconnecting;                ///< Currently in reconnect loop
-    bool isInAPMode_;                   ///< Currently in AP mode
-    int wifiRetryCount;                 ///< Current retry attempt number
-    bool bssidReconnectAttempt_;        ///< Whether current reconnect uses BSSID preference
+    unsigned long lastWifiCheck = 0;        ///< Last time connection was checked
+    unsigned long wifiReconnectStart = 0;   ///< When reconnect attempts started
+    unsigned long wifiAPModeStart = 0;      ///< When AP mode was activated
+    bool isReconnecting = false;            ///< Currently in reconnect loop
+    bool isInAPMode_ = false;               ///< Currently in AP mode
+    int wifiRetryCount = 0;                 ///< Current retry attempt number
+    bool bssidReconnectAttempt_ = false;    ///< Whether current reconnect uses BSSID preference
 
     // BSSID preference is "preferred, not forced": if the configured BSSID fails
     // to connect, we temporarily blacklist it and fall back to auto-select so a
@@ -81,7 +81,8 @@ private:
     // runtime-only (not persisted) and clears on a successful connection or
     // after BSSID_BLACKLIST_MS elapses.
     static constexpr unsigned long BSSID_BLACKLIST_MS = 10UL * 60UL * 1000UL; ///< 10 min
-    unsigned long bssidBlacklistUntil_ = 0;   ///< millis() until BSSID pref is eligible again
+    unsigned long bssidBlacklistStart_ = 0;   ///< millis() when BSSID blacklist started (rollover-safe)
+    bool bssidBlacklistActive_ = false;       ///< Whether a BSSID is currently blacklisted
     String blacklistedBssid_;                 ///< Which BSSID string is currently blacklisted
 
     // TLS-in-flight guard for the reconnect path. When the radio drops while
@@ -106,11 +107,11 @@ private:
     void clearBssidBlacklist();
 
     // WiFi LED control variables
-    unsigned long lastLedToggle;        ///< Last time LED was toggled
-    bool ledState;                      ///< Current LED state
+    unsigned long lastLedToggle = 0;    ///< Last time LED was toggled
+    bool ledState = false;              ///< Current LED state
 
     // Passwords (from build flags)
-    const char* apPasswd_;              ///< AP mode password
+    const char* apPasswd_ = nullptr;    ///< AP mode password
 
     // ========================================================================
     // PRIVATE METHODS

@@ -1591,11 +1591,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   // Perform factory reset
                   settingsManager.factoryReset();
                   
-                  response->send(200, "text/plain", "Factory reset complete. Device will restart in 3 seconds.");
-                  
-                  // Schedule restart
-                  delay(3000);
-                  hal->restart();
+                  response->send(200, "text/plain", "Factory reset complete. Device will restart shortly.");
+
+                  // Defer restart to the main loop so async_tcp can flush the HTTP response
+                  unsigned long restartAt = millis() + 1500;
+                  settingsManager.requestRestartAt = (restartAt == 0) ? 1 : restartAt;
               });
     
     // Reboot endpoint
@@ -1618,11 +1618,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                   
                   logger.logWarning("Reboot requested via web interface");
                   
-                  response->send(200, "text/plain", "Device will reboot in 3 seconds.");
-                  
-                  // Schedule restart
-                  delay(3000);
-                  hal->restart();
+                  response->send(200, "text/plain", "Device will reboot shortly.");
+
+                  // Defer restart to the main loop so async_tcp can flush the HTTP response
+                  unsigned long restartAt = millis() + 1500;
+                  settingsManager.requestRestartAt = (restartAt == 0) ? 1 : restartAt;
               });
     
     // Backup settings endpoint
@@ -1788,10 +1788,17 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
         ElegantOTA.setAuth("admin", otaPasswd); // Optional: add authentication
         logger.logInfo("ElegantOTA authentication configured");
     }
-    // Configure ElegantOTA for filesystem updates
+    // Configure ElegantOTA for filesystem updates (safe against total < 100 and throttled to 10% steps)
     ElegantOTA.onProgress([](unsigned int progress, unsigned int total) {
-        String progressMsg = "OTA Update Progress: " + String(progress / (total / 100)) + "%";
-        logger.logInfo(progressMsg.c_str());
+        if (total == 0) return;
+        uint8_t pct = static_cast<uint8_t>((static_cast<uint64_t>(progress) * 100ULL) / total);
+        static uint8_t lastLoggedPct = 255;
+        if (pct == 0 || pct == 100 || lastLoggedPct == 255 ||
+            (pct >= lastLoggedPct && (pct - lastLoggedPct) >= 10) ||
+            pct < lastLoggedPct) {
+            lastLoggedPct = pct;
+            logger.logfInfo("OTA Update Progress: %u%%", (unsigned)pct);
+        }
     });
     
     // Add custom callback for filesystem updates - capture this to access hal
@@ -1856,6 +1863,7 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
 
                   response->sendChunked(200, "application/json",
                       [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                          try {
                           if (state->closedBracket && state->overflow.length() == 0) return 0;
 
                           size_t written = 0;
@@ -1880,12 +1888,16 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                               if (written >= maxLen) return written;
                           }
 
-                          // Write data points one at a time
+                          // Write data points one at a time (thread-safe value copy)
                           while (state->current < state->total && written < maxLen) {
-                              size_t bufIdx = state->mgr->getOrderedIndex(state->current);
-                              const DataPoint& dp = state->mgr->getDataPointAt(bufIdx);
+                              DataPoint dp;
+                              if (!state->mgr->getOrderedDataPoint(state->current, dp)) {
+                                  state->current = state->total;
+                                  break;
+                              }
 
                               String point;
+                              point.reserve(256);
                               if (state->current > 0) point += ",";
                               point += "{\"timestamp\":";
                               point += String((unsigned long)dp.timestamp);
@@ -1939,6 +1951,12 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                           }
 
                           return written;
+                          } catch (...) {
+                              state->overflow = "";
+                              state->current = state->total;
+                              state->closedBracket = true;
+                              return 0;
+                          }
                       });
               });
 
@@ -1997,10 +2015,13 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
                               }
                           }
 
-                          // Write rows
+                          // Write rows (thread-safe value copy)
                           while (state->current < state->total && written < maxLen) {
-                              size_t bufIdx = state->mgr->getOrderedIndex(state->current);
-                              const DataPoint& dp = state->mgr->getDataPointAt(bufIdx);
+                              DataPoint dp;
+                              if (!state->mgr->getOrderedDataPoint(state->current, dp)) {
+                                  state->current = state->total;
+                                  break;
+                              }
 
                               char timeBuf[20]; // "YYYY-MM-DD HH:MM:SS"
                               time_t ts = dp.timestamp;
@@ -2077,10 +2098,11 @@ void CoopControllerWebServer::begin(SensorManager& tempSensor, // NOSONAR - comp
         Serial.println("Handling SPA route for URI: " + uri);
 
         // Check if this is an API endpoint - return 404 for unknown API routes
-        if (uri.startsWith("/get_") || uri.startsWith("/get_") || uri.startsWith("/pump/") || uri.startsWith("/water/") ||
+        if (uri.startsWith("/get_") || uri.startsWith("/pump/") || uri.startsWith("/water/") ||
             uri.startsWith("/update_settings") || uri.equals("/logs") || uri.equals("/version") ||
             uri.equals("/update") || uri.startsWith("/update/") || uri.startsWith("/buzzer/") || uri.startsWith("/door/") ||
-            uri.startsWith("/light/") || uri.startsWith("/weather/") || uri.equals("/sun/times") ||
+            uri.startsWith("/light/") || uri.startsWith("/weather/") || uri.startsWith("/notifications/") ||
+            uri.startsWith("/mqtt/") || uri.equals("/sun/times") ||
             uri.equals("/system_status") || uri.equals("/factory_reset") ||
             uri.equals("/reboot") || uri.startsWith("/settings/") || uri.startsWith("/data/")) {
             response->send(404, "text/plain", "Not Found");
@@ -2115,6 +2137,7 @@ String CoopControllerWebServer::base64Decode(const String& input) {
     static const char base64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     String output = "";
+    output.reserve((input.length() * 3) / 4 + 2);
     int val = 0;
     int valb = -8;
 
@@ -2272,7 +2295,9 @@ void CoopControllerWebServer::setNotificationManager(NotificationManager* notifi
 
     if (!notificationManager_ || !hal) return;
 
-    // Test Telegram notification endpoint - accepts optional JSON body with unsaved config
+    // Test Telegram notification endpoint - deferred to main loop so blocking TLS
+    // never runs on async_tcp while holding sharedStateMutex_. Pair with GET
+    // /notifications/test/telegram_result.
     hal->webServerOn("/notifications/test/telegram", HAL_WebRequestMethod::HTTP_POST,
         [this](IWebRequest *request, IWebResponse *response) {
             if (!isAuthenticated(request)) {
@@ -2283,29 +2308,28 @@ void CoopControllerWebServer::setNotificationManager(NotificationManager* notifi
                 response->send(500, "application/json", R"({"success":false,"error":"NotificationManager not initialized"})");
                 return;
             }
-            // Try to parse JSON body with override config values
-            NotificationResult result;
-            String body = request->body();
-            if (body.length() > 0) {
-                JsonDocument bodyDoc;
-                if (deserializeJson(bodyDoc, body) == DeserializationError::Ok) {
-                    JsonObject config = bodyDoc.as<JsonObject>();
-                    result = notificationManager_->sendTestWithConfig(NotificationChannel::TELEGRAM, config);
-                } else {
-                    result = notificationManager_->sendTest(NotificationChannel::TELEGRAM);
-                }
-            } else {
-                result = notificationManager_->sendTest(NotificationChannel::TELEGRAM);
-            }
-            JsonDocument doc;
-            doc["success"] = result.success;
-            if (!result.success) doc["error"] = result.error_message;
-            String output;
-            serializeJson(doc, output);
-            response->send(result.success ? 200 : 400, "application/json", output.c_str());
+            notificationManager_->requestTest(NotificationChannel::TELEGRAM, request->body());
+            response->send(202, "application/json", R"({"status":"pending"})");
         });
 
-    // Test Email notification endpoint - accepts optional JSON body with unsaved config
+    hal->webServerOn("/notifications/test/telegram_result", HAL_WebRequestMethod::HTTP_GET,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!isAuthenticated(request)) {
+                sendAuthRequired(response);
+                return;
+            }
+            if (!notificationManager_) {
+                response->send(500, "application/json", R"({"success":false,"error":"NotificationManager not initialized"})");
+                return;
+            }
+            JsonDocument doc = notificationManager_->getTestResultJson(NotificationChannel::TELEGRAM);
+            String output;
+            serializeJson(doc, output);
+            response->send(200, "application/json", output.c_str());
+        });
+
+    // Test Email notification endpoint - deferred to main loop so blocking SMTP/TLS
+    // never runs on async_tcp. Pair with GET /notifications/test/email_result.
     hal->webServerOn("/notifications/test/email", HAL_WebRequestMethod::HTTP_POST,
         [this](IWebRequest *request, IWebResponse *response) {
             if (!isAuthenticated(request)) {
@@ -2316,26 +2340,24 @@ void CoopControllerWebServer::setNotificationManager(NotificationManager* notifi
                 response->send(500, "application/json", R"({"success":false,"error":"NotificationManager not initialized"})");
                 return;
             }
-            // Try to parse JSON body with override config values
-            NotificationResult result;
-            String body = request->body();
-            if (body.length() > 0) {
-                JsonDocument bodyDoc;
-                if (deserializeJson(bodyDoc, body) == DeserializationError::Ok) {
-                    JsonObject config = bodyDoc.as<JsonObject>();
-                    result = notificationManager_->sendTestWithConfig(NotificationChannel::EMAIL, config);
-                } else {
-                    result = notificationManager_->sendTest(NotificationChannel::EMAIL);
-                }
-            } else {
-                result = notificationManager_->sendTest(NotificationChannel::EMAIL);
+            notificationManager_->requestTest(NotificationChannel::EMAIL, request->body());
+            response->send(202, "application/json", R"({"status":"pending"})");
+        });
+
+    hal->webServerOn("/notifications/test/email_result", HAL_WebRequestMethod::HTTP_GET,
+        [this](IWebRequest *request, IWebResponse *response) {
+            if (!isAuthenticated(request)) {
+                sendAuthRequired(response);
+                return;
             }
-            JsonDocument doc;
-            doc["success"] = result.success;
-            if (!result.success) doc["error"] = result.error_message;
+            if (!notificationManager_) {
+                response->send(500, "application/json", R"({"success":false,"error":"NotificationManager not initialized"})");
+                return;
+            }
+            JsonDocument doc = notificationManager_->getTestResultJson(NotificationChannel::EMAIL);
             String output;
             serializeJson(doc, output);
-            response->send(result.success ? 200 : 400, "application/json", output.c_str());
+            response->send(200, "application/json", output.c_str());
         });
 
     // Notification status endpoint

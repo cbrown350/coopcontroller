@@ -9,6 +9,8 @@
 
 void MQTTManager::begin(const MQTTConfig& config) {
     config_ = config;
+    discovery_published_ = false;
+    connected_.store(false, std::memory_order_release);
 #ifdef ESP32
     mqttClient_.setClient(wifiClient_);
     mqttClient_.setServer(config_.server.c_str(), config_.port);
@@ -30,9 +32,22 @@ void MQTTManager::update() {
     if (!enabled_) return;
 
 #ifdef ESP32
-    if (WiFi.status() != WL_CONNECTED) return;
+    if (WiFi.status() != WL_CONNECTED) {
+        if (was_connected_) {
+            was_connected_ = false;
+            connected_.store(false, std::memory_order_release);
+        }
+        return;
+    }
 
-    if (!mqttClient_.connected()) {
+    bool nowConnected = mqttClient_.connected();
+    connected_.store(nowConnected, std::memory_order_release);
+
+    if (!nowConnected) {
+        if (was_connected_) {
+            was_connected_ = false;
+            logger.logWarning("MQTT disconnected from " + config_.server);
+        }
         unsigned long now = millis();
         if (now - last_reconnect_attempt_ >= reconnect_interval_) {
             last_reconnect_attempt_ = now;
@@ -53,6 +68,7 @@ void MQTTManager::update() {
     }
 
     mqttClient_.loop();
+    connected_.store(mqttClient_.connected(), std::memory_order_release);
 
     // Publish state on meaningful change or periodic interval
     unsigned long now = millis();
@@ -149,23 +165,23 @@ void MQTTManager::publishState(const MQTTStateData& state) {
 }
 
 bool MQTTManager::isConnected() const {
-#ifdef ESP32
-    // PubSubClient::connected() is not const, use const_cast
-    return const_cast<PubSubClient&>(mqttClient_).connected();
-#else
-    return false;
-#endif
+    return connected_.load(std::memory_order_acquire);
 }
 
 void MQTTManager::setConfig(const MQTTConfig& config) {
-    config_ = config;
 #ifdef ESP32
-    // Disconnect if connected so we reconnect with new settings
+    // Disconnect cleanly BEFORE mutating config_ so PubSubClient doesn't hold
+    // a dangling pointer to the previous config_.server.c_str().
     if (mqttClient_.connected()) {
         publishAvailability(false);
         mqttClient_.disconnect();
-        was_connected_ = false;
     }
+#endif
+    was_connected_ = false;
+    connected_.store(false, std::memory_order_release);
+    discovery_published_ = false;
+    config_ = config;
+#ifdef ESP32
     mqttClient_.setServer(config_.server.c_str(), config_.port);
 #endif
 }
@@ -219,8 +235,11 @@ bool MQTTManager::connect() {
     if (result) {
         logger.logInfo("MQTT connected successfully");
 
-        // Publish discovery configs
-        publishDiscovery();
+        // Publish discovery configs once per boot/config change (retained on broker)
+        if (!discovery_published_) {
+            publishDiscovery();
+            discovery_published_ = true;
+        }
 
         // Publish online availability
         publishAvailability(true);
@@ -231,12 +250,14 @@ bool MQTTManager::connect() {
         logger.logDebug("MQTT subscribed to: " + commandTopic);
 
         was_connected_ = true;
+        connected_.store(true, std::memory_order_release);
         return true;
     } else {
         int state = mqttClient_.state();
         last_error_ = "MQTT connect failed, rc=" + String(state);
         logger.logError(last_error_);
         was_connected_ = false;
+        connected_.store(false, std::memory_order_release);
         return false;
     }
 #else

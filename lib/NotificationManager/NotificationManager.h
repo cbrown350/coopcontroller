@@ -81,6 +81,22 @@ public:
     NotificationResult sendTestWithConfig(NotificationChannel channel, const JsonObject& config);
 
     /**
+     * @brief Queue a deferred test notification (safe to call from async web handler)
+     *
+     * Runs on the main loop task during update() so blocking TLS/SMTP never
+     * executes on the async_tcp task. Pair with getTestResultJson().
+     */
+    void requestTest(NotificationChannel channel, const String& configJson = "");
+
+    /**
+     * @brief Read-only snapshot of a deferred test result ("idle"|"pending"|"success"|"error")
+     */
+    JsonDocument getTestResultJson(NotificationChannel channel) const;
+
+    /// True if a deferred Telegram or Email test is queued or currently running
+    bool isTestInProgress() const;
+
+    /**
      * @brief Send a daily status report
      * @param statusJson JSON string with current system status
      */
@@ -158,6 +174,20 @@ private:
     unsigned int total_sent_ = 0;
     unsigned int total_failed_ = 0;
     String last_error_;
+
+    // Deferred test state (web handler -> main loop)
+    struct DeferredTestState {
+        bool pending = false;
+        bool running = false;
+        bool done = false;
+        bool success = false;
+        String config_json;
+        String error_message;
+    };
+    DeferredTestState telegram_test_;
+    DeferredTestState email_test_;
+
+    void runDeferredTest_(NotificationChannel channel, DeferredTestState& state);
 
     /**
      * @brief Check if alert type should trigger a notification

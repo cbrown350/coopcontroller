@@ -415,3 +415,81 @@ TEST_F(NotificationManagerTest, SendTestWithConfig_FailsWithoutWiFi) {
     EXPECT_FALSE(result.success);
     EXPECT_TRUE(result.error_message.indexOf("WiFi") >= 0);
 }
+
+TEST_F(NotificationManagerTest, SendTestWithConfig_Telegram_RejectsInvalidJson) {
+    configureTelegram();
+    mockHal->setWiFiConnected(true);
+    mockHal->setHttpPostResponse("<html>502 Bad Gateway</html>");
+
+    JsonDocument doc;
+    NotificationResult result = notifier.sendTestWithConfig(NotificationChannel::TELEGRAM, doc.as<JsonObject>());
+    EXPECT_FALSE(result.success);
+    EXPECT_NE(result.error_message.indexOf("Invalid JSON"), -1);
+}
+
+TEST_F(NotificationManagerTest, SendTestWithConfig_Email_RejectsZeroPort) {
+    mockHal->setWiFiConnected(true);
+
+    JsonDocument doc;
+    doc["email_smtp_server"] = "smtp.example.com:0";
+    doc["email_smtp_port"] = 587;
+    doc["email_to"] = "to@example.com";
+
+    NotificationResult result = notifier.sendTestWithConfig(NotificationChannel::EMAIL, doc.as<JsonObject>());
+    EXPECT_FALSE(result.success);
+    EXPECT_NE(result.error_message.indexOf("Invalid SMTP"), -1);
+}
+
+TEST_F(NotificationManagerTest, RateLimitingAppliesToFailedSendsToo) {
+    configureTelegram();
+    mockHal->setWiFiConnected(true);
+    mockHal->setHttpPostResponse("");  // Force failure
+    mockHal->setMillis(10000);
+
+    notifier.notify(AlertType::PUMP_ERROR, "First attempt");
+    EXPECT_EQ(notifier.getTotalFailed(), 1u);
+
+    // Immediate retry within 60s window must be rate-limited even though first failed
+    mockHal->setMillis(15000);
+    notifier.notify(AlertType::PUMP_ERROR, "Retry too soon");
+    EXPECT_EQ(notifier.getTotalFailed(), 1u);
+
+    // After 60s window, retry is allowed
+    mockHal->setMillis(75000);
+    notifier.notify(AlertType::PUMP_ERROR, "Retry after cooldown");
+    EXPECT_EQ(notifier.getTotalFailed(), 2u);
+}
+
+TEST_F(NotificationManagerTest, DeferredTestLifecycleTelegramAndEmail) {
+    configureTelegram();
+    configureEmail();
+    mockHal->setWiFiConnected(true);
+    mockHal->setHttpPostResponse(R"({"ok":true,"result":{}})");
+    mockHal->setSmtpResult("");
+
+    // Request Telegram deferred test -> pending, no HTTP POST yet
+    notifier.requestTest(NotificationChannel::TELEGRAM, R"({"telegram_bot_token":"DEFT:1","telegram_chat_id":"42"})");
+    EXPECT_TRUE(notifier.isTestInProgress());
+    EXPECT_EQ(mockHal->getLastHttpPostUrl(), String(""));
+    JsonDocument pre = notifier.getTestResultJson(NotificationChannel::TELEGRAM);
+    EXPECT_EQ(String(pre["status"].as<const char*>()), String("pending"));
+
+    // Loop runs update() -> completes with success
+    notifier.update();
+    EXPECT_FALSE(notifier.isTestInProgress());
+    JsonDocument post = notifier.getTestResultJson(NotificationChannel::TELEGRAM);
+    EXPECT_EQ(String(post["status"].as<const char*>()), String("success"));
+    EXPECT_TRUE(post["success"].as<bool>());
+    EXPECT_EQ(mockHal->getLastHttpPostUrl(), String("https://api.telegram.org/botDEFT:1/sendMessage"));
+
+    // Request Email deferred test with error -> completes with error message
+    mockHal->setSmtpResult("Auth failed: 535");
+    notifier.requestTest(NotificationChannel::EMAIL, "");
+    EXPECT_TRUE(notifier.isTestInProgress());
+    notifier.update();
+    EXPECT_FALSE(notifier.isTestInProgress());
+    JsonDocument emailRes = notifier.getTestResultJson(NotificationChannel::EMAIL);
+    EXPECT_EQ(String(emailRes["status"].as<const char*>()), String("error"));
+    EXPECT_FALSE(emailRes["success"].as<bool>());
+    EXPECT_NE(emailRes["error"].as<String>().indexOf("535"), -1);
+}

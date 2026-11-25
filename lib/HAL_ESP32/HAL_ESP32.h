@@ -202,6 +202,7 @@ public:
   String httpPostAuth(const String& url, const String& jsonBody,
                       const String& bearerToken, const String& extraHeaders,
                       unsigned long timeout_ms = 15000) override;
+  String getLastHttpError() const override { return lastHttpError_; }
   String smtpSend(const String& host, uint16_t port,
                    const String& username, const String& password,
                    const String& from, const String& to,
@@ -282,6 +283,7 @@ private:
   /// @return Owned client configured (insecure) with bounded timeouts, or
   ///         nullptr if it could not be created safely.
   SecureClientPtr createSecureClient(unsigned long timeout_ms);
+  String lastHttpError_;
 };
 
 #endif // __HAL_ESP32_H__

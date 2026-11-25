@@ -241,13 +241,21 @@ void WifiController::wifiSetup() { // NOSONAR - complexity ok
             
             if (settingsManager_->getHostname().length() > 0) {
                 int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !_hal->mdnsBegin(settingsManager_->getHostname().c_str())) { // NOSONAR - nesting ok
+                bool mdnsOk = false;
+                while (mDNSRetries > 0) { // NOSONAR - nesting ok
+                    if (_hal->mdnsBegin(settingsManager_->getHostname().c_str())) {
+                        mdnsOk = true;
+                        break;
+                    }
                     logger.logDebug("Starting mDNS...");
                     delay(1000);
                     mDNSRetries--;
                 }
-                
-                logger.logDebug("mDNS started: http://" + settingsManager_->getHostname() + ".local"); 
+                if (mdnsOk) {
+                    logger.logDebug("mDNS started: http://" + settingsManager_->getHostname() + ".local");
+                } else {
+                    logger.logWarning("mDNS failed to start for hostname: " + settingsManager_->getHostname());
+                }
             }
 
             // Mark that WiFi has successfully connected at least once
@@ -372,11 +380,19 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
                     _hal->wifiBegin(ssid.c_str(), password.c_str());
                     wifiReconnectStart = millis(); // Reset timer for fallback attempt
                 } else {
-                    logger.logWarning("WiFi reconnection timeout, switching to AP mode");
-                    settingsManager_->setAPMode(true);
-                    settingsManager_->save();
-                    delay(1000);
-                    _hal->restart();
+                    if (!settingsManager_->getHasConnected()) {
+                        logger.logWarning("WiFi reconnection timeout (never connected), switching to AP mode");
+                        settingsManager_->setAPMode(true);
+                        settingsManager_->save();
+                        delay(1000);
+                        _hal->restart();
+                    } else {
+                        // Known-good network had a transient outage/router reboot.
+                        // Stay in STA mode and retry next check cycle instead of
+                        // abandoning WiFi credentials for AP mode + reboot.
+                        logger.logWarning("WiFi reconnection timeout; keeping STA mode and retrying");
+                        isReconnecting = false;
+                    }
                 }
             }
         }
@@ -395,13 +411,21 @@ void WifiController::checkWifiConnection() { // NOSONAR - complexity ok
             
             if (settingsManager_->getHostname().length() > 0) {
                 int mDNSRetries = 5;
-                while(mDNSRetries > 0 && !_hal->mdnsBegin(settingsManager_->getHostname().c_str())) { // NOSONAR - nesting ok
+                bool mdnsOk = false;
+                while (mDNSRetries > 0) { // NOSONAR - nesting ok
+                    if (_hal->mdnsBegin(settingsManager_->getHostname().c_str())) {
+                        mdnsOk = true;
+                        break;
+                    }
                     logger.logDebug("Starting mDNS...");
                     delay(1000);
                     mDNSRetries--;
                 }
-                
-                logger.logDebug("mDNS started: http://" + settingsManager_->getHostname() + ".local"); 
+                if (mdnsOk) {
+                    logger.logDebug("mDNS started: http://" + settingsManager_->getHostname() + ".local");
+                } else {
+                    logger.logWarning("mDNS failed to start for hostname: " + settingsManager_->getHostname());
+                }
             }
 
             // Mark that WiFi has successfully connected at least once
@@ -473,23 +497,25 @@ bool WifiController::parseBSSID(const String& bssidStr, uint8_t* bssid) {
 
 bool WifiController::isBssidBlacklisted() const {
     // Blacklist only applies while the configured preference matches the one
-    // that failed, and only until the timeout elapses.
-    if (bssidBlacklistUntil_ == 0) return false;
-    if (millis() >= bssidBlacklistUntil_) return false;
+    // that failed, and only until the timeout elapses (rollover-safe subtraction).
+    if (!bssidBlacklistActive_) return false;
+    if ((millis() - bssidBlacklistStart_) >= BSSID_BLACKLIST_MS) return false;
     String pref = settingsManager_->getWifiBssidPreference();
     return pref.length() > 0 && pref == blacklistedBssid_;
 }
 
 void WifiController::blacklistCurrentBssid(const String& bssidPref) {
     blacklistedBssid_ = bssidPref;
-    bssidBlacklistUntil_ = millis() + BSSID_BLACKLIST_MS;
+    bssidBlacklistStart_ = millis();
+    bssidBlacklistActive_ = true;
     logger.logWarning("BSSID " + bssidPref + " blacklisted for " +
                       String(BSSID_BLACKLIST_MS / 1000) + "s; using auto-select");
 }
 
 void WifiController::clearBssidBlacklist() {
-    if (bssidBlacklistUntil_ != 0) {
-        bssidBlacklistUntil_ = 0;
+    if (bssidBlacklistActive_) {
+        bssidBlacklistActive_ = false;
+        bssidBlacklistStart_ = 0;
         blacklistedBssid_ = "";
     }
 }

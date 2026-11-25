@@ -4,14 +4,94 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+static const char* alertTypeToName(AlertType alertType) {
+    switch (alertType) {
+        case AlertType::PUMP_ERROR:        return "PUMP_ERROR";
+        case AlertType::SENSOR_ERROR:      return "SENSOR_ERROR";
+        case AlertType::WIFI_DISCONNECTED: return "WIFI_DISCONNECTED";
+        case AlertType::LOW_MEMORY:        return "LOW_MEMORY";
+        case AlertType::DOOR_FAULT:        return "DOOR_FAULT";
+        case AlertType::LIGHT_FAULT:       return "LIGHT_FAULT";
+        case AlertType::SYSTEM_ERROR:      return "SYSTEM_ERROR";
+        case AlertType::TEST_ALERT:        return "TEST_ALERT";
+        default:                           return "UNKNOWN";
+    }
+}
+
 void NotificationManager::begin(IHAL* hal) {
     hal_ = hal;
     logger.logInfo("NotificationManager initialized");
 }
 
+void NotificationManager::requestTest(NotificationChannel channel, const String& configJson) {
+    DeferredTestState& state = (channel == NotificationChannel::TELEGRAM) ? telegram_test_ : email_test_;
+    state.config_json = configJson;
+    state.done = false;
+    state.success = false;
+    state.error_message = "";
+    state.pending = true;
+    logger.logInfo(channel == NotificationChannel::TELEGRAM
+                       ? "Telegram test notification requested (deferred to main loop)"
+                       : "Email test notification requested (deferred to main loop)");
+}
+
+JsonDocument NotificationManager::getTestResultJson(NotificationChannel channel) const {
+    const DeferredTestState& state = (channel == NotificationChannel::TELEGRAM) ? telegram_test_ : email_test_;
+    JsonDocument doc;
+    if (state.pending || state.running) {
+        doc["status"] = "pending";
+        doc["success"] = false;
+    } else if (state.done) {
+        doc["status"] = state.success ? "success" : "error";
+        doc["success"] = state.success;
+        if (!state.success && state.error_message.length() > 0) {
+            doc["error"] = state.error_message;
+        }
+    } else {
+        doc["status"] = "idle";
+        doc["success"] = false;
+    }
+    return doc;
+}
+
+bool NotificationManager::isTestInProgress() const {
+    return telegram_test_.pending || telegram_test_.running ||
+           email_test_.pending || email_test_.running;
+}
+
+void NotificationManager::runDeferredTest_(NotificationChannel channel, DeferredTestState& state) {
+    state.pending = false;
+    state.running = true;
+    String cfgJson = state.config_json;
+
+    NotificationResult res;
+    if (cfgJson.length() > 0) {
+        JsonDocument bodyDoc;
+        if (deserializeJson(bodyDoc, cfgJson) == DeserializationError::Ok && bodyDoc.is<JsonObject>()) {
+            JsonObject config = bodyDoc.as<JsonObject>();
+            res = sendTestWithConfig(channel, config);
+        } else {
+            res = sendTest(channel);
+        }
+    } else {
+        res = sendTest(channel);
+    }
+
+    state.running = false;
+    state.done = true;
+    state.success = res.success;
+    state.error_message = res.error_message;
+}
+
 void NotificationManager::update() {
-    // Currently no periodic work needed
-    // Future: daily status reports could be triggered here
+    if (telegram_test_.pending) {
+        runDeferredTest_(NotificationChannel::TELEGRAM, telegram_test_);
+        return;
+    }
+    if (email_test_.pending) {
+        runDeferredTest_(NotificationChannel::EMAIL, email_test_);
+        return;
+    }
 }
 
 void NotificationManager::notify(AlertType alertType, const String& message) {
@@ -30,9 +110,11 @@ void NotificationManager::notify(AlertType alertType, const String& message) {
 
     String formattedMessage = formatAlertMessage(alertType, message);
 
+    bool anyAttempted = false;
     bool anySent = false;
 
     if (telegramBot_ && telegramBot_->getEnabled() && telegramBot_->isConfigured()) {
+        anyAttempted = true;
         TelegramSendResult result = telegramBot_->sendMessage(formattedMessage);
         if (result.success) {
             anySent = true;
@@ -45,7 +127,8 @@ void NotificationManager::notify(AlertType alertType, const String& message) {
     }
 
     if (email_enabled_ && smtp_server_.length() > 0 && email_to_.length() > 0) {
-        String subject = "Coop Alert: " + String(BuzzerController().getAlertTypeString(alertType));
+        anyAttempted = true;
+        String subject = String("Coop Alert: ") + alertTypeToName(alertType);
         NotificationResult result = sendEmail(subject, message);
         if (result.success) {
             anySent = true;
@@ -57,9 +140,17 @@ void NotificationManager::notify(AlertType alertType, const String& message) {
         }
     }
 
-    if (anySent) {
-        last_notification_time_ = hal_->millis();
-        last_notification_times_[static_cast<uint8_t>(alertType)] = hal_->millis();
+    // Apply per-alert-type rate limit on any attempt (including failures) so a
+    // broken endpoint cannot cause back-to-back blocking TLS retry storms.
+    if (anyAttempted) {
+        unsigned long now = hal_->millis();
+        uint8_t idx = static_cast<uint8_t>(alertType);
+        if (idx < 8) {
+            last_notification_times_[idx] = now;
+        }
+        if (anySent) {
+            last_notification_time_ = now;
+        }
     }
 }
 
@@ -117,7 +208,9 @@ NotificationResult NotificationManager::sendTestWithConfig(NotificationChannel c
 
         String response = hal_->httpPost(url, payload, 10000);
         if (response.length() == 0) {
-            return {false, "No response from Telegram API"};
+            String halErr = hal_->getLastHttpError();
+            return {false, halErr.length() > 0 ? ("Telegram API error: " + halErr)
+                                               : String("No response from Telegram API")};
         }
 
         JsonDocument respDoc;
@@ -125,10 +218,13 @@ NotificationResult NotificationManager::sendTestWithConfig(NotificationChannel c
             if (respDoc["ok"].as<bool>()) {
                 return {true, ""};
             } else {
-                return {false, respDoc["description"].as<String>()};
+                String desc = respDoc["description"].is<const char*>()
+                                  ? respDoc["description"].as<String>()
+                                  : String("Telegram API rejected request");
+                return {false, desc};
             }
         }
-        return {true, ""};
+        return {false, "Invalid JSON response from Telegram API"};
     } else if (channel == NotificationChannel::EMAIL) {
         String server = config["email_smtp_server"] | smtp_server_;
         uint16_t port = config["email_smtp_port"] | smtp_port_;
@@ -220,6 +316,10 @@ NotificationResult NotificationManager::sendEmail(const String& subject, const S
         port = host.substring(colonIdx + 1).toInt();
         host = host.substring(0, colonIdx);
     }
+    host.trim();
+    if (host.length() == 0 || port == 0) {
+        return {false, "Invalid SMTP host or port"};
+    }
 
     String error = hal_->smtpSend(
         host, port,
@@ -254,6 +354,10 @@ NotificationResult NotificationManager::sendEmailWithConfig(const String& subjec
         usePort = host.substring(colonIdx + 1).toInt();
         host = host.substring(0, colonIdx);
     }
+    host.trim();
+    if (host.length() == 0 || usePort == 0) {
+        return {false, "Invalid SMTP host or port"};
+    }
 
     String error = hal_->smtpSend(host, usePort, username, password, fromAddr, to, subject, body, 15000);
     if (error.length() > 0) {
@@ -266,8 +370,7 @@ NotificationResult NotificationManager::sendEmailWithConfig(const String& subjec
 
 String NotificationManager::formatAlertMessage(AlertType alertType, const String& message) const {
     String emoji = getAlertEmoji(alertType);
-    BuzzerController temp;
-    String typeName = temp.getAlertTypeString(alertType);
+    String typeName = alertTypeToName(alertType);
     return emoji + " *Coop Alert: " + typeName + "*\n" + message;
 }
 

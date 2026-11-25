@@ -42,6 +42,19 @@ static uint32_t getDefaultMaxAllocHeap() {
   return heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
 }
 
+static void safeSendErrorOrAbort(AsyncWebServerRequest *request, int code, const char *msg) {
+  if (request == nullptr) return;
+  if (getDefaultMaxAllocHeap() < 4096) {
+    request->abort();
+    return;
+  }
+  try {
+    request->send(code, "text/plain", msg);
+  } catch (...) {
+    request->abort();
+  }
+}
+
 /**
  * @brief Constructor
  */
@@ -471,7 +484,7 @@ public:
     if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
       Serial.printf("[HAL_ESP32] send: default_max_alloc %u too low, sending 500\r\n",
                     (unsigned)maxAllocHeap);
-      request_->send(500, "text/plain", "low memory");
+      safeSendErrorOrAbort(request_, 500, "low memory");
       responseSent_ = true;
       return;
     }
@@ -493,7 +506,7 @@ public:
     if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
       Serial.printf("[HAL_ESP32] sendFile: default_max_alloc %u too low, sending 500\r\n",
                     (unsigned)maxAllocHeap);
-      request_->send(500, "text/plain", "low memory");
+      safeSendErrorOrAbort(request_, 500, "low memory");
       responseSent_ = true;
       return;
     }
@@ -528,14 +541,14 @@ public:
   }
 
   void sendChunked(int code, const char* contentType, ChunkedFillCallback callback) override {
-    if (request_ == nullptr) return;
+    if (request_ == nullptr || responseSent_) return;
     // Same heap gate as send(): beginChunkedResponse + addHeader allocate via
     // operator new and can throw bad_alloc under fragmentation. See send().
     uint32_t maxAllocHeap = getDefaultMaxAllocHeap();
     if (maxAllocHeap < WEB_RESP_MIN_MAX_ALLOC) {
       Serial.printf("[HAL_ESP32] sendChunked: default_max_alloc %u too low, sending 500\r\n",
                     (unsigned)maxAllocHeap);
-      request_->send(500, "text/plain", "low memory");
+      safeSendErrorOrAbort(request_, 500, "low memory");
       responseSent_ = true;
       return;
     }
@@ -631,7 +644,7 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
                 if (mutex != nullptr) {
                   locked = (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE);
                   if (!locked) {
-                    request->send(503, "text/plain", "Server busy, try again");
+                    safeSendErrorOrAbort(request, 503, "Server busy, try again");
                     return;
                   }
                 }
@@ -657,12 +670,12 @@ void HAL_ESP32::webServerOn(const char *uri, HAL_WebRequestMethod method,
                 } catch (const std::exception &e) {
                   Serial.printf("[HAL_ESP32] webServerOn handler threw: %s\r\n", e.what());
                   if (!wrappedResponse.responseSent()) {
-                    request->send(500, "text/plain", "Internal server error");
+                    safeSendErrorOrAbort(request, 500, "Internal server error");
                   }
                 } catch (...) {
                   Serial.println("[HAL_ESP32] webServerOn handler threw unknown exception");
                   if (!wrappedResponse.responseSent()) {
-                    request->send(500, "text/plain", "Internal server error");
+                    safeSendErrorOrAbort(request, 500, "Internal server error");
                   }
                 }
 
@@ -746,12 +759,12 @@ void HAL_ESP32::webServerOnNotFound(WebServerHandler handler) {
     } catch (const std::exception &e) {
       Serial.printf("[HAL_ESP32] onNotFound handler threw: %s\r\n", e.what());
       if (!wrappedResponse.responseSent()) {
-        request->send(500, "text/plain", "Internal server error");
+        safeSendErrorOrAbort(request, 500, "Internal server error");
       }
     } catch (...) {
       Serial.println("[HAL_ESP32] onNotFound handler threw unknown exception");
       if (!wrappedResponse.responseSent()) {
-        request->send(500, "text/plain", "Internal server error");
+        safeSendErrorOrAbort(request, 500, "Internal server error");
       }
     }
   });
@@ -852,9 +865,11 @@ void HAL_ESP32::unlockSharedState() {
 // truncated/missed, so the redirect chain broke and httpGet returned "").
 // This reader keeps the overall deadline only and blocks on read bytes until
 // the newline or the connection closes, so long header lines are never split.
-static String readHttpLine(WiFiClientSecure& client, unsigned long deadlineMs) {
+template <typename ClientT>
+static String readHttpLine(ClientT& client, unsigned long deadlineMs) {
   String line;
   while (::millis() < deadlineMs) {
+    esp_task_wdt_reset();
     int c = client.read();
     if (c < 0) {
       // No data available right now; wait for more or connection close
@@ -872,6 +887,86 @@ static String readHttpLine(WiFiClientSecure& client, unsigned long deadlineMs) {
   return line;
 }
 
+static String decodeChunkedBody(const String& raw) {
+  String dechunked;
+  dechunked.reserve(raw.length());
+  size_t i = 0;
+  while (i < raw.length()) {
+    int lineEndIdx = raw.indexOf("\r\n", i);
+    if (lineEndIdx < 0) break;
+    size_t lineEnd = static_cast<size_t>(lineEndIdx);
+    String sizeHex = raw.substring(i, lineEnd);
+    sizeHex.trim();
+    int semi = sizeHex.indexOf(';');
+    if (semi >= 0) sizeHex = sizeHex.substring(0, semi);
+    long chunkSize = strtol(sizeHex.c_str(), nullptr, 16);
+    if (chunkSize <= 0) break;
+    size_t dataStart = lineEnd + 2;
+    if (dataStart + static_cast<size_t>(chunkSize) > raw.length()) {
+      // Append whatever partial data we received rather than dropping it
+      dechunked.concat(raw.c_str() + dataStart, raw.length() - dataStart);
+      break;
+    }
+    dechunked.concat(raw.c_str() + dataStart, static_cast<size_t>(chunkSize));
+    i = dataStart + static_cast<size_t>(chunkSize);
+    if (i + 2 <= raw.length() && raw[i] == '\r' && raw[i + 1] == '\n') {
+      i += 2;
+    }
+  }
+  return dechunked;
+}
+
+static bool hasChunkedTerminator(const String& raw) {
+  if (raw.length() < 5) return false;
+  return raw.endsWith("\r\n0\r\n\r\n") || raw == "0\r\n\r\n";
+}
+
+static String sanitizeErrorSnippet(const String& raw) {
+  String out;
+  out.reserve(160);
+  for (size_t i = 0; i < raw.length() && out.length() < 160; i++) {
+    char c = raw[i];
+    if (c == '\r' || c == '\n' || c == '\t') {
+      if (out.length() > 0 && out[out.length() - 1] != ' ') out += ' ';
+    } else if (c >= 32 && c < 127) {
+      out += c;
+    }
+  }
+  out.trim();
+  return out;
+}
+
+template <typename ClientT>
+static String readErrorBodySnippet(ClientT& client, bool chunked, unsigned long deadlineMs) {
+  unsigned long capDeadline = ::millis() + 1500UL;
+  if (capDeadline > deadlineMs) capDeadline = deadlineMs;
+  String raw;
+  uint8_t buf[256];
+  unsigned long lastProgress = ::millis();
+  while (::millis() < capDeadline && raw.length() < 512) {
+    esp_task_wdt_reset();
+    int avail = client.available();
+    if (avail > 0) {
+      int want = avail < (int)sizeof(buf) ? avail : (int)sizeof(buf);
+      if (raw.length() + (size_t)want > 512) want = 512 - raw.length();
+      int n = client.read(buf, want);
+      if (n > 0) {
+        raw.concat((const char*)buf, (size_t)n);
+        lastProgress = ::millis();
+        if (chunked && hasChunkedTerminator(raw)) break;
+      }
+    } else {
+      if (::millis() - lastProgress > 400UL) break;
+      delay(2);
+    }
+  }
+  if (chunked && raw.length() > 0) {
+    String decoded = decodeChunkedBody(raw);
+    if (decoded.length() > 0) raw = decoded;
+  }
+  return sanitizeErrorSnippet(raw);
+}
+
 HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_ms) {
   // Refuse to start a TLS handshake when WiFi isn't associated. Firing a TLS
   // connect while the STA is down/reconnecting is a documented trigger for the
@@ -882,6 +977,7 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
   // caller (LLM decider, weather, OTA check/install, Telegram, email) uniformly.
   // Note: deliberately NOT gated on RSSI — a weak-but-working link is fine.
   if (!wifiIsConnected()) {
+    lastHttpError_ = "WiFi not connected";
     Serial.println("[HAL_ESP32] createSecureClient: refusing TLS alloc, WiFi not connected");
     return nullptr;
   }
@@ -894,6 +990,7 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
   // LlmWeatherDecider/UpdateManager retry on their own schedules), so this is
   // safe to refuse rather than queue.
   if (tls_in_flight_.load(std::memory_order_acquire) > 0) {
+    lastHttpError_ = "Another TLS request in flight";
     Serial.println("[HAL_ESP32] createSecureClient: refusing TLS alloc, another TLS client in flight");
     return nullptr;
   }
@@ -903,6 +1000,7 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
   // std::bad_alloc; with -fexceptions enabled and no catch handler on the loop
   // or async_tcp tasks, that aborts the task and reboots (issue #4 root cause).
   if (ESP.getFreeHeap() < TLS_CLIENT_MIN_FREE_HEAP) {
+    lastHttpError_ = "Low free heap (" + String((unsigned)ESP.getFreeHeap()) + "B)";
     Serial.printf("[HAL_ESP32] createSecureClient: refusing TLS alloc, free heap %u < %u\r\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned)TLS_CLIENT_MIN_FREE_HEAP);
     return nullptr;
@@ -912,7 +1010,7 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
   // getMaxAllocHeap() reports the malloc-default pool (not the broad internal
   // pool), max_alloc is the true largest block a TLS context could occupy.
   Serial.printf("[HAL_ESP32] createSecureClient: alloc TLS ctx (free %u, max_alloc %u)\r\n",
-                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+                (unsigned)ESP.getFreeHeap(), (unsigned)getDefaultMaxAllocHeap());
 
   crashBreadcrumbRecord(CRUMB_TLS_ALLOC_BEFORE, ESP.getFreeHeap(), getDefaultMaxAllocHeap());
 
@@ -921,10 +1019,10 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
     // with `new`, which can throw even above the threshold under fragmentation.
     auto client = std::make_unique<WiFiClientSecure>();
     client->setInsecure();
-    // Bound both the socket connect and the TLS handshake (defaults are 30 s /
-    // 120 s, which alone can stall the loop task past the 30 s watchdog).
-    // Clamp handshake to the same budget as the overall request timeout.
+    // Bound both Stream::_timeout and NetworkClient::_timeout (the latter
+    // shadows Stream::_timeout and is only updated by setConnectionTimeout).
     client->setTimeout(timeout_ms);
+    client->setConnectionTimeout(timeout_ms);
     client->setHandshakeTimeout((timeout_ms + 999) / 1000);  // ms -> seconds, round up
 
     // RAII: bump the in-flight counter for the lifetime of this client. The
@@ -938,6 +1036,7 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
     crashBreadcrumbRecord(CRUMB_TLS_ALLOC_SUCCESS, ESP.getFreeHeap(), getDefaultMaxAllocHeap());
     return SecureClientPtr(raw, TlsClientDeleter(&tls_in_flight_));
   } catch (...) {
+    lastHttpError_ = "TLS client allocation failed (OOM)";
     Serial.println("[HAL_ESP32] createSecureClient: exception during TLS client allocation");
     crashBreadcrumbRecord(CRUMB_TLS_ALLOC_EXCEPTION, ESP.getFreeHeap(), getDefaultMaxAllocHeap());
     return nullptr;
@@ -945,6 +1044,7 @@ HAL_ESP32::SecureClientPtr HAL_ESP32::createSecureClient(unsigned long timeout_m
 }
 
 String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
+  lastHttpError_ = "";
   String currentUrl = url;
   int maxRedirects = 5;
 
@@ -952,7 +1052,7 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     // Exception-safe TLS client; nullptr if heap too low to allocate safely.
     auto clientHolder = createSecureClient(timeout_ms);
     if (clientHolder == nullptr) {
-      Serial.println("[HAL_ESP32] httpGet: unavailable (low memory), aborting");
+      Serial.println("[HAL_ESP32] httpGet: unavailable (low memory/busy), aborting");
       return "";
     }
     WiFiClientSecure &client = *clientHolder;
@@ -983,7 +1083,15 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     }
 
     unsigned long startTime = ::millis();
+    esp_task_wdt_reset();
     if (!client.connect(host.c_str(), port, timeout_ms)) {
+      char errorText[128] = {};
+      int errorCode = client.lastError(errorText, sizeof(errorText));
+      lastHttpError_ = "TLS connect failed to " + host + " (err " + String(errorCode) +
+                       (errorText[0] ? (": " + String(errorText)) : String("")) + ")";
+      Serial.printf("[HAL_ESP32] httpGet: %s free=%u max_alloc=%u\r\n",
+                    lastHttpError_.c_str(),
+                    (unsigned)ESP.getFreeHeap(), (unsigned)getDefaultMaxAllocHeap());
       return "";
     }
 
@@ -1005,10 +1113,6 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     String redirectLocation = "";
     long contentLength = -1;  // -1 = header absent
     bool chunked = false;
-    // One-shot raw header capture for the 3.x OTA-truncation investigation:
-    // records up to 256 bytes of the raw header block so we can see exactly
-    // what the server sent (Transfer-Encoding: chunked? missing Content-Length?
-    // a header-read desync?). Appended to g_http_get_diag below.
     String rawHeaders = "";
 
     while (!headerDone && ::millis() < deadline) {
@@ -1026,9 +1130,8 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
       if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
         contentLength = line.substring(15).toInt();
       }
-      if (line.startsWith("Transfer-Encoding:")) {
-        // case-insensitive 'chunked' check
-        String te = line.substring(19);
+      if (line.startsWith("Transfer-Encoding:") || line.startsWith("transfer-encoding:")) {
+        String te = line.substring(18);
         te.trim();
         te.toLowerCase();
         if (te.indexOf("chunked") >= 0) chunked = true;
@@ -1036,7 +1139,6 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
       if (line.length() == 0) {
         headerDone = true;
       }
-      // If the connection closed before we finished headers, stop waiting
       if (!client.connected() && client.available() == 0 && line.length() == 0) {
         headerDone = true;
       }
@@ -1050,45 +1152,38 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     }
 
     if (statusCode != 200) {
+      String snippet = (statusCode > 0) ? readErrorBodySnippet(client, chunked, deadline) : "";
+      lastHttpError_ = statusCode > 0
+                           ? ("HTTP " + String(statusCode) + (snippet.length() ? (": " + snippet) : String("")))
+                           : ("No HTTP status from " + host);
+      Serial.printf("[HAL_ESP32] httpGet: %s host=%s\r\n", lastHttpError_.c_str(), host.c_str());
       client.stop();
       return "";
     }
 
-    // Read body. On arduino-esp32 3.x / mbedtls 3.x the previous
-    // `(connected() || available())` polling loop truncated multi-record TLS
-    // responses short of Content-Length: NetworkClientSecure::connected() and
-    // available() both call data_to_read() -> mbedtls_ssl_read(NULL,0) (a
-    // peek); on a transient peek error (e.g. a blocked record fetch between
-    // TLS records) available() calls stop(), flipping _connected=false, and
-    // the next while-check then exits the loop while bytes are still on the
-    // wire. 2.x tolerated this; 3.x does not.
-    //
-    // Fix: drive the loop by available()+read() only, and NEVER use
-    // connected() as a terminator while Content-Length is still unmet — it is
-    // the call that triggers stop() on a transient peek error. Treat a genuine
-    // transfer stall as "no available() data AND no read() progress for
-    // NO_PROGRESS_MS" and only then bail. When Content-Length is unknown
-    // (chunked or no header), read until available() and read() both report
-    // nothing for the no-progress window (i.e. clean EOF).
-    const size_t maxBody = 65535;  // JSON payloads are small; binaries use httpGetStream
+    // Read body (arduino-esp32 3.x safe loop: avoid terminating on connected()
+    // while Content-Length is unmet).
+    const size_t maxBody = 65535;
     if (contentLength > 0) {
       response.reserve((size_t)contentLength < maxBody ? (size_t)contentLength : maxBody);
     }
-    // Diagnostic capture for the 3.x OTA-truncation investigation. Track the
-    // exact reason the read loop exited plus the last observed socket state, so
-    // /update/check_result can report WHY a body came up short.
-    int exitReason = 0;        // 1=contentLength met, 2=no-progress, 3=deadline, 4=maxBody
-    int lastAvail = -1;         // last client.available() seen
-    int lastReadN = -999;       // last client.read() return
-    int readErrs = 0;           // count of read() returning <= 0 when avail > 0
-    int iters = 0;              // loop iterations
-    const unsigned long NO_PROGRESS_MS = 5000;  // bail after 5s with zero new bytes
+    int exitReason = 0;        // 1=contentLen/chunk-end met, 2=no-progress, 3=deadline, 4=maxBody
+    int lastAvail = -1;
+    int lastReadN = -999;
+    int readErrs = 0;
+    int iters = 0;
+    const unsigned long NO_PROGRESS_MS = 5000;
     unsigned long lastProgress = ::millis();
     uint8_t buf[512];
     while (::millis() < deadline) {
+      esp_task_wdt_reset();
       if (contentLength >= 0 && (long)response.length() >= contentLength) {
         exitReason = 1;
-        break;  // Full declared body received
+        break;
+      }
+      if (chunked && hasChunkedTerminator(response)) {
+        exitReason = 1;
+        break;
       }
       if (response.length() >= maxBody) { exitReason = 4; break; }
       iters++;
@@ -1105,13 +1200,8 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
           readErrs++;
         }
       } else {
-        // No data right now. Do NOT call connected() to decide termination —
-        // on 3.x that triggers stop() on a transient peek error and truncates
-        // a still-flowing body. Wait briefly and let the next record arrive.
         delay(2);
         if (::millis() - lastProgress > NO_PROGRESS_MS) {
-          // Genuine stall: no new bytes for the whole window. Only now is the
-          // transfer done (clean EOF if Content-Length was absent) or failed.
           exitReason = 2;
           break;
         }
@@ -1120,38 +1210,9 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
     if (exitReason == 0) {
       exitReason = (::millis() >= deadline) ? 3 : 1;
     }
-    // Dechunk the body if the server used Transfer-Encoding: chunked (GitHub's
-    // API alternates between Content-Length and chunked for the same URL; the
-    // chunked form embeds "<hex size>\r\n<data>\r\n0\r\n\r\n" markers that
-    // would otherwise corrupt the JSON parse).
     if (chunked) {
-      String dechunked;
-      dechunked.reserve(response.length());
-      size_t i = 0;
-      while (i < response.length()) {
-        // Parse hex chunk size up to the next CRLF
-        size_t lineEnd = response.indexOf("\r\n", i);
-        if (lineEnd == (size_t)-1) break;
-        String sizeHex = response.substring(i, lineEnd);
-        sizeHex.trim();
-        // Chunk extensions after ';' are ignored
-        int semi = sizeHex.indexOf(';');
-        if (semi >= 0) sizeHex = sizeHex.substring(0, semi);
-        long chunkSize = strtol(sizeHex.c_str(), nullptr, 16);
-        if (chunkSize <= 0) break;  // 0 or parse failure -> end of chunks
-        size_t dataStart = lineEnd + 2;
-        if (dataStart + (size_t)chunkSize > response.length()) break;  // truncated chunk
-        dechunked.concat(response.c_str() + dataStart, (size_t)chunkSize);
-        i = dataStart + (size_t)chunkSize;
-        // Skip trailing CRLF after chunk data
-        if (i + 2 <= response.length() && response[i] == '\r' && response[i + 1] == '\n') {
-          i += 2;
-        }
-      }
-      response = dechunked;
+      response = decodeChunkedBody(response);
     }
-    // Record diagnostic (always; cheap). Decoding in UpdateManager / log:
-    //   exit 1=contentLen-met 2=no-progress 3=deadline 4=maxBody
     g_http_get_diag = "exit=" + String(exitReason) +
                       " got=" + String(response.length()) +
                       " clen=" + String(contentLength) +
@@ -1161,15 +1222,19 @@ String HAL_ESP32::httpGet(const String& url, unsigned long timeout_ms) {
                       " lastReadN=" + String(lastReadN) +
                       " readErrs=" + String(readErrs) +
                       " free=" + String((int)ESP.getFreeHeap()) +
-                      " maxAlloc=" + String((int)ESP.getMaxAllocHeap()) +
+                      " maxAlloc=" + String((int)getDefaultMaxAllocHeap()) +
                       " status=" + String(statusCode) +
                       " hdrs=" + rawHeaders;
 
     client.stop();
+    if (response.length() == 0) {
+      lastHttpError_ = "Empty HTTP 200 body from " + host;
+    }
     return response;
   }
 
-  return ""; // Too many redirects
+  lastHttpError_ = "Too many HTTP redirects";
+  return "";
 }
 
 // Download one [startByte, endByte] inclusive range from `url` (already
@@ -1287,6 +1352,7 @@ int HAL_ESP32::downloadRangeChunk(const String& url, uint32_t startByte,
 
 bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
                                unsigned long timeout_ms) {
+  lastHttpError_ = "";
   String currentUrl = url;
   int maxRedirects = 5;
 
@@ -1294,7 +1360,7 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
     // Exception-safe TLS client; nullptr if heap too low to allocate safely.
     auto clientHolder = createSecureClient(timeout_ms);
     if (clientHolder == nullptr) {
-      Serial.println("[HAL_ESP32] httpGetStream: unavailable (low memory), aborting");
+      Serial.println("[HAL_ESP32] httpGetStream: unavailable (low memory/busy), aborting");
       return false;
     }
     WiFiClientSecure &client = *clientHolder;
@@ -1326,61 +1392,52 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
     }
 
     unsigned long startTime = ::millis();
-    if (!client.connect(host.c_str(), port, timeout_ms)) {
+    unsigned long connectTimeout = timeout_ms > 15000UL ? 15000UL : timeout_ms;
+    esp_task_wdt_reset();
+    if (!client.connect(host.c_str(), port, connectTimeout)) {
+      char errorText[128] = {};
+      int errorCode = client.lastError(errorText, sizeof(errorText));
+      lastHttpError_ = "TLS connect failed to " + host + " (err " + String(errorCode) +
+                       (errorText[0] ? (": " + String(errorText)) : String("")) + ")";
+      Serial.printf("[HAL_ESP32] httpGetStream: %s\r\n", lastHttpError_.c_str());
       return false;
     }
 
-    // Clamp the per-read socket timeout to 2 s. The overall transfer deadline
-    // is enforced by our own millis() check below; the socket timeout only
-    // bounds how long a single available()/read() call may block when the
-    // peer has stalled. With the default 60-120 s caller timeout, a stalled
-    // read would block far past the 5 s task watchdog and reboot the board
-    // (observed: "Task watchdog" reset during firmware.bin download). 2 s is
-    // well under the watchdog window and short enough to detect a stall.
+    // Clamp the per-read socket timeout to 2 s (both Stream and NetworkClient).
     client.setTimeout(2000);
+    client.setConnectionTimeout(2000);
 
     client.print(buildHttpGetRequest(host, path));
 
-    // Read status line
-    String statusLine = "";
-    while (client.connected()) {
-      if (::millis() - startTime > timeout_ms) { client.stop(); return false; }
-      if (client.available()) {
-        statusLine = client.readStringUntil('\n');
-        break;
-      }
-      delay(10);
-    }
+    // Read status line + headers via readHttpLine (handles long signed redirect URLs)
+    unsigned long deadline = startTime + timeout_ms;
+    String statusLine = readHttpLine(client, deadline);
 
-    // Parse HTTP status code
     int statusCode = 0;
     int spaceIdx = statusLine.indexOf(' ');
     if (spaceIdx > 0) {
       statusCode = statusLine.substring(spaceIdx + 1).toInt();
     }
 
-    // Read headers
     bool headerDone = false;
     uint32_t contentLength = 0;
     String redirectLocation = "";
 
-    while (client.connected() && !headerDone) {
-      if (::millis() - startTime > timeout_ms) { client.stop(); return false; }
-      if (client.available()) {
-        String line = client.readStringUntil('\n');
-        line.trim();
-        if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
-          contentLength = line.substring(15).toInt();
-        }
-        if (line.startsWith("Location:") || line.startsWith("location:")) {
-          redirectLocation = line.substring(9);
-          redirectLocation.trim();
-        }
-        if (line.length() == 0) {
-          headerDone = true;
-        }
-      } else {
-        delay(10);
+    while (!headerDone && ::millis() < deadline) {
+      String line = readHttpLine(client, deadline);
+      line.trim();
+      if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
+        contentLength = line.substring(15).toInt();
+      }
+      if (line.startsWith("Location:") || line.startsWith("location:")) {
+        redirectLocation = line.substring(9);
+        redirectLocation.trim();
+      }
+      if (line.length() == 0) {
+        headerDone = true;
+      }
+      if (!client.connected() && client.available() == 0 && line.length() == 0) {
+        headerDone = true;
       }
     }
 
@@ -1392,6 +1449,8 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
     }
 
     if (statusCode != 200) {
+      lastHttpError_ = statusCode > 0 ? ("HTTP " + String(statusCode) + " from " + host)
+                                      : ("No HTTP status from " + host);
       client.stop();
       return false;
     }
@@ -1554,111 +1613,17 @@ bool HAL_ESP32::httpGetStream(const String& url, HttpDataCallback on_data,
 }
 
 String HAL_ESP32::httpPost(const String& url, const String& jsonBody, unsigned long timeout_ms) {
-  // Exception-safe TLS client; nullptr if heap too low to allocate safely.
-  auto clientHolder = createSecureClient(timeout_ms);
-  if (clientHolder == nullptr) {
-    Serial.println("[HAL_ESP32] httpPost: unavailable (low memory), aborting");
-    return "";
-  }
-  WiFiClientSecure &client = *clientHolder;
-
-  String host = url;
-  String path = "/";
-
-  int slashIndex = url.indexOf("://");
-  if (slashIndex != -1) {
-    host = url.substring(slashIndex + 3);
-  }
-
-  int pathIndex = host.indexOf("/");
-  if (pathIndex != -1) {
-    path = host.substring(pathIndex);
-    host = host.substring(0, pathIndex);
-  }
-
-  int port = 443;
-  if (url.startsWith("http://")) {
-    port = 80;
-  }
-
-  int portIndex = host.indexOf(":");
-  if (portIndex != -1) {
-    port = host.substring(portIndex + 1).toInt();
-    host = host.substring(0, portIndex);
-  }
-
-  unsigned long startTime = ::millis();
-  if (!client.connect(host.c_str(), port, timeout_ms)) {
-    return "";
-  }
-
-  String request = "POST " + path + " HTTP/1.1\r\n";
-  request += "Host: " + host + "\r\n";
-  request += "Content-Type: application/json\r\n";
-  request += "Content-Length: " + String(jsonBody.length()) + "\r\n";
-  request += "Connection: close\r\n";
-  request += "\r\n";
-  request += jsonBody;
-
-  client.print(request);
-
-  // Read status line
-  String statusLine = "";
-  while (client.connected()) {
-    if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
-    if (client.available()) {
-      statusLine = client.readStringUntil('\n');
-      break;
-    }
-    delay(10);
-  }
-
-  int statusCode = 0;
-  int spaceIdx = statusLine.indexOf(' ');
-  if (spaceIdx > 0) {
-    statusCode = statusLine.substring(spaceIdx + 1).toInt();
-  }
-
-  // Read headers
-  bool headerDone = false;
-  while (client.connected() && !headerDone) {
-    if (::millis() - startTime > timeout_ms) { client.stop(); return ""; }
-    if (client.available()) {
-      String line = client.readStringUntil('\n');
-      line.trim();
-      if (line.length() == 0) {
-        headerDone = true;
-      }
-    } else {
-      delay(10);
-    }
-  }
-
-  if (statusCode < 200 || statusCode >= 300) {
-    client.stop();
-    return "";
-  }
-
-  // Read body
-  String response = "";
-  while (client.connected() || client.available()) {
-    if (::millis() - startTime > timeout_ms) break;
-    if (client.available()) {
-      String line = client.readStringUntil('\n');
-      response += line;
-    } else {
-      delay(10);
-    }
-  }
-
-  client.stop();
-  return response;
+  return httpPostAuth(url, jsonBody, "", "", timeout_ms);
 }
 
 String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
                                const String& bearerToken, const String& extraHeaders,
                                unsigned long timeout_ms) {
-  if (url.length() == 0) return "";
+  lastHttpError_ = "";
+  if (url.length() == 0) {
+    lastHttpError_ = "URL is empty";
+    return "";
+  }
 
   bool useTls = !url.startsWith("http://");  // https:// (or anything non-plain) => TLS
 
@@ -1674,50 +1639,53 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
   if (portIndex != -1) { port = host.substring(portIndex + 1).toInt(); host = host.substring(0, portIndex); }
 
   unsigned long startTime = ::millis();
-  // A TLS connect/handshake is a blocking call inside NetworkClientSecure, so
-  // it cannot feed the 30s loop-task watchdog. Bound it below that timeout;
-  // response waiting below remains allowed to use the caller's full budget and
-  // feeds the watchdog while it does so.
   unsigned long tlsConnectTimeoutMs = timeout_ms > 15000UL ? 15000UL : timeout_ms;
 
-  // Plain HTTP path uses a non-TLS WiFiClient so LAN endpoints (Rapid-MLX on
-  // :8000, local Ollama on :11434) work — httpPost() above is TLS-only.
   std::unique_ptr<WiFiClient> plainHolder;
   SecureClientPtr tlsHolder;
   if (useTls) {
     tlsHolder = createSecureClient(tlsConnectTimeoutMs);
     if (tlsHolder == nullptr) {
-      Serial.println("[HAL_ESP32] httpPostAuth: TLS client unavailable (low memory), aborting");
+      Serial.println("[HAL_ESP32] httpPostAuth: TLS client unavailable, aborting");
       return "";
     }
+    esp_task_wdt_reset();
     if (!tlsHolder->connect(host.c_str(), port, tlsConnectTimeoutMs)) {
       char errorText[128] = {};
       int errorCode = tlsHolder->lastError(errorText, sizeof(errorText));
-      Serial.printf("[HAL_ESP32] httpPostAuth: TLS connect failed host=%s err=%d (%s) free=%u max_alloc=%u\r\n",
-                    host.c_str(), errorCode, errorText,
-                    (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+      lastHttpError_ = "TLS connect failed to " + host + " (err " + String(errorCode) +
+                       (errorText[0] ? (": " + String(errorText)) : String("")) + ")";
+      Serial.printf("[HAL_ESP32] httpPostAuth: %s free=%u max_alloc=%u\r\n",
+                    lastHttpError_.c_str(),
+                    (unsigned)ESP.getFreeHeap(), (unsigned)getDefaultMaxAllocHeap());
       return "";
     }
   } else {
-    // Same WiFi-connected + low-heap guards as the TLS path: skip the request
-    // entirely if the link is down (no point POSTing over a dead STA) or if
-    // heap is too low to even buffer the request line.
     if (!wifiIsConnected()) {
+      lastHttpError_ = "WiFi not connected";
       Serial.println("[HAL_ESP32] httpPostAuth: plain-HTTP abort, WiFi not connected");
       return "";
     }
     if (ESP.getFreeHeap() < TLS_CLIENT_MIN_FREE_HEAP) {
+      lastHttpError_ = "Low free heap (" + String((unsigned)ESP.getFreeHeap()) + "B)";
       return "";
     }
     try {
       plainHolder = std::make_unique<WiFiClient>();
     } catch (const std::exception&) {
+      lastHttpError_ = "HTTP client allocation failed (OOM)";
       return "";
     }
-    if (!plainHolder->connect(host.c_str(), port, timeout_ms)) return "";
+    plainHolder->setTimeout(timeout_ms);
+    plainHolder->setConnectionTimeout(timeout_ms);
+    esp_task_wdt_reset();
+    if (!plainHolder->connect(host.c_str(), port, timeout_ms)) {
+      lastHttpError_ = "Connection failed to " + host + ":" + String(port);
+      return "";
+    }
   }
 
-  // Build the request. Both client types expose the same print/stop API.
+  // Build and send the HTTP POST request.
   String request = "POST " + path + " HTTP/1.1\r\n";
   request += "Host: " + host + "\r\n";
   request += "Content-Type: application/json\r\n";
@@ -1735,78 +1703,99 @@ String HAL_ESP32::httpPostAuth(const String& url, const String& jsonBody,
     plainHolder->print(request);
   }
 
-  // Helper lambda to read "a line or until deadline", independent of client type.
-  auto readLine = [&](auto& client) -> String {
-    String line;
-    unsigned long deadline = startTime + timeout_ms;
-    while (::millis() < deadline) {
-      // httpPostAuth runs from loopTask for weather/LLM work. A cloud model can
-      // legitimately wait tens of seconds before its first response byte; feed
-      // the subscribed task watchdog while this deadline-bounded external I/O
-      // wait is intentional. The TLS socket timeout remains capped at 15s, so
-      // no single read can mask a genuine task hang past the 30s watchdog.
-      esp_task_wdt_reset();
-      int c = client->read();
-      if (c < 0) {
-        if (!client->connected() && client->available() == 0) break;
-        delay(1);
-        continue;
-      }
-      if (c == '\n') break;
-      if (c != '\r') { line += (char)c; if (line.length() > 8192) break; }
-    }
-    return line;
-  };
-
-  // Status line + headers
-  String statusLine = useTls ? readLine(tlsHolder) : readLine(plainHolder);
+  // Read status line + headers (parsing Content-Length & Transfer-Encoding: chunked)
+  unsigned long deadline = startTime + timeout_ms;
+  String statusLine = useTls ? readHttpLine(*tlsHolder, deadline)
+                             : readHttpLine(*plainHolder, deadline);
   int statusCode = 0;
   int spaceIdx = statusLine.indexOf(' ');
   if (spaceIdx > 0) statusCode = statusLine.substring(spaceIdx + 1).toInt();
 
-  unsigned long deadline = startTime + timeout_ms;
+  long contentLength = -1;
+  bool chunked = false;
   while (::millis() < deadline) {
-    String line = useTls ? readLine(tlsHolder) : readLine(plainHolder);
+    String line = useTls ? readHttpLine(*tlsHolder, deadline)
+                         : readHttpLine(*plainHolder, deadline);
     line.trim();
-    if (line.length() == 0) break;  // end of headers
+    if (line.length() == 0) break;
+    if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
+      contentLength = line.substring(15).toInt();
+    } else if (line.startsWith("Transfer-Encoding:") || line.startsWith("transfer-encoding:")) {
+      String te = line.substring(18);
+      te.trim();
+      te.toLowerCase();
+      if (te.indexOf("chunked") >= 0) chunked = true;
+    }
   }
 
   if (statusCode < 200 || statusCode >= 300) {
-    Serial.printf("[HAL_ESP32] httpPostAuth: non-2xx status=%d host=%s free=%u max_alloc=%u\r\n",
-                  statusCode, host.c_str(),
-                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+    String snippet = "";
+    if (statusCode > 0) {
+      snippet = useTls ? readErrorBodySnippet(*tlsHolder, chunked, deadline)
+                       : readErrorBodySnippet(*plainHolder, chunked, deadline);
+    }
+    lastHttpError_ = statusCode > 0
+                         ? ("HTTP " + String(statusCode) + (snippet.length() ? (": " + snippet) : String("")))
+                         : ("No HTTP status from " + host + " (timeout)");
+    Serial.printf("[HAL_ESP32] httpPostAuth: %s host=%s free=%u max_alloc=%u\r\n",
+                  lastHttpError_.c_str(), host.c_str(),
+                  (unsigned)ESP.getFreeHeap(), (unsigned)getDefaultMaxAllocHeap());
     if (useTls) tlsHolder->stop(); else plainHolder->stop();
     return "";
   }
 
-  // Body. The inter-byte idle gap is the full remaining request budget, NOT a
-  // fixed 1 s: an LLM provider (Ollama Cloud gemma4:31b) routinely thinks for
-  // 2-5 s before emitting the first token, and a 1 s idle gap made ~32% of real
-  // weather-prompt calls return empty ("no usable reply, rule fallback" on the
-  // status page) while the trivial test-button prompt still passed. The overall
-  // deadline (startTime + timeout_ms) still bounds the call end-to-end.
+  // Read response body using bulk reads + WDT resets. Wait up to full deadline
+  // for first/subsequent bytes (cloud LLMs can think for several seconds),
+  // stopping immediately once Content-Length or chunked terminator is received.
+  const size_t maxBody = 16384;
   String response;
-  while (::millis() < deadline) {
-    // See readLine(): this is bounded external model I/O on loopTask, so feed
-    // the task watchdog while waiting for the configured request deadline.
+  if (contentLength > 0) {
+    response.reserve((size_t)contentLength < maxBody ? (size_t)contentLength : maxBody);
+  }
+  uint8_t buf[512];
+  unsigned long lastProgress = ::millis();
+  const unsigned long POST_BODY_IDLE_MS = 5000;
+  while (::millis() < deadline && response.length() < maxBody) {
     esp_task_wdt_reset();
-    int c = (useTls ? tlsHolder->read() : plainHolder->read());
-    if (c < 0) {
-      bool connected = useTls ? tlsHolder->connected() : plainHolder->connected();
-      int avail = useTls ? tlsHolder->available() : plainHolder->available();
-      if (!connected && avail == 0) break;
-      delay(1);
-      continue;
+    if (contentLength >= 0 && (long)response.length() >= contentLength) break;
+    if (chunked && hasChunkedTerminator(response)) break;
+
+    int avail = useTls ? tlsHolder->available() : plainHolder->available();
+    if (avail > 0) {
+      int want = avail < (int)sizeof(buf) ? avail : (int)sizeof(buf);
+      if (response.length() + (size_t)want > maxBody) want = maxBody - response.length();
+      int n = useTls ? tlsHolder->read(buf, want) : plainHolder->read(buf, want);
+      if (n > 0) {
+        response.concat((const char*)buf, (size_t)n);
+        lastProgress = ::millis();
+      }
+    } else {
+      // Only stop early on clean EOF when Content-Length is unknown AND we
+      // already received bytes AND the peer has closed cleanly (or idle >5s).
+      if (contentLength < 0 && response.length() > 0) {
+        if (::millis() - lastProgress > POST_BODY_IDLE_MS) break;
+        bool connected = useTls ? tlsHolder->connected() : plainHolder->connected();
+        int recheckAvail = useTls ? tlsHolder->available() : plainHolder->available();
+        if (!connected && recheckAvail == 0) break;
+      } else if (response.length() == 0) {
+        bool connected = useTls ? tlsHolder->connected() : plainHolder->connected();
+        int recheckAvail = useTls ? tlsHolder->available() : plainHolder->available();
+        if (!connected && recheckAvail == 0) break;
+      }
+      delay(2);
     }
-    response += (char)c;
-    if (response.length() > 16384) break;  // cap: don't let a huge reply eat RAM
   }
 
   if (useTls) tlsHolder->stop(); else plainHolder->stop();
+
+  if (chunked && response.length() > 0) {
+    response = decodeChunkedBody(response);
+  }
   if (response.length() == 0) {
+    lastHttpError_ = "Empty HTTP " + String(statusCode) + " body from " + host;
     Serial.printf("[HAL_ESP32] httpPostAuth: 2xx but empty body host=%s timeout=%lu elapsed=%lu free=%u max_alloc=%u\r\n",
                   host.c_str(), timeout_ms, (unsigned long)(::millis() - startTime),
-                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+                  (unsigned)ESP.getFreeHeap(), (unsigned)getDefaultMaxAllocHeap());
   }
   return response;
 }
@@ -1845,6 +1834,7 @@ static String smtpRecvResponse(SmtpRecvFn recv, unsigned long timeout_ms, unsign
     String response = "";
     char buf[256];
     while (::millis() - startTime < timeout_ms) {
+        esp_task_wdt_reset();
         int n = recv((uint8_t*)buf, sizeof(buf) - 1);
         if (n > 0) {
             buf[n] = '\0';
@@ -1871,63 +1861,82 @@ static int smtpSendLine(SmtpSendFn send, const String& line) {
     return send((const uint8_t*)data.c_str(), data.length());
 }
 
+struct SmtpMbedTlsCtx {
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    bool handshakeDone = false;
+
+    SmtpMbedTlsCtx() {
+        mbedtls_ssl_init(&ssl);
+        mbedtls_ssl_config_init(&conf);
+        mbedtls_entropy_init(&entropy);
+        mbedtls_ctr_drbg_init(&ctr_drbg);
+    }
+    ~SmtpMbedTlsCtx() {
+        if (handshakeDone) {
+            mbedtls_ssl_close_notify(&ssl);
+        }
+        mbedtls_ssl_free(&ssl);
+        mbedtls_ssl_config_free(&conf);
+        mbedtls_entropy_free(&entropy);
+        mbedtls_ctr_drbg_free(&ctr_drbg);
+    }
+};
+
+struct TlsFlightGuard {
+    std::atomic<int>& counter;
+    explicit TlsFlightGuard(std::atomic<int>& c) : counter(c) {
+        counter.fetch_add(1, std::memory_order_acq_rel);
+    }
+    ~TlsFlightGuard() {
+        counter.fetch_sub(1, std::memory_order_acq_rel);
+    }
+};
+
 String HAL_ESP32::smtpSend(const String& host, uint16_t port,
                             const String& username, const String& password,
                             const String& from, const String& to,
                             const String& subject, const String& body,
                             unsigned long timeout_ms) {
+    lastHttpError_ = "";
     unsigned long startTime = ::millis();
     bool useDirectTLS = (port == 465);
 
-    if (useDirectTLS) {
-        // Port 465: Direct TLS (SMTPS) - use WiFiClientSecure directly
-        WiFiClientSecure client;
-        client.setInsecure();
-        if (!client.connect(host.c_str(), port, timeout_ms)) {
-            return "Connection failed to " + host + ":" + String(port);
+    auto runSmtpSession = [&](SmtpRecvFn recv, SmtpSendFn send, bool sendEhloFirst) -> String {
+        String resp;
+        if (sendEhloFirst) {
+            resp = smtpRecvResponse(recv, timeout_ms, startTime);
+            if (!smtpCheckResponse(resp, "220")) return "Bad greeting: " + sanitizeErrorSnippet(resp);
         }
-
-        auto recv = [&](uint8_t* buf, size_t len) -> int {
-            unsigned long wait_start = ::millis();
-            while (!client.available() && client.connected() && ::millis() - wait_start < 5000) delay(10);
-            if (!client.available()) return -1;
-            return client.read(buf, len);
-        };
-        auto send = [&](const uint8_t* buf, size_t len) -> int {
-            return client.write(buf, len);
-        };
-
-        // SMTP conversation over TLS
-        String resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "220")) { client.stop(); return "Bad greeting: " + resp; }
-
         smtpSendLine(send, "EHLO coop-controller");
         resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) { client.stop(); return "EHLO failed: " + resp; }
+        if (!smtpCheckResponse(resp, "250")) return "EHLO failed: " + sanitizeErrorSnippet(resp);
 
         smtpSendLine(send, "AUTH LOGIN");
         resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "334")) { client.stop(); return "AUTH LOGIN failed: " + resp; }
+        if (!smtpCheckResponse(resp, "334")) return "AUTH LOGIN failed: " + sanitizeErrorSnippet(resp);
 
         smtpSendLine(send, base64Encode(username));
         resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "334")) { client.stop(); return "Username rejected: " + resp; }
+        if (!smtpCheckResponse(resp, "334")) return "Username rejected: " + sanitizeErrorSnippet(resp);
 
         smtpSendLine(send, base64Encode(password));
         resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "235")) { client.stop(); return "Auth failed: " + resp; }
+        if (!smtpCheckResponse(resp, "235")) return "Auth failed: " + sanitizeErrorSnippet(resp);
 
         smtpSendLine(send, "MAIL FROM:<" + from + ">");
         resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) { client.stop(); return "MAIL FROM rejected: " + resp; }
+        if (!smtpCheckResponse(resp, "250")) return "MAIL FROM rejected: " + sanitizeErrorSnippet(resp);
 
         smtpSendLine(send, "RCPT TO:<" + to + ">");
         resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) { client.stop(); return "RCPT TO rejected: " + resp; }
+        if (!smtpCheckResponse(resp, "250")) return "RCPT TO rejected: " + sanitizeErrorSnippet(resp);
 
         smtpSendLine(send, "DATA");
         resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "354")) { client.stop(); return "DATA rejected: " + resp; }
+        if (!smtpCheckResponse(resp, "354")) return "DATA rejected: " + sanitizeErrorSnippet(resp);
 
         smtpSendLine(send, "From: " + from);
         smtpSendLine(send, "To: " + to);
@@ -1939,24 +1948,78 @@ String HAL_ESP32::smtpSend(const String& host, uint16_t port,
         smtpSendLine(send, ".");
 
         resp = smtpRecvResponse(recv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) { client.stop(); return "Send failed: " + resp; }
+        if (!smtpCheckResponse(resp, "250")) return "Send failed: " + sanitizeErrorSnippet(resp);
 
         smtpSendLine(send, "QUIT");
-        client.stop();
         return "";
+    };
 
+    if (useDirectTLS) {
+        // Port 465: Direct TLS (SMTPS) via exception-safe, serialized createSecureClient()
+        auto clientHolder = createSecureClient(timeout_ms);
+        if (clientHolder == nullptr) {
+            return lastHttpError_.length() ? lastHttpError_ : String("TLS client unavailable");
+        }
+        WiFiClientSecure& client = *clientHolder;
+        esp_task_wdt_reset();
+        if (!client.connect(host.c_str(), port, timeout_ms)) {
+            char errorText[128] = {};
+            int errorCode = client.lastError(errorText, sizeof(errorText));
+            lastHttpError_ = "SMTPS connect failed to " + host + ":" + String(port) +
+                             " (err " + String(errorCode) +
+                             (errorText[0] ? (": " + String(errorText)) : String("")) + ")";
+            return lastHttpError_;
+        }
+
+        auto recv = [&](uint8_t* buf, size_t len) -> int {
+            unsigned long wait_start = ::millis();
+            while (!client.available() && client.connected() && ::millis() - wait_start < 5000) {
+                esp_task_wdt_reset();
+                delay(10);
+            }
+            if (!client.available()) return -1;
+            return client.read(buf, len);
+        };
+        auto send = [&](const uint8_t* buf, size_t len) -> int {
+            return client.write(buf, len);
+        };
+
+        String err = runSmtpSession(recv, send, true);
+        client.stop();
+        if (err.length() > 0) lastHttpError_ = err;
+        return err;
     } else {
-        // Port 587 (or other): STARTTLS - plain connect then TLS upgrade via mbedtls
+        // Port 587 (or other): STARTTLS with WiFi, heap, and TLS serialization guards
+        if (!wifiIsConnected()) {
+            lastHttpError_ = "WiFi not connected";
+            return lastHttpError_;
+        }
+        if (tls_in_flight_.load(std::memory_order_acquire) > 0) {
+            lastHttpError_ = "Another TLS request in flight";
+            return lastHttpError_;
+        }
+        if (ESP.getFreeHeap() < TLS_CLIENT_MIN_FREE_HEAP) {
+            lastHttpError_ = "Low free heap for TLS";
+            return lastHttpError_;
+        }
+        TlsFlightGuard tlsGuard(tls_in_flight_);
+
         WiFiClient plainClient;
+        plainClient.setTimeout(timeout_ms);
+        plainClient.setConnectionTimeout(timeout_ms);
+        esp_task_wdt_reset();
         if (!plainClient.connect(host.c_str(), port, timeout_ms)) {
-            return "Connection failed to " + host + ":" + String(port);
+            lastHttpError_ = "Connection failed to " + host + ":" + String(port);
+            return lastHttpError_;
         }
         int sockfd = plainClient.fd();
 
-        // Plain-text recv/send using raw socket via WiFiClient
         auto plainRecv = [&](uint8_t* buf, size_t len) -> int {
             unsigned long wait_start = ::millis();
-            while (!plainClient.available() && plainClient.connected() && ::millis() - wait_start < 5000) delay(10);
+            while (!plainClient.available() && plainClient.connected() && ::millis() - wait_start < 5000) {
+                esp_task_wdt_reset();
+                delay(10);
+            }
             if (!plainClient.available()) return -1;
             return plainClient.read(buf, len);
         };
@@ -1964,182 +2027,78 @@ String HAL_ESP32::smtpSend(const String& host, uint16_t port,
             return plainClient.write(buf, len);
         };
 
-        // Read greeting
         String resp = smtpRecvResponse(plainRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "220")) { plainClient.stop(); return "Bad greeting: " + resp; }
+        if (!smtpCheckResponse(resp, "220")) { plainClient.stop(); lastHttpError_ = "Bad greeting: " + sanitizeErrorSnippet(resp); return lastHttpError_; }
 
-        // EHLO
         smtpSendLine(plainSend, "EHLO coop-controller");
         resp = smtpRecvResponse(plainRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) { plainClient.stop(); return "EHLO failed: " + resp; }
+        if (!smtpCheckResponse(resp, "250")) { plainClient.stop(); lastHttpError_ = "EHLO failed: " + sanitizeErrorSnippet(resp); return lastHttpError_; }
 
-        // STARTTLS
         smtpSendLine(plainSend, "STARTTLS");
         resp = smtpRecvResponse(plainRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "220")) { plainClient.stop(); return "STARTTLS failed: " + resp; }
+        if (!smtpCheckResponse(resp, "220")) { plainClient.stop(); lastHttpError_ = "STARTTLS failed: " + sanitizeErrorSnippet(resp); return lastHttpError_; }
 
-        // TLS upgrade using mbedtls on existing socket
-        mbedtls_ssl_context ssl;
-        mbedtls_ssl_config conf;
-        mbedtls_entropy_context entropy;
-        mbedtls_ctr_drbg_context ctr_drbg;
-
-        mbedtls_ssl_init(&ssl);
-        mbedtls_ssl_config_init(&conf);
-        mbedtls_entropy_init(&entropy);
-        mbedtls_ctr_drbg_init(&ctr_drbg);
-
-        int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0);
-        if (ret != 0) {
+        // Heap-allocate mbedTLS state to avoid blowing stack on smaller tasks
+        std::unique_ptr<SmtpMbedTlsCtx> ctx;
+        try {
+            ctx = std::make_unique<SmtpMbedTlsCtx>();
+        } catch (...) {
             plainClient.stop();
-            mbedtls_ssl_free(&ssl);
-            mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy);
-            mbedtls_ctr_drbg_free(&ctr_drbg);
-            return "TLS seed failed";
+            lastHttpError_ = "TLS context allocation failed (OOM)";
+            return lastHttpError_;
         }
 
-        mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT,
+        int ret = mbedtls_ctr_drbg_seed(&ctx->ctr_drbg, mbedtls_entropy_func, &ctx->entropy, NULL, 0);
+        if (ret != 0) {
+            plainClient.stop();
+            lastHttpError_ = "TLS seed failed";
+            return lastHttpError_;
+        }
+
+        mbedtls_ssl_config_defaults(&ctx->conf, MBEDTLS_SSL_IS_CLIENT,
                                      MBEDTLS_SSL_TRANSPORT_STREAM,
                                      MBEDTLS_SSL_PRESET_DEFAULT);
-        mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE); // Skip cert verification
-        mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+        mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_NONE);
+        mbedtls_ssl_conf_rng(&ctx->conf, mbedtls_ctr_drbg_random, &ctx->ctr_drbg);
 
-        mbedtls_ssl_setup(&ssl, &conf);
-        mbedtls_ssl_set_hostname(&ssl, host.c_str());
-        mbedtls_ssl_set_bio(&ssl, &sockfd, mbedtls_net_send, mbedtls_net_recv, NULL);
+        if (mbedtls_ssl_setup(&ctx->ssl, &ctx->conf) != 0) {
+            plainClient.stop();
+            lastHttpError_ = "TLS setup failed";
+            return lastHttpError_;
+        }
+        mbedtls_ssl_set_hostname(&ctx->ssl, host.c_str());
+        mbedtls_ssl_set_bio(&ctx->ssl, &sockfd, mbedtls_net_send, mbedtls_net_recv, NULL);
 
-        // Perform TLS handshake on existing socket
-        while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
+        while ((ret = mbedtls_ssl_handshake(&ctx->ssl)) != 0) {
+            esp_task_wdt_reset();
             if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
                 char errbuf[128];
                 mbedtls_strerror(ret, errbuf, sizeof(errbuf));
-                String err = "TLS handshake failed: " + String(errbuf);
-                mbedtls_ssl_free(&ssl);
-                mbedtls_ssl_config_free(&conf);
-                mbedtls_entropy_free(&entropy);
-                mbedtls_ctr_drbg_free(&ctr_drbg);
                 plainClient.stop();
-                return err;
+                lastHttpError_ = "TLS handshake failed: " + String(errbuf);
+                return lastHttpError_;
             }
             if (::millis() - startTime > timeout_ms) {
-                mbedtls_ssl_free(&ssl);
-                mbedtls_ssl_config_free(&conf);
-                mbedtls_entropy_free(&entropy);
-                mbedtls_ctr_drbg_free(&ctr_drbg);
                 plainClient.stop();
-                return "TLS handshake timeout";
+                lastHttpError_ = "TLS handshake timeout";
+                return lastHttpError_;
             }
+            delay(1);
         }
+        ctx->handshakeDone = true;
 
-        // TLS send/recv via mbedtls
         auto tlsRecv = [&](uint8_t* buf, size_t len) -> int {
-            int n = mbedtls_ssl_read(&ssl, buf, len);
-            return n;
+            return mbedtls_ssl_read(&ctx->ssl, buf, len);
         };
         auto tlsSend = [&](const uint8_t* buf, size_t len) -> int {
-            return mbedtls_ssl_write(&ssl, buf, len);
+            return mbedtls_ssl_write(&ctx->ssl, buf, len);
         };
 
-        // EHLO again after TLS
-        smtpSendLine(tlsSend, "EHLO coop-controller");
-        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) {
-            mbedtls_ssl_close_notify(&ssl);
-            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
-            plainClient.stop();
-            return "EHLO after TLS failed: " + resp;
-        }
-
-        // AUTH LOGIN
-        smtpSendLine(tlsSend, "AUTH LOGIN");
-        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "334")) {
-            mbedtls_ssl_close_notify(&ssl);
-            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
-            plainClient.stop();
-            return "AUTH LOGIN failed: " + resp;
-        }
-
-        smtpSendLine(tlsSend, base64Encode(username));
-        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "334")) {
-            mbedtls_ssl_close_notify(&ssl);
-            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
-            plainClient.stop();
-            return "Username rejected: " + resp;
-        }
-
-        smtpSendLine(tlsSend, base64Encode(password));
-        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "235")) {
-            mbedtls_ssl_close_notify(&ssl);
-            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
-            plainClient.stop();
-            return "Auth failed: " + resp;
-        }
-
-        // MAIL FROM / RCPT TO / DATA / message
-        smtpSendLine(tlsSend, "MAIL FROM:<" + from + ">");
-        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) {
-            mbedtls_ssl_close_notify(&ssl);
-            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
-            plainClient.stop();
-            return "MAIL FROM rejected: " + resp;
-        }
-
-        smtpSendLine(tlsSend, "RCPT TO:<" + to + ">");
-        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) {
-            mbedtls_ssl_close_notify(&ssl);
-            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
-            plainClient.stop();
-            return "RCPT TO rejected: " + resp;
-        }
-
-        smtpSendLine(tlsSend, "DATA");
-        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "354")) {
-            mbedtls_ssl_close_notify(&ssl);
-            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
-            plainClient.stop();
-            return "DATA rejected: " + resp;
-        }
-
-        smtpSendLine(tlsSend, "From: " + from);
-        smtpSendLine(tlsSend, "To: " + to);
-        smtpSendLine(tlsSend, "Subject: " + subject);
-        smtpSendLine(tlsSend, "MIME-Version: 1.0");
-        smtpSendLine(tlsSend, "Content-Type: text/plain; charset=UTF-8");
-        smtpSendLine(tlsSend, "");
-        smtpSendLine(tlsSend, body);
-        smtpSendLine(tlsSend, ".");
-
-        resp = smtpRecvResponse(tlsRecv, timeout_ms, startTime);
-        if (!smtpCheckResponse(resp, "250")) {
-            mbedtls_ssl_close_notify(&ssl);
-            mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_entropy_free(&entropy); mbedtls_ctr_drbg_free(&ctr_drbg);
-            plainClient.stop();
-            return "Send failed: " + resp;
-        }
-
-        smtpSendLine(tlsSend, "QUIT");
-        mbedtls_ssl_close_notify(&ssl);
-        mbedtls_ssl_free(&ssl);
-        mbedtls_ssl_config_free(&conf);
-        mbedtls_entropy_free(&entropy);
-        mbedtls_ctr_drbg_free(&ctr_drbg);
+        String err = runSmtpSession(tlsRecv, tlsSend, false);
+        ctx.reset();  // sends close_notify and frees mbedtls before closing socket
         plainClient.stop();
-        return "";
+        if (err.length() > 0) lastHttpError_ = err;
+        return err;
     }
 }
 
