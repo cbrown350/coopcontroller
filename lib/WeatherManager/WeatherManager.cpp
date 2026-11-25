@@ -4,6 +4,27 @@
 #include <math.h>
 #include <time.h>
 
+namespace {
+// Brief RAII guard around HAL's sharedStateMutex_ for loop-task mutations and
+// snapshots. Never held across blocking HTTP/TLS calls so async_tcp web
+// handlers (/weather/status, /update_settings) never stall or read torn Strings.
+class ScopedSharedLock {
+public:
+    explicit ScopedSharedLock(IHAL* hal, unsigned long timeoutMs = 100)
+        : hal_(hal), locked_(hal != nullptr && hal->lockSharedState(timeoutMs)) {}
+    ~ScopedSharedLock() {
+        if (locked_) hal_->unlockSharedState();
+    }
+    bool ok() const { return hal_ == nullptr || locked_; }
+    ScopedSharedLock(const ScopedSharedLock&) = delete;
+    ScopedSharedLock& operator=(const ScopedSharedLock&) = delete;
+
+private:
+    IHAL* hal_;
+    bool locked_;
+};
+}  // namespace
+
 WeatherManager::WeatherManager() = default;
 WeatherManager::~WeatherManager() = default;  // Out-of-line: needs complete LlmWeatherDecider type
 
@@ -31,6 +52,96 @@ void WeatherManager::setOpenWindowMinutes(int openMin, int closeMin) {
     window_close_minutes_ = closeMin;
 }
 
+void WeatherManager::setDoorOpenContext(bool autoOpenEligibleToday, bool doorIsOpen,
+                                        bool doorFaulted, int currentLocalMinutes) {
+    door_context_configured_ = true;
+    door_auto_open_eligible_today_ = autoOpenEligibleToday;
+    door_is_open_ = doorIsOpen;
+    door_faulted_ = doorFaulted;
+    door_current_local_minutes_ = currentLocalMinutes;
+}
+
+bool WeatherManager::isLlmActive_() const {
+    return llm_enabled_;
+}
+
+bool WeatherManager::getLocalMinutesNow_(int& outNowMin) const {
+    if (door_current_local_minutes_ >= 0) {
+        outNowMin = door_current_local_minutes_;
+        return true;
+    }
+    long epoch = -1;
+    if (hal_ != nullptr) {
+        unsigned long liveEpoch = hal_->getTime();
+        if (liveEpoch >= MIN_VALID_EPOCH) {
+            epoch = static_cast<long>(liveEpoch);
+        }
+    }
+    if (epoch < static_cast<long>(MIN_VALID_EPOCH) &&
+        now_epoch_ >= static_cast<long>(MIN_VALID_EPOCH)) {
+        epoch = now_epoch_;
+    }
+    if (epoch < static_cast<long>(MIN_VALID_EPOCH)) {
+        return false;
+    }
+    long local = epoch + static_cast<long>(tz_offset_minutes_) * 60L;
+    outNowMin = static_cast<int>((((local % 86400L) + 86400L) % 86400L) / 60L);
+    return true;
+}
+
+bool WeatherManager::isLlmEvaluationNeeded() const {
+    if (!isLlmActive_()) return false;
+    // No DoorController pushed context (standalone use / unit tests): keep the
+    // legacy behavior of running the LLM on every successful fetch.
+    if (!door_context_configured_) return true;
+
+    // The decision is moot when auto-open cannot happen today, the door is
+    // already open (it stays open until closed), or the door is faulted.
+    if (!door_auto_open_eligible_today_ || door_is_open_ || door_faulted_) return false;
+
+    // No usable open window -> nothing to decide.
+    if (window_open_minutes_ < 0 || window_close_minutes_ < 0 ||
+        window_open_minutes_ >= window_close_minutes_) {
+        return false;
+    }
+
+    int nowMin = -1;
+    if (!getLocalMinutesNow_(nowMin)) {
+        return false;
+    }
+
+    // Actionable window: from LLM_PRE_OPEN_LEAD_MINUTES before the scheduled
+    // open (clamped at midnight) up to the close ceiling.
+    int leadStart = window_open_minutes_ - LLM_PRE_OPEN_LEAD_MINUTES;
+    if (leadStart < 0) leadStart = 0;
+    return nowMin >= leadStart && nowMin < window_close_minutes_;
+}
+
+bool WeatherManager::isLlmStandby() const {
+    return isLlmActive_() && !isLlmEvaluationNeeded();
+}
+
+const char* WeatherManager::getLlmStandbyReason() const {
+    if (!isLlmStandby()) return "";
+    if (!door_auto_open_eligible_today_) return "auto-open disabled today";
+    if (door_is_open_) return "door already open";
+    if (door_faulted_) return "door faulted";
+    // From here the window may or may not be valid; only report an unsynced
+    // clock when a valid window actually exists to evaluate.
+    bool windowValid = window_open_minutes_ >= 0 && window_close_minutes_ >= 0 &&
+                       window_open_minutes_ < window_close_minutes_;
+    int unusedNowMin = -1;
+    if (windowValid && !getLocalMinutesNow_(unusedNowMin)) return "clock not synced";
+    return "outside open window";
+}
+
+bool WeatherManager::isLlmDecisionPending() const {
+    return isLlmActive_() && current_.valid && !isWeatherStale() &&
+           isLlmEvaluationNeeded() &&
+           (llm_attempted_fetch_id_ != successful_fetches_) &&
+           isReadyToFetch();
+}
+
 void WeatherManager::setLocalTempF(float tempF, const String& source) {
     local_temp_f_ = tempF;
     local_temp_source_ = source;
@@ -46,21 +157,91 @@ void WeatherManager::configureLlmDecider(bool enabled, const String& baseUrl, co
                                          const String& model, const String& providerType,
                                          unsigned int timeoutSeconds,
                                          const String& promptOverride) {
-    if (!enabled) {
-        llm_decider_.reset();
-        llm_last_attempt_ok_ = false;
-        llm_last_error_ = "";
-        setDecider(nullptr);  // restores rule-based default
+    // Stage configuration only (runs on async_tcp under sharedStateMutex_ when
+    // triggered from /update_settings). Never construct, destroy, or invoke
+    // llm_decider_ here: loopTask may be mid-TLS inside decide(). update() on
+    // loopTask calls applyPendingLlmConfig_() to materialize the change safely.
+    staged_llm_config_.enabled = enabled;
+    staged_llm_config_.base_url = baseUrl;
+    staged_llm_config_.api_key = apiKey;
+    staged_llm_config_.model = model;
+    staged_llm_config_.provider_type = providerType;
+    staged_llm_config_.timeout_seconds = timeoutSeconds;
+    staged_llm_config_.prompt_override = promptOverride;
+
+    llm_enabled_ = enabled;
+    llm_config_dirty_ = true;
+    llm_config_generation_++;
+    llm_attempted_fetch_id_ = 0;
+    llm_last_attempt_ok_ = false;
+    llm_last_error_ = "";
+    // Clear any external custom decider pointer so the logical strategy matches
+    // the configured LLM / rule-based selection immediately.
+    if (decider_ != llm_decider_.get()) {
+        decider_ = nullptr;
+    }
+}
+
+void WeatherManager::applyPendingLlmConfig_() {
+    StagedLlmConfig cfg;
+    uint32_t gen = 0;
+    bool hasValid = false;
+    std::unique_ptr<LlmWeatherDecider> oldDecider;
+    {
+        ScopedSharedLock lock(hal_);
+        if (!lock.ok() || !llm_config_dirty_) return;
+        if (!staged_llm_config_.enabled) {
+            // Single-lock disable: clear decider_ before moving llm_decider_ out
+            // so decider_ never dangles and no second lock is needed.
+            llm_config_dirty_ = false;
+            hasValid = current_.valid;
+            if (decider_ == llm_decider_.get()) {
+                decider_ = nullptr;
+            }
+            oldDecider = std::move(llm_decider_);
+            // Fall through after lock release to destroy oldDecider & recompute.
+        } else {
+            // Keep llm_config_dirty_ true until the second lock commits so a
+            // lock timeout or concurrent reconfigure retries cleanly next tick
+            // without ever writing llm_config_dirty_ unlocked.
+            cfg = staged_llm_config_;
+            gen = llm_config_generation_;
+        }
+    }
+
+    if (!cfg.enabled) {
+        oldDecider.reset();
+        if (hasValid) {
+            recomputeDecision();
+        }
         return;
     }
-    LlmProviderWire wire = wireFromType(providerType);
-    auto decider = std::make_unique<LlmWeatherDecider>(
-        hal_, baseUrl, apiKey, model, wire,
-        static_cast<unsigned long>(timeoutSeconds) * 1000UL);
-    decider->setPromptOverride(promptOverride);
-    LlmWeatherDecider* raw = decider.get();
-    llm_decider_ = std::move(decider);
-    setDecider(raw);
+
+    LlmProviderWire wire = wireFromType(cfg.provider_type);
+    auto newDecider = std::make_unique<LlmWeatherDecider>(
+        hal_, cfg.base_url, cfg.api_key, cfg.model, wire,
+        static_cast<unsigned long>(cfg.timeout_seconds) * 1000UL);
+    newDecider->setPromptOverride(cfg.prompt_override);
+
+    {
+        ScopedSharedLock lock(hal_);
+        if (!lock.ok() || gen != llm_config_generation_) {
+            // Either timed out or a newer configureLlmDecider() arrived while
+            // we constructed newDecider; llm_config_dirty_ is still true so the
+            // next tick will apply the latest config. Drop newDecider unlocked.
+            return;
+        }
+        llm_config_dirty_ = false;
+        oldDecider = std::move(llm_decider_);
+        if (decider_ == oldDecider.get()) {
+            decider_ = nullptr;
+        }
+        llm_decider_ = std::move(newDecider);
+        if (llm_enabled_) {
+            decider_ = llm_decider_.get();
+        }
+    }
+    oldDecider.reset();
 }
 
 String WeatherManager::testLlmConnection(const String& baseUrl, const String& apiKey,
@@ -144,44 +325,84 @@ JsonDocument WeatherManager::getWeatherTestResultJson() const {
 }
 
 void WeatherManager::runLlmTest_() {
+    String baseUrl, apiKey, model, providerType;
+    unsigned int timeoutSeconds = 15;
+    {
+        ScopedSharedLock lock(hal_, 1000);
+        if (!lock.ok()) return;
+        baseUrl = llm_test_base_url_;
+        apiKey = llm_test_api_key_;
+        model = llm_test_model_;
+        providerType = llm_test_provider_type_;
+        timeoutSeconds = llm_test_timeout_seconds_;
+    }
+
     // Empty base URL means the user hasn't configured a provider yet.
-    if (llm_test_base_url_.length() == 0) {
-        llm_test_done_ = true;
-        llm_test_success_ = false;
-        llm_test_error_ = "Base URL is empty";
+    if (baseUrl.length() == 0) {
+        ScopedSharedLock lock(hal_, 1000);
+        if (lock.ok()) {
+            llm_test_done_ = true;
+            llm_test_success_ = false;
+            llm_test_error_ = "Base URL is empty";
+            running_test_ = TestKind::NONE;
+        }
         return;
     }
-    String err = testLlmConnection(llm_test_base_url_, llm_test_api_key_,
-                                   llm_test_model_, llm_test_provider_type_,
-                                   llm_test_timeout_seconds_);
-    llm_test_done_ = true;
-    llm_test_success_ = (err.length() == 0);
-    llm_test_error_ = err;
-    logger.logInfo(llm_test_success_ ? "LLM connection test: OK"
-                                      : ("LLM connection test failed: " + err));
+    String err = testLlmConnection(baseUrl, apiKey, model, providerType, timeoutSeconds);
+    bool ok = (err.length() == 0);
+    {
+        ScopedSharedLock lock(hal_, 1000);
+        if (lock.ok()) {
+            llm_test_done_ = true;
+            llm_test_success_ = ok;
+            llm_test_error_ = err;
+            running_test_ = TestKind::NONE;
+        }
+    }
+    logger.logInfo(ok ? "LLM connection test: OK"
+                      : ("LLM connection test failed: " + err));
 }
 
 void WeatherManager::runWeatherTest_() {
-    // Apply the optional one-shot API-key override without persisting it.
-    bool appliedOverride = false;
-    String savedKey = api_key_;
-    if (weather_test_api_key_override_.length() > 0) {
-        api_key_ = weather_test_api_key_override_;
-        appliedOverride = true;
+    String apiKeyOverride;
+    unsigned int okBefore = 0;
+    unsigned int failBefore = 0;
+    bool ready = false;
+    {
+        ScopedSharedLock lock(hal_, 1000);
+        if (!lock.ok()) return;
+        apiKeyOverride = weather_test_api_key_override_;
+        okBefore = weather_test_ok_before_;
+        failBefore = weather_test_fail_before_;
+        ready = hal_ != nullptr && enabled_ &&
+                (apiKeyOverride.length() > 0 || api_key_.length() > 0) &&
+                hal_->WiFiIsConnected() && hal_->getFreeHeap() >= WEATHER_MIN_FREE_HEAP;
     }
-    forceRefresh();  // guarded internally by isReadyToFetch()
-    if (appliedOverride) api_key_ = savedKey;
 
-    bool ok = (successful_fetches_ > weather_test_ok_before_) &&
-              (failed_fetches_ == weather_test_fail_before_);
-    weather_test_done_ = true;
-    weather_test_success_ = ok;
-    weather_test_error_ = ok ? "" : (last_error_.length() > 0 ? last_error_
-                                                              : String("Weather fetch failed"));
+    if (ready) {
+        fetchWeather(apiKeyOverride);
+    } else {
+        logger.logDebug("WeatherManager: runWeatherTest_ skipped (not ready)");
+    }
+
+    {
+        ScopedSharedLock lock(hal_, 1000);
+        if (lock.ok()) {
+            bool ok = (successful_fetches_ > okBefore) &&
+                      (failed_fetches_ == failBefore);
+            weather_test_done_ = true;
+            weather_test_success_ = ok;
+            weather_test_error_ = ok ? "" : (last_error_.length() > 0 ? last_error_
+                                                                      : String("Weather fetch failed"));
+            running_test_ = TestKind::NONE;
+        }
+    }
 }
 
 void WeatherManager::setDecider(IWeatherDecider* decider) {
     decider_ = decider;  // nullptr => fall back to built-in rule-based decider
+    llm_enabled_ = (decider != nullptr && llm_decider_ != nullptr && decider == llm_decider_.get());
+    llm_config_dirty_ = false;
     // Recompute immediately so status reflects the new engine without waiting
     // for the next fetch (only meaningful once we have data). Refresh the time
     // anchor first so a decider swapped in mid-cycle gets real local times.
@@ -192,11 +413,14 @@ void WeatherManager::setDecider(IWeatherDecider* decider) {
 }
 
 IWeatherDecider& WeatherManager::activeDecider() {
-    return decider_ != nullptr ? *decider_ : default_decider_;
+    if (llm_enabled_ && llm_decider_ != nullptr) return *llm_decider_;
+    return (decider_ != nullptr && decider_ != llm_decider_.get()) ? *decider_ : default_decider_;
 }
 
 const char* WeatherManager::getDeciderName() const {
-    return decider_ != nullptr ? decider_->name() : default_decider_.name();
+    if (llm_enabled_) return "llm";
+    if (decider_ != nullptr && decider_ != llm_decider_.get()) return decider_->name();
+    return default_decider_.name();
 }
 
 bool WeatherManager::isReadyToFetch() const {
@@ -212,130 +436,246 @@ bool WeatherManager::isReadyToFetch() const {
 }
 
 void WeatherManager::update() {
+    // Apply any staged LLM configuration changes on loopTask before any test,
+    // fetch, or evaluation runs. Keeps unique_ptr ownership single-threaded.
+    applyPendingLlmConfig_();
+
     // Consume a deferred connection test BEFORE the isReadyToFetch() guard:
     // a test request still needs to run (and report failure) when WiFi is
     // down or heap is low, so the UI gets a real error instead of timing out.
-    if (pending_test_ == TestKind::LLM) {
-        TestKind kind = pending_test_;
-        pending_test_ = TestKind::NONE;
-        running_test_ = kind;
+    TestKind testToRun = TestKind::NONE;
+    {
+        ScopedSharedLock lock(hal_);
+        if (lock.ok()) {
+            // Only loopTask runs deferred tests; clear any stale running_test_
+            // left behind by an earlier commit-lock timeout so it can never wedge.
+            if (running_test_ != TestKind::NONE) {
+                running_test_ = TestKind::NONE;
+            }
+            if (pending_test_ != TestKind::NONE) {
+                testToRun = pending_test_;
+                pending_test_ = TestKind::NONE;
+                running_test_ = testToRun;
+            }
+        }
+    }
+    if (testToRun == TestKind::LLM) {
         runLlmTest_();
-        running_test_ = TestKind::NONE;
         return;
     }
-    if (pending_test_ == TestKind::WEATHER) {
-        TestKind kind = pending_test_;
-        pending_test_ = TestKind::NONE;
-        running_test_ = kind;
+    if (testToRun == TestKind::WEATHER) {
         runWeatherTest_();
-        running_test_ = TestKind::NONE;
         return;
     }
 
-    pruneExpiredForecast();
+    bool dueForFetch = false;
+    bool needStandbyFallbackCleanup = false;
+    bool needOnDemandLlm = false;
+    {
+        ScopedSharedLock lock(hal_);
+        if (!lock.ok()) return;
 
-    if (current_.valid && isWeatherStale() && !stale_logged_) {
-        stale_logged_ = true;
-        logger.logfWarning(
-            "WeatherManager: cached weather expired (%lu s old, %u consecutive failures); weather gate failing open",
-            getWeatherAgeSeconds(), consecutive_failures_);
+        pruneExpiredForecast();
+
+        if (current_.valid && isWeatherStale() && !stale_logged_) {
+            stale_logged_ = true;
+            logger.logfWarning(
+                "WeatherManager: cached weather expired (%lu s old, %u consecutive failures); weather gate failing open",
+                getWeatherAgeSeconds(), consecutive_failures_);
+        }
+
+        // If we entered standby while holding an "llm unavailable..." fallback
+        // reason from an earlier failure, refresh cleanly with local rules so
+        // the status card doesn't display stale fallback error text in standby.
+        if (isLlmStandby() && current_.valid &&
+            decision_reason_.startsWith("llm unavailable")) {
+            needStandbyFallbackCleanup = true;
+        }
+
+        if (isReadyToFetch()) {
+            unsigned long now = hal_->millis();
+            unsigned long intervalMs = static_cast<unsigned long>(update_interval_minutes_) * 60UL * 1000UL;
+            if (last_fetch_attempt_ms_ == 0 || (now - last_fetch_attempt_ms_) >= intervalMs) {
+                dueForFetch = true;
+            } else if (isLlmDecisionPending()) {
+                needOnDemandLlm = true;
+            }
+        }
     }
 
-    if (!isReadyToFetch()) return;
-
-    unsigned long now = hal_->millis();
-    unsigned long intervalMs = static_cast<unsigned long>(update_interval_minutes_) * 60UL * 1000UL;
-
-    // First fetch happens immediately once ready; subsequent fetches wait the interval.
-    if (last_fetch_attempt_ms_ != 0 && (now - last_fetch_attempt_ms_) < intervalMs) {
+    // Periodic fetch: the first one happens immediately once ready; subsequent
+    // fetches wait the interval.
+    if (dueForFetch) {
+        fetchWeather();
         return;
     }
 
-    fetchWeather();
+    if (needStandbyFallbackCleanup) {
+        recomputeDecision();
+    }
+
+    // Between fetches, run a deferred on-demand LLM evaluation when one is owed
+    // (e.g. the door closed mid-window after a fetch that skipped the LLM while
+    // it was open, or we just crossed into the pre-open lead window). This runs
+    // at most once per successful fetch via llm_attempted_fetch_id_.
+    if (needOnDemandLlm) {
+        bool stillPending = false;
+        {
+            ScopedSharedLock lock(hal_);
+            if (!lock.ok()) return;
+            refreshLocalTime_();
+            pruneExpiredForecast();
+            stillPending = isLlmDecisionPending();
+        }
+        if (stillPending) {
+            recomputeDecision();
+            bool attempted = false;
+            bool openSnap = true;
+            String reasonSnap;
+            {
+                ScopedSharedLock lock(hal_);
+                if (lock.ok() && llm_attempted_fetch_id_ == successful_fetches_) {
+                    attempted = true;
+                    openSnap = decision_open_;
+                    reasonSnap = decision_reason_;
+                }
+            }
+            if (attempted) {
+                logger.logfInfo("WeatherManager: on-demand LLM weather evaluation completed (open=%s, reason=%s)",
+                                openSnap ? "yes" : "no", reasonSnap.c_str());
+            }
+        }
+    }
 }
 
 void WeatherManager::forceRefresh() {
-    if (!isReadyToFetch()) {
+    applyPendingLlmConfig_();
+    bool ready = false;
+    {
+        ScopedSharedLock lock(hal_);
+        ready = lock.ok() && isReadyToFetch();
+    }
+    if (!ready) {
         logger.logDebug("WeatherManager: forceRefresh skipped (not ready)");
         return;
     }
     fetchWeather();
 }
 
-void WeatherManager::fetchWeather() {
-    last_fetch_attempt_ms_ = hal_->millis();
+void WeatherManager::fetchWeather(const String& apiKeyOverride) {
+    float lat = 0.0f;
+    float lon = 0.0f;
+    String units;
+    String apiKey;
+    {
+        ScopedSharedLock lock(hal_);
+        if (!lock.ok() || hal_ == nullptr) return;
+        last_fetch_attempt_ms_ = hal_->millis();
+        lat = latitude_;
+        lon = longitude_;
+        units = units_;
+        apiKey = (apiKeyOverride.length() > 0) ? apiKeyOverride : api_key_;
+    }
 
     // Build current-weather URL. Coordinates come from the shared location
     // settings already used for sunrise/sunset, so no extra config needed.
     char latBuf[16];
     char lonBuf[16];
-    snprintf(latBuf, sizeof(latBuf), "%.4f", latitude_);
-    snprintf(lonBuf, sizeof(lonBuf), "%.4f", longitude_);
+    snprintf(latBuf, sizeof(latBuf), "%.4f", lat);
+    snprintf(lonBuf, sizeof(lonBuf), "%.4f", lon);
 
     String base = "https://api.openweathermap.org/data/2.5/";
     String common = "?lat=" + String(latBuf) + "&lon=" + String(lonBuf) +
-                    "&units=" + units_ + "&appid=" + api_key_;
+                    "&units=" + units + "&appid=" + apiKey;
 
-    // --- Current weather ---
+    // --- Current weather (unlocked network I/O) ---
     String currentUrl = base + "weather" + common;
     String currentBody = hal_->httpGet(currentUrl, 10000);
     if (currentBody.length() == 0) {
-        failed_fetches_++;
-        consecutive_failures_++;
         String halErr = hal_->getLastHttpError();
-        if (halErr.length() > 0) {
-            last_error_ = "No response from OpenWeatherMap (" + halErr + ")";
-        } else {
-            last_error_ = "No response from OpenWeatherMap (current)";
+        String errMsg = halErr.length() > 0
+                            ? ("No response from OpenWeatherMap (" + halErr + ")")
+                            : String("No response from OpenWeatherMap (current)");
+        {
+            ScopedSharedLock lock(hal_);
+            if (lock.ok()) {
+                failed_fetches_++;
+                consecutive_failures_++;
+                last_error_ = errMsg;
+            }
         }
         logger.logfWarning("WeatherManager: current weather fetch failed (%s, free=%u, max_alloc=%u)",
-                           last_error_.c_str(),
+                           errMsg.c_str(),
                            (unsigned)hal_->getFreeHeap(),
                            (unsigned)hal_->getMaxAllocHeap());
         return;
     }
 
-    if (!parseCurrentJson(currentBody)) {
-        failed_fetches_++;
-        consecutive_failures_++;
-        // last_error_ set by parseCurrentJson
+    WeatherSnapshot snap;
+    String parseErr;
+    if (!parseCurrentJsonTo(currentBody, units, snap, parseErr)) {
+        ScopedSharedLock lock(hal_);
+        if (lock.ok()) {
+            failed_fetches_++;
+            consecutive_failures_++;
+            last_error_ = parseErr;
+        }
         return;
     }
 
-    // --- Short-term forecast (best-effort; failure here doesn't invalidate current) ---
+    // --- Short-term forecast (best-effort; unlocked network I/O) ---
     // cnt=MAX_FORECAST_ENTRIES keeps the response small (a few 3-hour blocks).
     String forecastUrl = base + "forecast" + common + "&cnt=" + String((unsigned)MAX_FORECAST_ENTRIES);
     String forecastBody = hal_->httpGet(forecastUrl, 10000);
-    if (forecastBody.length() > 0 && parseForecastJson(forecastBody)) {
-        last_forecast_success_epoch_ = currentWallEpoch_();
-        forecast_error_ = "";
-        forecast_expired_ = false;
-    } else {
+    WeatherForecastEntry localForecast[MAX_FORECAST_ENTRIES];
+    size_t localForecastCount = 0;
+    bool forecastOk = (forecastBody.length() > 0 &&
+                       parseForecastJsonTo(forecastBody, localForecast,
+                                           MAX_FORECAST_ENTRIES, localForecastCount));
+    String forecastErr;
+    if (!forecastOk) {
         String halErr = hal_->getLastHttpError();
-        forecast_error_ = halErr.length() > 0
-                              ? ("Forecast fetch failed (" + halErr + ")")
-                              : String("Forecast could not be updated");
-        // Drop any old forecast blocks that have already passed in time.
-        pruneExpiredForecast();
-        if (forecast_count_ == 0) {
-            forecast_expired_ = true;
-        }
+        forecastErr = halErr.length() > 0
+                          ? ("Forecast fetch failed (" + halErr + ")")
+                          : String("Forecast could not be updated");
     }
 
-    successful_fetches_++;
-    consecutive_failures_ = 0;
-    last_successful_fetch_ms_ = hal_->millis();
-    last_weather_success_epoch_ = currentWallEpoch_();
-    stale_logged_ = false;
-    last_error_ = "";
+    // Commit parsed weather snapshot + forecast under sharedStateMutex_.
+    {
+        ScopedSharedLock lock(hal_);
+        if (!lock.ok()) return;
+        current_ = snap;
+        if (forecastOk) {
+            for (size_t i = 0; i < localForecastCount; i++) {
+                forecast_[i] = localForecast[i];
+            }
+            forecast_count_ = localForecastCount;
+            last_forecast_success_epoch_ = currentWallEpoch_();
+            forecast_error_ = "";
+            forecast_expired_ = false;
+        } else {
+            forecast_error_ = forecastErr;
+            pruneExpiredForecast();
+            if (forecast_count_ == 0) {
+                forecast_expired_ = true;
+            }
+        }
 
-    // Snapshot the current local-time anchor (epoch + DST-aware UTC offset +
-    // short tz name) so the decider can render every time in the prompt on the
-    // same wall clock the UI shows. Done once per fetch; cheap.
-    refreshLocalTime_();
+        successful_fetches_++;
+        consecutive_failures_ = 0;
+        last_successful_fetch_ms_ = hal_->millis();
+        last_weather_success_epoch_ = currentWallEpoch_();
+        stale_logged_ = false;
+        last_error_ = "";
 
-    // Ensure no already-passed forecast blocks are fed into the decision engine
-    pruneExpiredForecast();
+        // Snapshot the current local-time anchor (epoch + DST-aware UTC offset +
+        // short tz name) so the decider can render every time in the prompt on the
+        // same wall clock the UI shows. Done once per fetch; cheap.
+        refreshLocalTime_();
+
+        // Ensure no already-passed forecast blocks are fed into the decision engine
+        pruneExpiredForecast();
+    }
 
     // Recompute the open/no-open decision once per successful fetch. The
     // decider (rule-based today, LLM tomorrow) reasons over the fresh snapshot;
@@ -343,11 +683,27 @@ void WeatherManager::fetchWeather() {
     // without any per-loop network or model calls.
     recomputeDecision();
 
+    char descBuf[sizeof(current_.main_description)] = {0};
+    float tempSnap = NAN;
+    WeatherCondition condSnap = WeatherCondition::UNKNOWN;
+    bool openSnap = true;
+    const char* deciderSnap = "rules";
+    {
+        ScopedSharedLock lock(hal_);
+        if (lock.ok()) {
+            copyTruncated(descBuf, sizeof(descBuf), current_.main_description);
+            tempSnap = current_.temp;
+            condSnap = current_.condition;
+            openSnap = decision_open_;
+            deciderSnap = last_decision_decider_;
+        }
+    }
+
     logger.logfInfo("WeatherManager: weather updated (%s, %.1f, condition=%s, open=%s [%s])",
-                    current_.main_description, current_.temp,
-                    current_.condition == WeatherCondition::GOOD ? "GOOD" :
-                    current_.condition == WeatherCondition::INCLEMENT ? "INCLEMENT" : "UNKNOWN",
-                    decision_open_ ? "yes" : "no", getDeciderName());
+                    descBuf, tempSnap,
+                    condSnap == WeatherCondition::GOOD ? "GOOD" :
+                    condSnap == WeatherCondition::INCLEMENT ? "INCLEMENT" : "UNKNOWN",
+                    openSnap ? "yes" : "no", deciderSnap);
 }
 
 unsigned long WeatherManager::currentWallEpoch_() const {
@@ -399,40 +755,137 @@ void WeatherManager::pruneExpiredForecast() {
 }
 
 void WeatherManager::recomputeDecision() {
-    if (!current_.valid) {
-        decision_open_ = true;
-        decision_reason_ = "";
+    applyPendingLlmConfig_();
+
+    WeatherSnapshot snap;
+    WeatherForecastEntry localForecast[MAX_FORECAST_ENTRIES];
+    size_t localForecastCount = 0;
+    String units;
+    int windowOpen = -1;
+    int windowClose = -1;
+    long nowEpoch = -1;
+    int tzOffset = 0;
+    String tzName;
+    float localTempF = NAN;
+    String localTempSource;
+    bool llmActive = false;
+    bool evalNeeded = false;
+    const char* standbyReason = "";
+    unsigned int fetchId = 0;
+    uint32_t configGen = 0;
+    IWeatherDecider* customDecider = nullptr;
+
+    {
+        ScopedSharedLock lock(hal_);
+        if (!lock.ok()) return;
+        if (!current_.valid) {
+            decision_open_ = true;
+            decision_reason_ = "";
+            last_decision_decider_ = "rules";
+            return;
+        }
+        snap = current_;
+        localForecastCount = forecast_count_;
+        for (size_t i = 0; i < localForecastCount; i++) {
+            localForecast[i] = forecast_[i];
+        }
+        units = units_;
+        windowOpen = window_open_minutes_;
+        windowClose = window_close_minutes_;
+        nowEpoch = now_epoch_;
+        tzOffset = tz_offset_minutes_;
+        tzName = tz_name_;
+        localTempF = local_temp_f_;
+        localTempSource = local_temp_source_;
+        llmActive = isLlmActive_();
+        evalNeeded = isLlmEvaluationNeeded();
+        standbyReason = getLlmStandbyReason();
+        fetchId = successful_fetches_;
+        configGen = llm_config_generation_;
+        if (!llmActive && decider_ != nullptr && decider_ != llm_decider_.get()) {
+            customDecider = decider_;
+        }
+    }
+
+    WeatherDecisionInput input{snap, localForecast, localForecastCount, units,
+                               windowOpen, windowClose,
+                               nowEpoch, tzOffset, tzName,
+                               localTempF, localTempSource};
+
+    if (llmActive && !evalNeeded) {
+        // LLM standby: the decision is moot right now (night, auto-open off,
+        // door already open, fault, ...). Do NOT spend a model call — keep the
+        // rule-based decision current from the same snapshot so the status page
+        // and door gate stay consistent. Deliberately leave every LLM health
+        // field untouched: standby is not a failure and must not look stale.
+        WeatherDecision decision = default_decider_.decide(input);
+        {
+            ScopedSharedLock lock(hal_);
+            if (lock.ok() && configGen == llm_config_generation_) {
+                decision_open_ = decision.open;
+                decision_reason_ = decision.reason;
+                last_decision_decider_ = "rules";
+            }
+        }
+        logger.logfDebug("WeatherManager: LLM in standby (%s); using rule-based decision",
+                         standbyReason);
         return;
     }
-    WeatherDecisionInput input{current_, forecast_, forecast_count_, units_,
-                               window_open_minutes_, window_close_minutes_,
-                               now_epoch_, tz_offset_minutes_, tz_name_,
-                               local_temp_f_, local_temp_source_};
-    WeatherDecision decision = activeDecider().decide(input);
-    decision_open_ = decision.open;
-    decision_reason_ = decision.reason;
 
-    if (llm_decider_ != nullptr && decider_ == llm_decider_.get()) {
-        if (llm_decider_->lastCallSucceeded()) {
-            llm_last_attempt_ok_ = true;
-            llm_ever_succeeded_ = true;
-            llm_last_success_ms_ = hal_ ? hal_->millis() : 0;
-            llm_last_success_epoch_ = currentWallEpoch_();
-            llm_last_error_ = "";
-        } else {
-            llm_last_attempt_ok_ = false;
-            String err = llm_decider_->getLastError();
-            llm_last_error_ = err.length() > 0 ? err : String("No usable response from LLM provider");
+    if (llmActive && llm_decider_ != nullptr) {
+        // Blocking LLM HTTP POST runs completely unlocked on loopTask.
+        // llm_decider_ is owned exclusively by loopTask so it cannot be freed
+        // mid-call even if /update_settings arrives on async_tcp.
+        WeatherDecision decision = llm_decider_->decide(input);
+        bool llmOk = llm_decider_->lastCallSucceeded();
+        String llmErr = llmOk ? String("") : llm_decider_->getLastError();
+        {
+            ScopedSharedLock lock(hal_);
+            if (!lock.ok()) return;
+            // If LLM config changed while this request was in flight, discard
+            // the stale result and leave llm_attempted_fetch_id_ untouched so
+            // update() evaluates with the new config on the next tick.
+            if (configGen != llm_config_generation_) return;
+
+            decision_open_ = decision.open;
+            decision_reason_ = decision.reason;
+            last_decision_decider_ = llmOk ? "llm" : "rules";
+
+            // Mark THIS snapshot as attempted whether or not the model answered,
+            // so update() retries on the next weather fetch instead of every tick.
+            llm_attempted_fetch_id_ = fetchId;
+            if (llmOk) {
+                llm_last_attempt_ok_ = true;
+                llm_ever_succeeded_ = true;
+                llm_last_success_ms_ = hal_ ? hal_->millis() : 0;
+                llm_last_success_epoch_ = currentWallEpoch_();
+                llm_last_error_ = "";
+            } else {
+                llm_last_attempt_ok_ = false;
+                llm_last_error_ = llmErr.length() > 0 ? llmErr : String("No usable response from LLM provider");
+            }
+        }
+        return;
+    }
+
+    WeatherDecision decision = (customDecider != nullptr)
+                                   ? customDecider->decide(input)
+                                   : default_decider_.decide(input);
+    const char* producer = (customDecider != nullptr) ? customDecider->name() : "rules";
+    {
+        ScopedSharedLock lock(hal_);
+        if (lock.ok() && configGen == llm_config_generation_) {
+            decision_open_ = decision.open;
+            decision_reason_ = decision.reason;
+            last_decision_decider_ = producer;
         }
     }
 }
 
 // Derive the current DST-aware UTC offset from the system clock and synthesize
-// a short tz label. The board runs configTzTime() with the configured POSIX
-// string, so localtime()/getLocalTime() is already DST-corrected; we diff it
-// against the raw epoch to recover the live offset (e.g. -420 for MDT in
-// summer, -480 for MST in winter). ESP32 newlib's struct tm doesn't expose
-// tm_zone portably, so the label is built from the offset (e.g. "UTC-7").
+// a short tz label. Compares HAL's local struct tm against gmtime_r(now_epoch_)
+// directly rather than via mktime() (mktime converts local tm back to UTC, so
+// mktime(&localTm) - now_epoch_ cancels to 0 whenever TZ is configured).
 // Best-effort: on any failure the fields stay 0/"" and the prompt falls back
 // to "UTC".
 void WeatherManager::refreshLocalTime_() {
@@ -441,19 +894,33 @@ void WeatherManager::refreshLocalTime_() {
     tz_name_ = "";
     if (hal_ == nullptr) return;
 
-    now_epoch_ = static_cast<long>(hal_->getTime());
+    unsigned long rawNow = hal_->getTime();
+    now_epoch_ = static_cast<long>(rawNow);
+    if (rawNow < MIN_VALID_EPOCH) return;
 
-    struct tm tmv = {};
-    if (!hal_->getLocalTime(&tmv, 0)) return;
+    struct tm localTm = {};
+    if (!hal_->getLocalTime(&localTm, 0)) return;
 
-    // Seconds since epoch for the local wall-clock representation.
-    time_t localEpoch = mktime(&tmv);
-    if (localEpoch == static_cast<time_t>(-1)) return;
+    time_t nowUtc = static_cast<time_t>(rawNow);
+    struct tm utcTm = {};
+#if defined(_WIN32)
+    if (gmtime_s(&utcTm, &nowUtc) != 0) return;
+#else
+    if (gmtime_r(&nowUtc, &utcTm) == nullptr) return;
+#endif
 
-    long diffSeconds = static_cast<long>(localEpoch) - now_epoch_;
-    // mktime normalizes tmv to local; diffSeconds is the UTC offset in seconds
-    // (positive east of UTC, negative west — matches POSIX/ISO sign convention).
-    tz_offset_minutes_ = static_cast<int>(diffSeconds / 60);
+    int dayDelta = localTm.tm_yday - utcTm.tm_yday;
+    if (localTm.tm_year > utcTm.tm_year) {
+        dayDelta = 1;
+    } else if (localTm.tm_year < utcTm.tm_year) {
+        dayDelta = -1;
+    }
+    int diffMinutes = dayDelta * 1440 +
+                      (localTm.tm_hour * 60 + localTm.tm_min) -
+                      (utcTm.tm_hour * 60 + utcTm.tm_min);
+    // Sanity bound: valid civil UTC offsets span [-12h, +14h].
+    if (diffMinutes < -720 || diffMinutes > 840) return;
+    tz_offset_minutes_ = diffMinutes;
 
     int h = tz_offset_minutes_ / 60;
     int m = tz_offset_minutes_ % 60;
@@ -466,12 +933,14 @@ void WeatherManager::refreshLocalTime_() {
     tz_name_ = String(buf);
 }
 
-bool WeatherManager::parseCurrentJson(const String& body) {
+bool WeatherManager::parseCurrentJsonTo(const String& body, const String& units,
+                                        WeatherSnapshot& outSnap,
+                                        String& outError) const {
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, body);
     if (err != DeserializationError::Ok) {
-        last_error_ = String("Current JSON parse error: ") + err.c_str();
-        logger.logfWarning("WeatherManager: %s", last_error_.c_str());
+        outError = String("Current JSON parse error: ") + err.c_str();
+        logger.logfWarning("WeatherManager: %s", outError.c_str());
         return false;
     }
 
@@ -481,9 +950,9 @@ bool WeatherManager::parseCurrentJson(const String& body) {
     if (doc["cod"].is<int>()) cod = doc["cod"].as<int>();
     else if (doc["cod"].is<const char*>()) cod = atoi(doc["cod"].as<const char*>());
     if (cod != 200) {
-        last_error_ = doc["message"].is<const char*>() ? doc["message"].as<String>()
-                                                        : String("API error code ") + cod;
-        logger.logfWarning("WeatherManager: API error: %s", last_error_.c_str());
+        outError = doc["message"].is<const char*>() ? doc["message"].as<String>()
+                                                    : String("API error code ") + cod;
+        logger.logfWarning("WeatherManager: API error: %s", outError.c_str());
         return false;
     }
 
@@ -509,14 +978,15 @@ bool WeatherManager::parseCurrentJson(const String& body) {
     // Provide a coarse GOOD/INCLEMENT label for display. The authoritative
     // open/no-open call is made by the decider in recomputeDecision().
     snap.condition = RuleBasedWeatherDecider::classify(snap.weather_code,
-                                                       snap.wind_speed, snap.temp, units_);
+                                                       snap.wind_speed, snap.temp, units);
     snap.valid = true;
 
-    current_ = snap;
+    outSnap = snap;
     return true;
 }
 
-bool WeatherManager::parseForecastJson(const String& body) {
+bool WeatherManager::parseForecastJsonTo(const String& body, WeatherForecastEntry* outEntries,
+                                         size_t maxEntries, size_t& outCount) const {
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, body);
     if (err != DeserializationError::Ok) {
@@ -529,8 +999,9 @@ bool WeatherManager::parseForecastJson(const String& body) {
 
     size_t count = 0;
     for (JsonObject entry : list) {
-        if (count >= MAX_FORECAST_ENTRIES) break;
-        WeatherForecastEntry& fe = forecast_[count];
+        if (count >= maxEntries) break;
+        WeatherForecastEntry& fe = outEntries[count];
+        fe = WeatherForecastEntry{};
         fe.dt = entry["dt"] | 0L;
         fe.temp = entry["main"]["temp"] | NAN;
         fe.wind_speed = entry["wind"]["speed"] | -1.0f;
@@ -544,7 +1015,7 @@ bool WeatherManager::parseForecastJson(const String& body) {
         }
         count++;
     }
-    forecast_count_ = count;
+    outCount = count;
     return true;
 }
 
@@ -670,7 +1141,15 @@ bool WeatherManager::isForecastExpired() const {
 }
 
 bool WeatherManager::isLlmStale() const {
-    if (llm_decider_ == nullptr || decider_ != llm_decider_.get()) return false;
+    if (!isLlmActive_()) return false;
+    // Standby is intentional (outside the actionable window), not a failure:
+    // an idle LLM must never present as broken/stale in the UI.
+    if (!isLlmEvaluationNeeded()) return false;
+    // Before the first weather snapshot arrives, or while an on-demand LLM
+    // evaluation is queued for the current snapshot (morning lead-window entry,
+    // door closing mid-window, or fresh settings save), do not flag as stale.
+    if (!current_.valid) return false;
+    if (isLlmDecisionPending()) return false;
     if (!llm_last_attempt_ok_) return true;
     if (!llm_ever_succeeded_ || hal_ == nullptr) return true;
     return (hal_->millis() - llm_last_success_ms_) >= getStaleThresholdMs();
@@ -692,7 +1171,9 @@ bool WeatherManager::isWeatherGoodForOpening() const {
 
 void WeatherManager::toJson(JsonObject& json) const {
     bool stale = isWeatherStale();
-    bool llmActive = (llm_decider_ != nullptr && decider_ == llm_decider_.get());
+    bool llmActive = isLlmActive_();
+    bool llmStandby = isLlmStandby();
+    bool llmPending = isLlmDecisionPending();
     bool llmStale = isLlmStale();
     unsigned long nowEpoch = (hal_ != nullptr) ? hal_->getTime() : 0;
 
@@ -702,7 +1183,11 @@ void WeatherManager::toJson(JsonObject& json) const {
     json["gate_active"] = isWeatherGateActive();
     json["good_for_opening"] = isWeatherGoodForOpening();
     json["stale"] = stale;
-    json["decider"] = getDeciderName();
+    // Report the engine that actually produced the cached decision once we have
+    // a snapshot, avoiding misattribution across Active <-> Standby transitions.
+    json["decider"] = current_.valid
+                          ? last_decision_decider_
+                          : ((llmActive && llmStandby) ? "rules" : getDeciderName());
     if (decision_reason_.length() > 0) json["decision_reason"] = decision_reason_;
     json["update_interval_minutes"] = update_interval_minutes_;
     json["successful_fetches"] = successful_fetches_;
@@ -725,10 +1210,16 @@ void WeatherManager::toJson(JsonObject& json) const {
 
     json["llm_enabled"] = llmActive;
     if (llmActive) {
-        json["llm_ok"] = (llm_last_attempt_ok_ && !llmStale);
+        json["llm_standby"] = llmStandby;
+        if (llmStandby) {
+            json["llm_standby_reason"] = getLlmStandbyReason();
+        }
+        json["llm_pending"] = llmPending;
+        // Standby / pending are normal states, not failures.
+        json["llm_ok"] = (llmStandby || llmPending) ? true : (llm_last_attempt_ok_ && !llmStale);
         json["llm_stale"] = llmStale;
         json["llm_last_success_epoch"] = llm_last_success_epoch_;
-        if (llm_last_error_.length() > 0) {
+        if (!llmStandby && !llmPending && llm_last_error_.length() > 0) {
             json["llm_last_error"] = llm_last_error_;
         }
     }

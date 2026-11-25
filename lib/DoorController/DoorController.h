@@ -2,6 +2,7 @@
 #define DOORCONTROLLER_H
 
 #include "BuzzerController.h"
+#include "IHAL.h"
 #include "SunriseSunset.h"
 #include "TriggerSource.h"
 #include "WeatherManager.h"
@@ -79,6 +80,7 @@ private:
     BuzzerController* buzzerController = nullptr;     ///< Buzzer for fault alerts
     SunriseSunsetCalculator* sunriseSunset = nullptr; ///< Sunrise/sunset time calculator
     WeatherManager* weatherManager = nullptr;         ///< Optional weather gate for auto-open
+    IHAL* hal = nullptr;                              ///< Optional HAL for injectable wall clock in tests
 
     // State variables
     DoorState currentState;         ///< Current operational state
@@ -179,6 +181,18 @@ private:
     void checkTimeout();
 
     /**
+     * @brief Push today's open window + auto-open/door state to WeatherManager
+     *
+     * Keeps the weather manager's LLM gate informed of the exact conditions
+     * under which a weather decision still matters: today's window, whether
+     * auto-open is eligible (enabled, unlocked, enabled day, valid window),
+     * whether the door is already open, whether it is faulted, and the current
+     * local minute-of-day. Cheap int/bool copies; safe to call every loop tick
+     * and with no WeatherManager attached.
+     */
+    void syncWeatherContext();
+
+    /**
      * @brief Check if door should auto-open based on schedule
      *
      * Compares current time with sunrise + open offset. Only triggers
@@ -193,6 +207,11 @@ private:
      * when auto-close is enabled and today is an enabled day-of-week.
      */
     void checkAutoCloseSchedule();
+
+    /**
+     * @brief Get current wall clock epoch (uses HAL if attached, else time(nullptr))
+     */
+    time_t currentWallTime() const;
 
     /**
      * @brief Get today's day-of-week index (0=Sun..6=Sat)
@@ -322,6 +341,11 @@ public:
      * @param weatherManager Pointer to WeatherManager (may be nullptr)
      */
     void setWeatherManager(WeatherManager* weatherManager);
+
+    /**
+     * @brief Attach an optional HAL for wall-clock queries (used in unit tests)
+     */
+    void setHAL(IHAL* _hal) { hal = _hal; }
 
     /**
      * @brief Check if an auto-open is currently postponed due to weather

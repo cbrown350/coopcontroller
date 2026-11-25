@@ -8,13 +8,34 @@
 
 using namespace fakeit;
 
+// MockHAL that counts HTTP traffic so LLM-gating tests can prove exactly when
+// a model call (POST) did or did not happen and that cached snapshots are
+// reused (no extra GET).
+class CountingMockHAL : public MockHAL {
+public:
+    int getCount = 0;
+    int postAuthCount = 0;
+
+    String httpGet(const String& url, unsigned long timeout_ms = 10000) override {
+        getCount++;
+        return MockHAL::httpGet(url, timeout_ms);
+    }
+
+    String httpPostAuth(const String& url, const String& jsonBody,
+                        const String& bearerToken, const String& extraHeaders,
+                        unsigned long timeout_ms = 15000) override {
+        postAuthCount++;
+        return MockHAL::httpPostAuth(url, jsonBody, bearerToken, extraHeaders, timeout_ms);
+    }
+};
+
 class WeatherManagerTest : public ::testing::Test {
 protected:
-    MockHAL* mockHal;
+    CountingMockHAL* mockHal;
     WeatherManager weather;
 
     void SetUp() override {
-        mockHal = new MockHAL();
+        mockHal = new CountingMockHAL();
 
         ArduinoFakeReset();
         mockHal->reset();
@@ -80,6 +101,26 @@ protected:
                "\"list\":[{\"dt\":1721245367,\"main\":{\"temp\":" + String(temp, 1) + "},"
                "\"weather\":[{\"id\":" + String(weatherId) + ",\"main\":\"Clear\"}],"
                "\"wind\":{\"speed\":" + String(wind, 1) + "},\"pop\":" + String(pop, 2) + "}]}";
+    }
+
+    // Attach the LLM decider; mockHal->postAuthCount tracks real model calls.
+    void configureLlm() {
+        weather.configureLlmDecider(true, "http://localhost:8000", "kO7dkihVsUVeb",
+                                    "qwen3", "openai_compatible", 15);
+    }
+
+    // Queue an OpenAI-compatible chat-completions reply carrying the model's
+    // {"open": ..., "reason": ...} decision.
+    void setLlmReply(bool open, const char* reason) {
+        String content = String("{\\\"open\\\": ") + (open ? "true" : "false") +
+                         ", \\\"reason\\\": \\\"" + reason + "\\\"}";
+        mockHal->setHttpPostAuthResponse(
+            "{\"choices\":[{\"message\":{\"content\":\"" + content + "\"}}]}");
+    }
+
+    // Fresh clear-weather fetch body usable as both current + forecast.
+    void queueClearWeather() {
+        mockHal->setHttpGetResponse(buildCombinedResponse(800, 72.0f, 5.0f, 0.1f));
     }
 };
 
@@ -982,4 +1023,525 @@ TEST_F(WeatherManagerTest, StaleLlmTracksLastSuccessEpochAndError) {
     EXPECT_TRUE(obj["llm_stale"].as<bool>());
     EXPECT_EQ(obj["llm_last_success_epoch"].as<unsigned long>(), baseEpoch);
     EXPECT_NE(obj["llm_last_error"].as<String>().indexOf("HTTP 402"), -1);
+}
+
+// ============================================================================
+// Door-schedule-aware LLM gating
+// ============================================================================
+// The LLM only matters while a scheduled auto-open is actionable:
+//  - auto-open enabled + unlocked + enabled day + valid window,
+//  - door not already open, not faulted,
+//  - now inside [openMin - 15, closeMin).
+// Outside that, the rule engine keeps the cached decision current for free.
+
+TEST_F(WeatherManagerTest, LlmStandbyBeforeLeadWindowSkipsModelCall) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);              // 06:30 - 19:00
+    weather.setDoorOpenContext(true, false, false, 300);  // 05:00, before 06:15
+
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+
+    EXPECT_EQ(weather.getSuccessfulFetches(), 1u);
+    EXPECT_EQ(mockHal->postAuthCount, 0);  // no model call before the lead window
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "outside open window");
+    EXPECT_FALSE(weather.isLlmStale());
+    EXPECT_FALSE(weather.isLlmDecisionPending());
+
+    JsonDocument doc;
+    JsonObject obj = doc.to<JsonObject>();
+    weather.toJson(obj);
+    EXPECT_TRUE(obj["llm_enabled"].as<bool>());
+    EXPECT_TRUE(obj["llm_standby"].as<bool>());
+    EXPECT_STREQ(obj["llm_standby_reason"].as<const char*>(), "outside open window");
+    EXPECT_STREQ(obj["decider"].as<const char*>(), "rules");
+    EXPECT_FALSE(obj["llm_stale"].as<bool>());
+    EXPECT_TRUE(obj["llm_ok"].as<bool>());
+    EXPECT_TRUE(obj["llm_last_error"].isNull());
+    // Rule engine still produced the cached decision for the door gate.
+    EXPECT_EQ(weather.getDecisionReason(), String("clear"));
+}
+
+TEST_F(WeatherManagerTest, LlmRunsAtLeadWindowStart) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, 390 - WeatherManager::LLM_PRE_OPEN_LEAD_MINUTES);
+
+    queueClearWeather();
+    setLlmReply(false, "lead window no");
+    weather.update();
+
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_FALSE(weather.isLlmStandby());
+    EXPECT_EQ(weather.getDecisionReason(), String("lead window no"));
+}
+
+TEST_F(WeatherManagerTest, LlmRunsInsideOpenWindow) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, 500);  // 08:20, inside
+
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_FALSE(weather.isLlmStandby());
+    EXPECT_EQ(weather.getDecisionReason(), String("llm clear"));
+    EXPECT_FALSE(weather.isLlmDecisionPending());
+}
+
+TEST_F(WeatherManagerTest, LlmSkippedAtAndAfterCloseCeiling) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+
+    // Exactly at the close ceiling.
+    weather.setDoorOpenContext(true, false, false, 1140);
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "outside open window");
+
+    // Later in the evening, after another interval.
+    mockHal->setMillis(1000 + 11UL * 60UL * 1000UL);
+    weather.setDoorOpenContext(true, false, false, 1300);
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+    EXPECT_TRUE(weather.isLlmStandby());
+}
+
+TEST_F(WeatherManagerTest, LlmSkippedWhenAutoOpenIneligibleToday) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    // Auto-open disabled / locked out / day disabled all collapse to this flag.
+    weather.setDoorOpenContext(false, false, false, 500);
+
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "auto-open disabled today");
+    EXPECT_FALSE(weather.isLlmStale());
+}
+
+TEST_F(WeatherManagerTest, LlmSkippedWhenDoorAlreadyOpen) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, true, false, 500);  // inside window, door open
+
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "door already open");
+}
+
+TEST_F(WeatherManagerTest, LlmSkippedWhenDoorFaulted) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, true, 500);
+
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "door faulted");
+}
+
+TEST_F(WeatherManagerTest, ClockNotSyncedKeepsLlmInStandby) {
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, -1);  // clock unknown
+
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "clock not synced");
+}
+
+TEST_F(WeatherManagerTest, LlmResumesOnDemandWhenDoorClosesMidWindow) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, true, false, 500);  // door open during window
+
+    queueClearWeather();
+    setLlmReply(false, "llm says no");
+    weather.update();  // fetch; LLM skipped while the door is open
+    ASSERT_EQ(weather.getSuccessfulFetches(), 1u);
+    ASSERT_EQ(mockHal->postAuthCount, 0);
+    ASSERT_EQ(weather.getDecisionReason(), String("clear"));
+
+    // Door closes again while still inside the actionable window: the LLM now
+    // owes a decision for the latest fresh snapshot.
+    weather.setDoorOpenContext(true, false, false, 505);
+    EXPECT_TRUE(weather.isLlmDecisionPending());
+    EXPECT_FALSE(weather.isLlmStandby());
+
+    // Same-timestamp update (periodic fetch not due) runs it immediately.
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_FALSE(weather.isLlmDecisionPending());
+    EXPECT_FALSE(weather.isWeatherGoodForOpening());  // LLM decision applied
+    EXPECT_EQ(weather.getDecisionReason(), String("llm says no"));
+
+    // No tight-loop retry: further ticks must not re-run the model.
+    weather.update();
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+}
+
+TEST_F(WeatherManagerTest, LlmDoesNotResumeAfterCloseCeiling) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, true, false, 500);
+
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+    ASSERT_EQ(mockHal->postAuthCount, 0);
+
+    // Door closes again only after the close ceiling: no decision is owed.
+    weather.setDoorOpenContext(true, false, false, 1140);
+    EXPECT_FALSE(weather.isLlmDecisionPending());
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+}
+
+TEST_F(WeatherManagerTest, CrossingIntoLeadWindowTriggersOnDemandLlm) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, 300);  // before the lead window
+
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();  // fetch, LLM skipped
+    ASSERT_EQ(mockHal->postAuthCount, 0);
+    const int getsAfterFetch = mockHal->getCount;
+
+    // Time passes (DoorController pushes a new minute) -> inside the lead window.
+    weather.setDoorOpenContext(true, false, false, 380);
+    EXPECT_TRUE(weather.isLlmDecisionPending());
+    weather.update();
+
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_EQ(mockHal->getCount, getsAfterFetch);  // cached snapshot reused
+    EXPECT_FALSE(weather.isLlmDecisionPending());
+
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+}
+
+TEST_F(WeatherManagerTest, OnDemandLlmFailureIsAttemptedOnceAndNotStaleInStandby) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, 300);  // before lead window
+
+    queueClearWeather();
+    weather.update();  // fetch, LLM skipped
+    ASSERT_EQ(mockHal->postAuthCount, 0);
+
+    // Enter the window with a failing provider.
+    mockHal->setHttpPostAuthResponse("");
+    mockHal->setLastHttpError("HTTP 500: provider down");
+    weather.setDoorOpenContext(true, false, false, 400);
+    weather.update();  // on-demand attempt, fails, falls back to rules
+
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_TRUE(weather.isLlmStale());
+    EXPECT_NE(weather.getDecisionReason().indexOf("llm unavailable"), -1);
+    EXPECT_EQ(weather.getLastLlmError().indexOf("HTTP 500"), 0);
+
+    // Attempted for this fetch id -> no retry storm between fetches.
+    weather.update();
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+
+    // Going into standby is intentional idleness, not staleness.
+    weather.setDoorOpenContext(true, true, false, 400);
+    EXPECT_FALSE(weather.isLlmStale());
+    EXPECT_TRUE(weather.isLlmStandby());
+}
+
+TEST_F(WeatherManagerTest, ConfigureLlmDeciderDefersModelCallToUpdate) {
+    configureWeather();
+    queueClearWeather();
+    weather.update();  // rules fetch, no LLM configured yet
+    ASSERT_EQ(mockHal->postAuthCount, 0);
+
+    // Must not POST synchronously (this path runs on the async_tcp task).
+    configureLlm();
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+    EXPECT_STREQ(weather.getDeciderName(), "llm");
+    // No door context pushed -> legacy behavior: the LLM is owed an evaluation.
+    EXPECT_TRUE(weather.isLlmEvaluationNeeded());
+    EXPECT_TRUE(weather.isLlmDecisionPending());
+
+    setLlmReply(true, "llm clear");
+    weather.update();  // loop task runs it on demand
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_EQ(weather.getDecisionReason(), String("llm clear"));
+}
+
+TEST_F(WeatherManagerTest, PreDawnClampedLeadStartEvaluatesLlm) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(5, 300);                 // 00:05 - 05:00
+    weather.setDoorOpenContext(true, false, false, 0);    // 00:00, lead clamps to 0
+
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_FALSE(weather.isLlmStandby());
+}
+
+TEST_F(WeatherManagerTest, WindowDerivedFromEpochWhenContextMinutesUnknown) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, -1);  // no clock from DoorController
+
+    // 1795521600 = 12:00 UTC; the mock reports no tz, so local == UTC.
+    const unsigned long baseEpoch = 1795521600UL;
+    mockHal->setTime(baseEpoch);
+    queueClearWeather();
+    setLlmReply(true, "llm clear");
+    weather.update();
+
+    EXPECT_EQ(mockHal->postAuthCount, 1);  // 12:00 is inside 06:30-19:00
+    EXPECT_FALSE(weather.isLlmStandby());
+}
+
+TEST_F(WeatherManagerTest, NextDayLeadWindowEntryNotStaleWhilePending) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, 400);
+
+    // Day 1: LLM succeeds inside open window.
+    mockHal->setMillis(1000);
+    queueClearWeather();
+    setLlmReply(true, "day1 clear");
+    weather.update();
+    ASSERT_EQ(mockHal->postAuthCount, 1);
+    ASSERT_FALSE(weather.isLlmStale());
+
+    // Overnight: >2 hours later in standby, fresh weather fetched (LLM skipped).
+    mockHal->setMillis(1000 + 4UL * 3600UL * 1000UL);
+    weather.setDoorOpenContext(true, false, false, 300);  // before lead window
+    weather.update();
+    ASSERT_EQ(mockHal->postAuthCount, 1);
+    ASSERT_TRUE(weather.isLlmStandby());
+    ASSERT_FALSE(weather.isLlmStale());
+
+    // Day 2 morning: clock crosses into lead window. Even though last LLM success
+    // is 4 hours old, an on-demand evaluation is pending -> NOT stale!
+    weather.setDoorOpenContext(true, false, false, 380);
+    EXPECT_TRUE(weather.isLlmDecisionPending());
+    EXPECT_FALSE(weather.isLlmStale());
+    {
+        JsonDocument doc;
+        JsonObject obj = doc.to<JsonObject>();
+        weather.toJson(obj);
+        EXPECT_TRUE(obj["llm_pending"].as<bool>());
+        EXPECT_FALSE(obj["llm_stale"].as<bool>());
+        EXPECT_TRUE(obj["llm_ok"].as<bool>());
+        EXPECT_STREQ(obj["decider"].as<const char*>(), "rules");  // rules produced standby decision
+    }
+
+    // Next update() runs on-demand LLM -> clears pending and updates decider.
+    setLlmReply(true, "day2 clear");
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 2);
+    EXPECT_FALSE(weather.isLlmDecisionPending());
+    EXPECT_FALSE(weather.isLlmStale());
+    {
+        JsonDocument doc;
+        JsonObject obj = doc.to<JsonObject>();
+        weather.toJson(obj);
+        EXPECT_FALSE(obj["llm_pending"].as<bool>());
+        EXPECT_STREQ(obj["decider"].as<const char*>(), "llm");
+        EXPECT_EQ(obj["decision_reason"].as<String>(), String("day2 clear"));
+    }
+}
+
+TEST_F(WeatherManagerTest, ActiveToStandbyPreservesDeciderAttributionAndCleansFallbackError) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, 400);
+
+    // Case 1: Active LLM succeeds, then door opens (Standby) BEFORE next fetch.
+    queueClearWeather();
+    setLlmReply(true, "llm clear 65F");
+    weather.update();
+    ASSERT_EQ(mockHal->postAuthCount, 1);
+
+    weather.setDoorOpenContext(true, true, false, 405);
+    {
+        JsonDocument doc;
+        JsonObject obj = doc.to<JsonObject>();
+        weather.toJson(obj);
+        EXPECT_TRUE(obj["llm_standby"].as<bool>());
+        // Decision still came from LLM until a standby fetch recomputes rules.
+        EXPECT_STREQ(obj["decider"].as<const char*>(), "llm");
+        EXPECT_EQ(obj["decision_reason"].as<String>(), String("llm clear 65F"));
+    }
+
+    // Case 2: Active LLM fails, then door opens (Standby) BEFORE next fetch.
+    mockHal->setMillis(1000 + 11UL * 60UL * 1000UL);
+    weather.setDoorOpenContext(true, false, false, 420);
+    mockHal->setHttpPostAuthResponse("");
+    mockHal->setLastHttpError("HTTP 500");
+    weather.update();
+    ASSERT_TRUE(weather.isLlmStale());
+    ASSERT_NE(weather.getDecisionReason().indexOf("llm unavailable"), -1);
+
+    weather.setDoorOpenContext(true, true, false, 425);
+    // update() cleans up the stale "llm unavailable..." fallback string locally
+    // (zero network calls) so standby shows a clean rule-based decision.
+    const int postsBefore = mockHal->postAuthCount;
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, postsBefore);
+    {
+        JsonDocument doc;
+        JsonObject obj = doc.to<JsonObject>();
+        weather.toJson(obj);
+        EXPECT_TRUE(obj["llm_standby"].as<bool>());
+        EXPECT_FALSE(obj["llm_stale"].as<bool>());
+        EXPECT_STREQ(obj["decider"].as<const char*>(), "rules");
+        EXPECT_EQ(obj["decision_reason"].as<String>(), String("clear"));
+        EXPECT_TRUE(obj["llm_last_error"].isNull());
+    }
+}
+
+TEST_F(WeatherManagerTest, ConfigureLlmMidWindowNotStaleWhilePendingAndDisableIsDeferred) {
+    configureWeather();
+    queueClearWeather();
+    weather.update();  // rules fetch
+    ASSERT_EQ(mockHal->postAuthCount, 0);
+
+    // Enable LLM mid-window: staged until update(), NOT stale while pending.
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, false, false, 500);
+    configureLlm();
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+    EXPECT_TRUE(weather.isLlmDecisionPending());
+    EXPECT_FALSE(weather.isLlmStale());
+    {
+        JsonDocument doc;
+        JsonObject obj = doc.to<JsonObject>();
+        weather.toJson(obj);
+        EXPECT_TRUE(obj["llm_enabled"].as<bool>());
+        EXPECT_TRUE(obj["llm_pending"].as<bool>());
+        EXPECT_FALSE(obj["llm_stale"].as<bool>());
+        EXPECT_TRUE(obj["llm_ok"].as<bool>());
+    }
+
+    // update() materializes the staged decider and runs on-demand evaluation.
+    setLlmReply(false, "storm coming");
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_FALSE(weather.isWeatherGoodForOpening());
+
+    // Disabling LLM immediately updates logical state without synchronous recompute;
+    // next update() destroys the owned decider and recomputes rules locally.
+    weather.configureLlmDecider(false, "", "", "", "openai_compatible", 15);
+    EXPECT_STREQ(weather.getDeciderName(), "rules");
+    weather.update();
+    EXPECT_TRUE(weather.isWeatherGoodForOpening());
+    EXPECT_EQ(weather.getDecisionReason(), String("clear"));
+}
+
+TEST_F(WeatherManagerTest, PeriodicFetchFailureDoesNotDeadlockPendingOnDemandLlm) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);
+    weather.setDoorOpenContext(true, true, false, 500);  // door open -> LLM skipped
+
+    mockHal->setMillis(1000);
+    queueClearWeather();
+    weather.update();  // Fetch #1 succeeds; LLM skipped while open
+    ASSERT_EQ(weather.getSuccessfulFetches(), 1u);
+    ASSERT_EQ(mockHal->postAuthCount, 0);
+
+    // Advance past fetch interval (11 min, still under 2h stale TTL), close door,
+    // and make OWM GET fail while LLM is healthy.
+    mockHal->setMillis(1000 + 11UL * 60UL * 1000UL);
+    weather.setDoorOpenContext(true, false, false, 511);
+    mockHal->setHttpGetResponse("");
+    setLlmReply(false, "hold for wind");
+
+    // Tick 1 attempts periodic OWM fetch (fails and sets last_fetch_attempt_ms_).
+    weather.update();
+    EXPECT_EQ(weather.getFailedFetches(), 1u);
+    EXPECT_TRUE(weather.isLlmDecisionPending());
+
+    // Tick 2 (10ms later): periodic fetch not due, so on-demand LLM resolves
+    // against the cached fresh snapshot — no deadlock.
+    mockHal->setMillis(1000 + 11UL * 60UL * 1000UL + 10UL);
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_FALSE(weather.isLlmDecisionPending());
+    EXPECT_FALSE(weather.isWeatherGoodForOpening());
+}
+
+TEST_F(WeatherManagerTest, LiveEpochAdvanceTriggersOnDemandLlmAndComputesTzOffset) {
+    configureWeather();
+    configureLlm();
+    weather.setOpenWindowMinutes(390, 1140);  // 06:30 - 19:00 local
+    weather.setDoorOpenContext(true, false, false, -1);  // rely on HAL clock
+
+    // 2026-11-24 13:00:00 UTC == 06:00:00 local at UTC-7 (360 min < 375 leadStart).
+    const unsigned long baseUtc = 1795525200UL;
+    mockHal->setMillis(1000);
+    mockHal->setTime(baseUtc);
+    struct tm localTm = {};
+    localTm.tm_year = 126;  // 2026
+    localTm.tm_mon = 10;    // Nov (0-based)
+    localTm.tm_mday = 24;
+    localTm.tm_yday = 327;  // Nov 24 in non-leap year 2026
+    localTm.tm_hour = 6;
+    localTm.tm_min = 0;
+    localTm.tm_sec = 0;
+    mockHal->setTimeInfo(localTm);
+    mockHal->setGetLocalTimeResult(true);
+
+    queueClearWeather();
+    setLlmReply(true, "clear morning");
+    weather.update();
+    // 06:00 local (UTC-7) is BEFORE 06:15 leadStart -> LLM skipped!
+    EXPECT_EQ(mockHal->postAuthCount, 0);
+    EXPECT_TRUE(weather.isLlmStandby());
+
+    // Advance live HAL epoch by 20 min (06:20 local, inside [06:15, 19:00))
+    // without a new weather fetch -> live epoch triggers isLlmDecisionPending().
+    mockHal->setTime(baseUtc + 20UL * 60UL);
+    localTm.tm_min = 20;
+    mockHal->setTimeInfo(localTm);
+    EXPECT_TRUE(weather.isLlmDecisionPending());
+
+    weather.update();
+    EXPECT_EQ(mockHal->postAuthCount, 1);
+    EXPECT_FALSE(weather.isLlmStandby());
 }

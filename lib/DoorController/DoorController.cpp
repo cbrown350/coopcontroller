@@ -108,6 +108,64 @@ void DoorController::begin(BuzzerController* _buzzerController, SunriseSunsetCal
             digitalRead(DOOR_MANUAL_SWITCH_B_PIN) == LOW ? "YES" : "no");
 }
 
+// Keep the weather manager informed of everything that decides whether a
+// weather/LLM decision still matters: today's window, auto-open eligibility
+// (enabled + unlocked + enabled day-of-week), door position, fault state, and
+// the current local minute-of-day. All cheap copies, so this runs on every
+// update() and state/schedule mutation; harmless when no WeatherManager is attached.
+void DoorController::syncWeatherContext() {
+    if (weatherManager == nullptr) return;
+
+    int openMin = -1;
+    int closeCeiling = -1;
+    bool validWindow = false;
+
+    if (sunriseSunset != nullptr) {
+        int sunriseMin = sunriseSunset->getSunriseMinutes();
+        int sunsetMin = sunriseSunset->getSunsetMinutes();
+        if (sunriseMin >= 0 && sunsetMin >= 0) {
+            int rawOpen = sunriseMin + autoOpenOffsetMinutes;
+            closeCeiling = sunsetMin;
+            if (autoCloseEnabled) {
+                int autoCloseTime = sunsetMin + autoCloseOffsetMinutes;
+                if (autoCloseTime < closeCeiling) closeCeiling = autoCloseTime;
+            }
+            // An offset past the close ceiling (or non-positive ceiling) makes
+            // the window empty: never opens, so there is nothing to decide.
+            if (closeCeiling > 0 && rawOpen < closeCeiling) {
+                openMin = (rawOpen < 0) ? 0 : rawOpen;
+                validWindow = true;
+            }
+        }
+    }
+
+    weatherManager->setOpenWindowMinutes((autoOpenEnabled && validWindow) ? openMin : -1,
+                                         (autoOpenEnabled && validWindow) ? closeCeiling : -1);
+
+    int dayIdx = getTodayDayOfWeek();
+    bool anyAutoOpenDayEnabled = false;
+    for (int i = 0; i < 7; i++) {
+        if (autoOpenDays[i]) {
+            anyAutoOpenDayEnabled = true;
+            break;
+        }
+    }
+    // When the clock is unsynced (dayIdx < 0), preserve eligibility if at least
+    // one day is enabled so WeatherManager reports "clock not synced" (via
+    // nowMin == -1) rather than falsely claiming "auto-open disabled today".
+    // Similarly, do not fold validWindow in here so an empty window reports
+    // "outside open window".
+    bool dayOk = (dayIdx < 0) ? anyAutoOpenDayEnabled : (dayIdx < 7 && autoOpenDays[dayIdx]);
+    bool autoOpenEligibleToday = autoOpenEnabled && !lockoutEnabled && dayOk;
+    bool doorIsOpen = (currentPosition == DoorPosition::OPEN ||
+                       currentState == DoorState::OPEN ||
+                       currentState == DoorState::OPENING);
+    bool doorFaulted = (currentState == DoorState::FAULT);
+    int nowMin = getCurrentLocalMinutes();
+
+    weatherManager->setDoorOpenContext(autoOpenEligibleToday, doorIsOpen, doorFaulted, nowMin);
+}
+
 void DoorController::update() {
     static unsigned long lastDebugLog = 0;
     unsigned long currentTime = millis();
@@ -166,31 +224,23 @@ void DoorController::update() {
         setState(DoorState::FAULT);
     }
     
+    // Push today's window + auto-open eligibility + door state before the
+    // schedule check so the weather manager's LLM gate sees this tick's state.
+    syncWeatherContext();
+
     // Check automatic schedule. Auto-open and auto-close are independent:
     // each is gated by its own enable flag and day-of-week list.
     if (currentState == DoorState::IDLE || currentState == DoorState::OPEN || currentState == DoorState::CLOSED) {
         if (autoOpenEnabled || autoCloseEnabled) {
-            // Keep the weather manager informed of today's actual door open
-            // window so an LLM decider can judge conditions for the period the
-            // chickens will be outside, not the whole forecast. Cheap int push;
-            // only meaningful when weather gating + sunrise/sunset are valid.
-            if (weatherManager != nullptr && sunriseSunset != nullptr && autoOpenEnabled) {
-                int sunriseMin = sunriseSunset->getSunriseMinutes();
-                int sunsetMin = sunriseSunset->getSunsetMinutes();
-                if (sunriseMin >= 0 && sunsetMin >= 0) {
-                    int openMin = sunriseMin + autoOpenOffsetMinutes;
-                    int closeCeiling = sunsetMin;
-                    if (autoCloseEnabled) {
-                        int autoCloseTime = sunsetMin + autoCloseOffsetMinutes;
-                        if (autoCloseTime < closeCeiling) closeCeiling = autoCloseTime;
-                    }
-                    weatherManager->setOpenWindowMinutes(openMin, closeCeiling);
-                }
-            }
             if (autoOpenEnabled) checkAutoOpenSchedule();
             if (autoCloseEnabled) checkAutoCloseSchedule();
         }
     }
+
+    // Re-sync after the schedule checks: if checkAutoOpenSchedule() just moved
+    // the door to OPENING, WeatherManager must see doorIsOpen = true on this
+    // same loop iteration so it stops treating a weather decision as needed.
+    syncWeatherContext();
 }
 
 void DoorController::updatePosition() {
@@ -320,6 +370,10 @@ void DoorController::setState(DoorState newState) {
             logger.logInfo("Door is now IDLE");
             break;
     }
+
+    // Keep WeatherManager immediately in sync on state changes (API / switch /
+    // MQTT / fault transitions) instead of waiting up to DOOR_UPDATE_INTERVAL.
+    syncWeatherContext();
 }
 
 void DoorController::setMotorOutputs(bool openPositive, bool openNegative) { // NOSONAR - not const, writes to pins
@@ -421,6 +475,16 @@ void DoorController::checkAutoOpenSchedule() {
     int dayIdx = getTodayDayOfWeek();
     if (dayIdx < 0 || !autoOpenDays[dayIdx]) return;
     if (shouldOpenBySchedule() && currentPosition != DoorPosition::OPEN) {
+        // Let a pending on-demand LLM evaluation run first. This happens when
+        // the door just closed mid-window after a fetch that skipped the LLM
+        // while it was open: WeatherManager::update() runs the evaluation on
+        // the next loop tick, so auto-open waits one tick rather than acting
+        // on a rule-based decision the LLM was supposed to override.
+        if (weatherManager != nullptr && weatherManager->isWeatherGateActive() &&
+            weatherManager->isLlmDecisionPending()) {
+            return;
+        }
+
         // Weather gate: when a WeatherManager is attached and its gate is
         // active, hold back opening during inclement weather. The schedule
         // condition (shouldOpenBySchedule) already bounds this to the daytime
@@ -499,6 +563,7 @@ void DoorController::stop(TriggerSource trigger) {
 void DoorController::setLockoutEnabled(bool enabled) {
     lockoutEnabled = enabled;
     logger.logfInfo("Door lockout: %s", enabled ? "ENABLED" : "DISABLED");
+    syncWeatherContext();
 }
 
 bool DoorController::isLockoutEnabled() const {
@@ -550,6 +615,9 @@ int DoorController::getCloseTimingCount() const {
 // Weather gate
 void DoorController::setWeatherManager(WeatherManager* _weatherManager) {
     weatherManager = _weatherManager;
+    // Push the current window/eligibility immediately so a manager attached
+    // after startup does not wait a loop tick (or keep stale -1 state).
+    syncWeatherContext();
 }
 
 bool DoorController::isWeatherPostponed() const {
@@ -566,12 +634,14 @@ void DoorController::setAutoOpenEnabled(bool enabled, TriggerSource trigger) {
     weatherPostponedOpen = false;
     weatherPostponeUntilMs = 0;
     logger.logfInfo("Door auto-open: %s (trigger: %s)", enabled ? "ENABLED" : "DISABLED", triggerSourceToString(trigger).c_str());
+    syncWeatherContext();
 }
 
 void DoorController::setAutoCloseEnabled(bool enabled, TriggerSource trigger) {
     autoCloseEnabled = enabled;
     lastTriggerSource_ = trigger;
     logger.logfInfo("Door auto-close: %s (trigger: %s)", enabled ? "ENABLED" : "DISABLED", triggerSourceToString(trigger).c_str());
+    syncWeatherContext();
 }
 
 bool DoorController::isAutoMode() const {
@@ -695,6 +765,7 @@ void DoorController::setAutoOpenOffsetMinutes(int minutes) {
     autoOpenOffsetMinutes = std::max(DOOR_OFFSET_MIN_MINUTES,
                                      std::min(DOOR_OFFSET_MAX_MINUTES, minutes));
     logger.logfDebug("Door auto-open offset: %d minutes", autoOpenOffsetMinutes);
+    syncWeatherContext();
 }
 
 int DoorController::getAutoCloseOffsetMinutes() const {
@@ -707,6 +778,7 @@ void DoorController::setAutoCloseOffsetMinutes(int minutes) {
     autoCloseOffsetMinutes = std::max(DOOR_OFFSET_MIN_MINUTES,
                                       std::min(DOOR_OFFSET_MAX_MINUTES, minutes));
     logger.logfDebug("Door auto-close offset: %d minutes", autoCloseOffsetMinutes);
+    syncWeatherContext();
 }
 
 bool DoorController::getAutoOpenDay(int dayIdx) const {
@@ -718,6 +790,7 @@ void DoorController::setAutoOpenDay(int dayIdx, bool enabled) {
     if (dayIdx < 0 || dayIdx > 6) return;
     autoOpenDays[dayIdx] = enabled;
     logger.logfDebug("Door auto-open day %d: %s", dayIdx, enabled ? "enabled" : "disabled");
+    syncWeatherContext();
 }
 
 bool DoorController::getAutoCloseDay(int dayIdx) const {
@@ -729,6 +802,7 @@ void DoorController::setAutoCloseDay(int dayIdx, bool enabled) {
     if (dayIdx < 0 || dayIdx > 6) return;
     autoCloseDays[dayIdx] = enabled;
     logger.logfDebug("Door auto-close day %d: %s", dayIdx, enabled ? "enabled" : "disabled");
+    syncWeatherContext();
 }
 
 // Statistics
@@ -811,12 +885,22 @@ void DoorController::restorePosition() {
     logger.logfInfo("Door position restored: %s", getPositionString().c_str());
 }
 
+time_t DoorController::currentWallTime() const {
+    if (hal != nullptr) {
+        return static_cast<time_t>(hal->getTime());
+    }
+    return time(nullptr);
+}
+
 // Helper: get current local time in minutes since midnight.
 // When configTzTime() is used (ESP32), localtime() returns DST-aware local time
 // directly via tm_gmtoff. Falls back to manual offset for desktop/test builds.
+// Rejects pre-NTP boot epochs (< MIN_VALID_EPOCH) so an unsynced ESP32 boot
+// clock (1970-01-01 UTC -> 1969-12-31 afternoon in US timezones) never looks
+// like a daytime open window.
 int DoorController::getCurrentLocalMinutes() const {
-    time_t now = time(nullptr);
-    if (now < 0) return -1;
+    time_t now = currentWallTime();
+    if (now < static_cast<time_t>(WeatherManager::MIN_VALID_EPOCH)) return -1;
 
     struct tm timeinfo{};
 #if defined(_WIN32)
@@ -850,10 +934,10 @@ int DoorController::getCurrentLocalMinutes() const {
 }
 
 // Day-of-week from local time. tm_wday: 0=Sunday..6=Saturday.
-// Falls back to -1 if time is unavailable.
+// Falls back to -1 if time is unavailable or NTP has not synced yet.
 int DoorController::getTodayDayOfWeek() const {
-    time_t now = time(nullptr);
-    if (now < 0) return -1;
+    time_t now = currentWallTime();
+    if (now < static_cast<time_t>(WeatherManager::MIN_VALID_EPOCH)) return -1;
 
     struct tm timeinfo{};
 #if defined(_WIN32)

@@ -248,6 +248,8 @@ function Status() {
   const llmRuleFallback = (): boolean => {
     const weather = weatherStatus()
     if (!weather) return false
+    // Standby and pending evaluations are normal states, not fallbacks.
+    if (weather.llm_standby || weather.llm_pending) return false
     if (weather.llm_enabled && weather.llm_stale) return true
     if (weather.decider !== 'llm') return false
     return (weather.decision_reason ?? '').toLowerCase().startsWith('llm unavailable')
@@ -1210,7 +1212,11 @@ function Status() {
                           Weather last ran: {formatLastRun(weatherStatus()!.last_weather_success_epoch || weatherStatus()!.current!.fetch_time)}
                         </div>
                       </Show>
-                      <Show when={weatherStatus()!.decision_reason && !(weatherStatus()!.llm_enabled && weatherStatus()!.llm_stale)}>
+                      <Show when={
+                        weatherStatus()!.decision_reason &&
+                        !(weatherStatus()!.llm_enabled && weatherStatus()!.llm_stale) &&
+                        !(weatherStatus()!.llm_standby && (weatherStatus()!.decision_reason ?? '').toLowerCase().startsWith('llm unavailable'))
+                      }>
                         <div class="stat-desc">
                           Decision: {weatherStatus()!.decision_reason}
                           <Show when={weatherStatus()!.decider}>
@@ -1218,7 +1224,20 @@ function Status() {
                           </Show>
                         </div>
                       </Show>
-                      <Show when={weatherStatus()!.llm_enabled && !weatherStatus()!.llm_stale}>
+                      <Show when={weatherStatus()!.llm_enabled && weatherStatus()!.llm_standby}>
+                        <div class="text-xs opacity-60 mt-0.5">
+                          LLM standby ({weatherStatus()!.llm_standby_reason || 'outside open window'})
+                          <Show when={weatherStatus()!.llm_last_success_epoch}>
+                            {' · last ran: '}{formatLastRun(weatherStatus()!.llm_last_success_epoch)}
+                          </Show>
+                        </div>
+                      </Show>
+                      <Show when={weatherStatus()!.llm_enabled && !weatherStatus()!.llm_standby && weatherStatus()!.llm_pending}>
+                        <div class="text-xs opacity-60 mt-0.5">
+                          LLM evaluation pending…
+                        </div>
+                      </Show>
+                      <Show when={weatherStatus()!.llm_enabled && !weatherStatus()!.llm_standby && !weatherStatus()!.llm_pending && !weatherStatus()!.llm_stale}>
                         <div class="text-xs opacity-60 mt-0.5">
                           LLM last ran: {formatLastRun(weatherStatus()!.llm_last_success_epoch)}
                         </div>
@@ -1251,7 +1270,7 @@ function Status() {
                   </div>
 
                   {/* Stale / unavailable LLM connection notice */}
-                  <Show when={weatherStatus()!.llm_enabled && (weatherStatus()!.llm_stale || llmRuleFallback())}>
+                  <Show when={weatherStatus()!.llm_enabled && !weatherStatus()!.llm_standby && !weatherStatus()!.llm_pending && (weatherStatus()!.llm_stale || llmRuleFallback())}>
                     <div role="alert" class="alert alert-warning text-sm mt-2">
                       <div>
                         <span class="font-semibold">LLM weather check is unavailable or stale</span> — cleared outdated LLM decision and using rule-based fallback.

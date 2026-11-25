@@ -982,6 +982,8 @@ void setup() // NOSONAR - complexity ok
         // Update weather manager (fetches at its configured interval). Also run
         // immediately if a user-initiated deferred test is pending so the UI
         // receives a prompt result/error instead of timing out.
+        static_assert(WeatherManager::WEATHER_MIN_FREE_HEAP >= NETWORK_LOW_HEAP_FLOOR,
+                      "WEATHER_MIN_FREE_HEAP must be >= NETWORK_LOW_HEAP_FLOOR to prevent isLlmDecisionPending() deadlock");
         if (weatherManager.isTestInProgress() || hal.getFreeHeap() >= NETWORK_LOW_HEAP_FLOOR) {
             weatherManager.update();
         }

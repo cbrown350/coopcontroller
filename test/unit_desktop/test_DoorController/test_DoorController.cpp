@@ -934,6 +934,189 @@ TEST_F(DoorControllerTest, Weather_ToggleAutoOpenClearsPostpone) {
 }
 
 // ============================================================================
+// Weather Context Push Tests (LLM gating)
+// ============================================================================
+// DoorController pushes the window + auto-open eligibility + door state to
+// WeatherManager. With an LLM decider active those values surface as standby
+// reasons, so they are observable without any network traffic.
+
+namespace {
+// Attach an active LLM decider so WeatherManager reports standby reasons.
+void attachLlmWeather(WeatherManager& weather, MockHAL* hal, DoorController* door) {
+    weather.begin(hal);
+    weather.setEnabled(true);
+    weather.setApiKey("k");
+    weather.configureLlmDecider(true, "http://localhost:8000", "key", "model",
+                                "openai_compatible", 15);
+    door->setWeatherManager(&weather);
+}
+}  // namespace
+
+TEST_F(DoorControllerTest, WeatherContext_AutoOpenDisabledMarksIneligible) {
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+
+    // setWeatherManager() pushes immediately, before any update() tick.
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "auto-open disabled today");
+
+    doorController->update();
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "auto-open disabled today");
+}
+
+TEST_F(DoorControllerTest, WeatherContext_LockoutMarksIneligible) {
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+
+    doorController->setAutoOpenEnabled(true);
+    doorController->setLockoutEnabled(true);
+    doorController->update();
+
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "auto-open disabled today");
+}
+
+TEST_F(DoorControllerTest, WeatherContext_DisabledDayMarksIneligible) {
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+
+    doorController->setAutoOpenEnabled(true);
+    for (int day = 0; day < 7; day++) {
+        doorController->setAutoOpenDay(day, false);
+    }
+    doorController->update();
+
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "auto-open disabled today");
+}
+
+TEST_F(DoorControllerTest, WeatherContext_OpenDoorMarksDoorOpen) {
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+
+    // Auto-open enabled + default (6 AM - 6 PM) window => eligible today, which
+    // also proves the window itself was pushed as valid.
+    doorController->setAutoOpenEnabled(true);
+    doorController->open();          // -> OPENING
+    doorController->update();        // pushes doorIsOpen = true
+
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "door already open");
+}
+
+TEST_F(DoorControllerTest, WeatherContext_FaultMarksFaulted) {
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+
+    doorController->setAutoOpenEnabled(true);
+    doorController->open();
+    advanceTime(31000);              // exceed the open timeout
+    doorController->update();        // -> FAULT, pushes doorFaulted = true
+
+    ASSERT_EQ(doorController->getState(), DoorState::FAULT);
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "door faulted");
+}
+
+TEST_F(DoorControllerTest, WeatherContext_UnsyncedClockReportsClockNotSynced) {
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+    doorController->setHAL(mockHal);
+    mockHal->setTime(5);  // Pre-NTP ESP32 boot uptime (1970-01-01 00:00:05 UTC)
+
+    doorController->setAutoOpenEnabled(true);
+    doorController->update();
+
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "clock not synced");
+    // Must NOT auto-open on an unsynced boot clock!
+    EXPECT_NE(doorController->getState(), DoorState::OPENING);
+}
+
+TEST_F(DoorControllerTest, WeatherContext_EmptyWindowReportsOutsideOpenWindow) {
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+
+    // Default sunrise 06:00 (360), sunset 18:00 (1080). Offset +780 pushes open
+    // past sunset -> empty window. Must report "outside open window", not
+    // "auto-open disabled today".
+    doorController->setAutoOpenEnabled(true);
+    doorController->setAutoOpenOffsetMinutes(780);
+
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "outside open window");
+}
+
+TEST_F(DoorControllerTest, WeatherContext_MutatorsSyncImmediatelyWithoutUpdate) {
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+
+    doorController->setAutoOpenEnabled(true);
+    doorController->open();  // setState() syncs immediately without update()
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "door already open");
+
+    doorController->setLockoutEnabled(true);  // syncs immediately without update()
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "auto-open disabled today");
+}
+
+TEST_F(DoorControllerTest, WeatherContext_AutoOpenDefersForPendingLlmThenOpensAndEntersStandby) {
+    // Pick a valid NTP epoch whose local wall-clock hour is 12:00 on any host
+    // timezone, placing it squarely inside the default [06:00, 18:00) window.
+    settingsManager.setTimezoneOffsetHours(0);
+    time_t middayEpoch = 1795521600;  // 2026-11-24 12:00:00 UTC
+    struct tm localTm{};
+#if defined(_WIN32)
+    localtime_s(&localTm, &middayEpoch);
+#else
+    localtime_r(&middayEpoch, &localTm);
+#endif
+    middayEpoch += static_cast<time_t>((12 - localTm.tm_hour) * 3600 - localTm.tm_min * 60);
+
+    doorController->setHAL(mockHal);
+    mockHal->setWiFiConnected(true);
+    mockHal->setFreeHeap(200000);
+    mockHal->setMillis(1000);
+    mockHal->setTime(static_cast<unsigned long>(middayEpoch));
+
+    WeatherManager weather;
+    attachLlmWeather(weather, mockHal, doorController);
+    doorController->setAutoOpenEnabled(true);
+
+    // Simulate door being open during a weather fetch so the LLM was skipped.
+    doorController->open();
+    mockHal->setHttpGetResponse(
+        R"({"weather":[{"id":800,"main":"Clear","description":"clear","icon":"01d"}],)"
+        R"("main":{"temp":72.0,"feels_like":72.0,"humidity":50,"pressure":1015},)"
+        R"("wind":{"speed":5.0},"clouds":{"all":10},"dt":1795521600,"cod":200})");
+    weather.update();  // Fetch #1 succeeds; LLM skipped because door is OPENING
+    ASSERT_TRUE(weather.isLlmStandby());
+
+    // Now door is closed again while still inside the open window.
+    doorController->stop();
+    ASSERT_EQ(doorController->getState(), DoorState::IDLE);
+    ASSERT_TRUE(weather.isLlmDecisionPending());
+
+    // Tick 1: DoorController::update() must defer auto-open while LLM is pending.
+    doorController->update();
+    EXPECT_EQ(doorController->getState(), DoorState::IDLE);
+    EXPECT_FALSE(doorController->isWeatherPostponed());
+
+    // WeatherManager::update() resolves the pending LLM call -> approves opening.
+    mockHal->setHttpPostAuthResponse(
+        R"({"choices":[{"message":{"content":"{\"open\":true,\"reason\":\"clear 72F\"}"}}]})");
+    weather.update();
+    EXPECT_FALSE(weather.isLlmDecisionPending());
+    EXPECT_TRUE(weather.isWeatherGoodForOpening());
+
+    // Tick 2: DoorController::update() opens the door AND re-syncs context on
+    // the same tick so WeatherManager immediately transitions to "door already open".
+    doorController->update();
+    EXPECT_EQ(doorController->getState(), DoorState::OPENING);
+    EXPECT_TRUE(weather.isLlmStandby());
+    EXPECT_STREQ(weather.getLlmStandbyReason(), "door already open");
+}
+
+// ============================================================================
 // Door Timeout Auto-Calculation Tests
 // ============================================================================
 

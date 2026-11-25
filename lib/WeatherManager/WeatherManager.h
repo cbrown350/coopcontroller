@@ -61,6 +61,47 @@ public:
     void setOpenWindowMinutes(int openMin, int closeMin);
 
     /**
+     * @brief Push the door's auto-open eligibility + state, gating LLM calls
+     *
+     * Pushed by DoorController every loop tick (cheap copies). An LLM decision
+     * only matters when auto-open is enabled, not locked out, today is an
+     * enabled day-of-week with a valid open window, the door is not already
+     * open (it stays open until closed, so weather is moot) and the door is
+     * not faulted. WeatherManager uses this to keep the LLM in standby outside
+     * that window instead of spending a model call on every fetch.
+     *
+     * A manager that never receives this call (standalone use / unit tests)
+     * keeps the legacy behavior of evaluating the LLM on every fetch.
+     *
+     * @param autoOpenEligibleToday Auto-open enabled + unlocked + enabled day + valid window
+     * @param doorIsOpen True when the door is OPEN/OPENING (or positioned OPEN)
+     * @param doorFaulted True when the door is in FAULT
+     * @param currentLocalMinutes Local minutes since midnight, or -1 when unknown
+     */
+    void setDoorOpenContext(bool autoOpenEligibleToday, bool doorIsOpen,
+                            bool doorFaulted, int currentLocalMinutes);
+
+    /**
+     * @brief True when the LLM decider may meaningfully run right now
+     *
+     * False when no LLM decider is active, when the door context says the
+     * decision is moot (auto-open disabled today, door already open, door
+     * faulted), when the open window is invalid, when the clock is unknown, or
+     * when now is outside [max(0, openMin - LLM_PRE_OPEN_LEAD_MINUTES), close).
+     * Returns true when no door context was ever pushed (backward compatible).
+     */
+    bool isLlmEvaluationNeeded() const;
+
+    /// True when an LLM decider is active but intentionally not evaluating.
+    bool isLlmStandby() const;
+
+    /// Human-readable reason for standby ("" when not in standby)
+    const char* getLlmStandbyReason() const;
+
+    /// True when an on-demand LLM evaluation is owed for the cached snapshot.
+    bool isLlmDecisionPending() const;
+
+    /**
      * @brief Push the on-board coop-local temperature (issue #8)
      *
      * Called from the main loop with the latest DS18B20 reading (°F) when a
@@ -259,6 +300,12 @@ public:
     /// Minimum free heap to attempt a weather fetch (TLS context + JSON doc)
     static constexpr uint32_t WEATHER_MIN_FREE_HEAP = 30000;
 
+    /// Fixed internal design constant (deliberately NOT user-configurable —
+    /// this is a behavioral timing of the LLM gate, not a device setting):
+    /// how early, in minutes before the scheduled door open, the LLM starts
+    /// evaluating. Mirrored in the standby window logic.
+    static constexpr int LLM_PRE_OPEN_LEAD_MINUTES = 15;
+
     /// Minimum staleness TTL (2 hours): cached weather older than this fails open
     static constexpr unsigned long WEATHER_MIN_STALE_MS = 2UL * 3600UL * 1000UL;
 
@@ -279,10 +326,37 @@ private:
     int window_open_minutes_ = -1;    ///< Door's today open time (local min since midnight)
     int window_close_minutes_ = -1;   ///< Door's today close ceiling (local min since midnight)
 
+    // Door context pushed by DoorController (see setDoorOpenContext). Until a
+    // DoorController pushes it, door_context_configured_ stays false and the
+    // LLM keeps the legacy "evaluate on every fetch" behavior.
+    bool door_context_configured_ = false;
+    bool door_auto_open_eligible_today_ = false;
+    bool door_is_open_ = false;
+    bool door_faulted_ = false;
+    int door_current_local_minutes_ = -1;
+
     // Decision strategy (rule-based default; LLM decider is a future drop-in)
     RuleBasedWeatherDecider default_decider_;
-    IWeatherDecider* decider_ = nullptr;  ///< Falls back to default_decider_ when null
-    std::unique_ptr<LlmWeatherDecider> llm_decider_;  ///< Owned LLM decider (nullptr when disabled)
+    IWeatherDecider* decider_ = nullptr;  ///< Non-LLM custom decider or llm_decider_.get()
+    std::unique_ptr<LlmWeatherDecider> llm_decider_;  ///< Owned ONLY by loopTask (update())
+
+    // Staged LLM configuration written by configureLlmDecider() (which runs on
+    // async_tcp under sharedStateMutex_) and applied on loopTask at the top of
+    // update(). Guarantees llm_decider_ is never destroyed while decide() is
+    // blocked in a 5-60s TLS call on loopTask.
+    struct StagedLlmConfig {
+        bool enabled = false;
+        String base_url;
+        String api_key;
+        String model;
+        String provider_type;
+        unsigned int timeout_seconds = 15;
+        String prompt_override;
+    };
+    bool llm_enabled_ = false;
+    bool llm_config_dirty_ = false;
+    uint32_t llm_config_generation_ = 0;
+    StagedLlmConfig staged_llm_config_;
 
     // Cached state
     WeatherSnapshot current_;
@@ -300,6 +374,7 @@ private:
     // decider makes at most one model call per fetch interval, never per loop.
     bool decision_open_ = true;
     String decision_reason_;
+    const char* last_decision_decider_ = "rules";  ///< Actual producer of cached decision
 
     // Local-time anchor refreshed once per successful fetch. now_epoch_ is the
     // Unix seconds at the fetch; tz_offset_minutes_ + tz_name_ describe the
@@ -329,6 +404,10 @@ private:
     unsigned long llm_last_success_ms_ = 0;
     unsigned long llm_last_success_epoch_ = 0;
     String llm_last_error_;
+    /// successful_fetches_ value the LLM was last attempted for. Marks the
+    /// current snapshot as "already tried" so update() never retries every
+    /// loop tick — a retry waits for the next weather fetch.
+    unsigned int llm_attempted_fetch_id_ = 0;
 
     // Deferred connection-test state (issue #6 / async-tcp panic fix).
     // Pending flags are set by the async web handler; runLlmTest_() and
@@ -355,9 +434,14 @@ private:
 
     // Internal helpers
     bool isReadyToFetch() const;
-    void fetchWeather();
-    bool parseCurrentJson(const String& body);
-    bool parseForecastJson(const String& body);
+    bool isLlmActive_() const;  ///< LLM decider is the active logical strategy
+    bool getLocalMinutesNow_(int& outNowMin) const;
+    void applyPendingLlmConfig_();
+    void fetchWeather(const String& apiKeyOverride = "");
+    bool parseCurrentJsonTo(const String& body, const String& units,
+                            WeatherSnapshot& outSnap, String& outError) const;
+    bool parseForecastJsonTo(const String& body, WeatherForecastEntry* outEntries,
+                             size_t maxEntries, size_t& outCount) const;
     bool isForecastEntryExpired(const WeatherForecastEntry& fe, unsigned long nowEpoch) const;
     void pruneExpiredForecast();
     unsigned long currentWallEpoch_() const;

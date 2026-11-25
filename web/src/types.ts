@@ -218,6 +218,12 @@ export interface WeatherStatus {
   llm_enabled?: boolean;
   llm_ok?: boolean;
   llm_stale?: boolean;
+  /** True when the LLM is intentionally idle (door not in an actionable window). */
+  llm_standby?: boolean;
+  /** Why the LLM is in standby, e.g. "door already open", "outside open window". */
+  llm_standby_reason?: string;
+  /** True when an on-demand LLM evaluation is queued/in-flight for the current snapshot. */
+  llm_pending?: boolean;
   llm_last_success_epoch?: number;
   llm_last_error?: string;
   last_error?: string;
