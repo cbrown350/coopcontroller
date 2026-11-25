@@ -39,3 +39,7 @@ __pycache__
 include/build_timestamp.h
 .playwright-mcp
 diagnostics/runs/
+
+# Local Claude Code session archive (kept locally for history only)
+docs/claude-sessions/
+build_scripts/import_claude_sessions.py
