@@ -420,3 +420,63 @@ TEST_F(LlmWeatherDeciderTest, LocalCoopTempOmittedWhenNoSensor) {
     String body = mockHal->getLastHttpPostAuthBody();
     EXPECT_THAT(body.c_str(), testing::Not(testing::HasSubstr("Coop-local temp")));
 }
+
+TEST_F(LlmWeatherDeciderTest, PropagatesHttpErrorDetailIntoTestAndFallbackReason) {
+    mockHal->setHttpPostAuthResponse("");
+    mockHal->setLastHttpError("HTTP 402: Add usage credits");
+
+    LlmWeatherDecider decider(mockHal, "https://ollama.com", "key", "gemma4:31b-cloud",
+                              LlmProviderWire::OPENAI_COMPATIBLE, 15000);
+
+    String testErr = decider.testConnection();
+    EXPECT_THAT(testErr.c_str(), testing::HasSubstr("HTTP 402"));
+    EXPECT_THAT(testErr.c_str(), testing::HasSubstr("Add usage credits"));
+
+    WeatherDecision d = decider.decide(buildInput(390, 1140));
+    EXPECT_TRUE(d.open);  // clear weather rule fallback
+    EXPECT_THAT(d.reason.c_str(), testing::HasSubstr("llm unavailable (HTTP 402: Add usage credits)"));
+    EXPECT_THAT(d.reason.c_str(), testing::HasSubstr("rule fallback"));
+}
+
+TEST_F(LlmWeatherDeciderTest, SurfacesProviderErrorObjectIn200Response) {
+    mockHal->setHttpPostAuthResponse(R"({"error":{"message":"model not found"}})");
+
+    LlmWeatherDecider decider(mockHal, "https://api.example.com", "key", "bad-model",
+                              LlmProviderWire::OPENAI_COMPATIBLE, 15000);
+    String testErr = decider.testConnection();
+    EXPECT_THAT(testErr.c_str(), testing::HasSubstr("model not found"));
+}
+
+TEST_F(LlmWeatherDeciderTest, CapsOutputTokensAndTemperatureForCostControl) {
+    mockHal->setHttpPostAuthResponse(
+        R"({"choices":[{"message":{"content":"{\"open\":true,\"reason\":\"clear 72F\"}"}}]})");
+
+    LlmWeatherDecider openaiDecider(mockHal, "https://ollama.com", "key", "deepseek-v4.1-flash:1017-cloud",
+                                    LlmProviderWire::OPENAI_COMPATIBLE, 15000);
+    openaiDecider.decide(buildInput(390, 1140));
+    EXPECT_TRUE(openaiDecider.lastCallSucceeded());
+
+    JsonDocument doc;
+    ASSERT_EQ(deserializeJson(doc, mockHal->getLastHttpPostAuthBody()), DeserializationError::Ok);
+    EXPECT_EQ(doc["max_tokens"].as<int>(), LlmWeatherDecider::LLM_DECIDE_MAX_TOKENS);
+    EXPECT_EQ(doc["temperature"].as<int>(), 0);
+    EXPECT_EQ(doc["reasoning_effort"].as<String>(), String("none"));
+
+    // testConnection uses even tighter token cap
+    mockHal->setHttpPostAuthResponse(R"({"choices":[{"message":{"content":"OK"}}]})");
+    EXPECT_EQ(openaiDecider.testConnection(), String(""));
+    JsonDocument testDoc;
+    ASSERT_EQ(deserializeJson(testDoc, mockHal->getLastHttpPostAuthBody()), DeserializationError::Ok);
+    EXPECT_EQ(testDoc["max_tokens"].as<int>(), LlmWeatherDecider::LLM_TEST_MAX_TOKENS);
+
+    // Native Ollama disables thinking and caps num_predict
+    mockHal->setHttpPostAuthResponse(R"({"message":{"content":"{\"open\":true,\"reason\":\"clear\"}"}})");
+    LlmWeatherDecider ollamaDecider(mockHal, "http://192.168.1.5:11434", "", "qwen3",
+                                    LlmProviderWire::OLLAMA_NATIVE, 15000);
+    ollamaDecider.decide(buildInput(390, 1140));
+    JsonDocument nativeDoc;
+    ASSERT_EQ(deserializeJson(nativeDoc, mockHal->getLastHttpPostAuthBody()), DeserializationError::Ok);
+    EXPECT_FALSE(nativeDoc["think"].as<bool>());
+    EXPECT_EQ(nativeDoc["options"]["num_predict"].as<int>(), LlmWeatherDecider::LLM_DECIDE_MAX_TOKENS);
+    EXPECT_EQ(nativeDoc["options"]["temperature"].as<int>(), 0);
+}

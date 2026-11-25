@@ -129,9 +129,9 @@ String LlmWeatherDecider::buildPrompt(const WeatherDecisionInput& input) const {
         p += "No forecast data available; use current conditions only.\n";
     }
 
-    p += "Is it safe to let the chickens outside for THIS window, weighing the "
-         "judgment guidance above against the conditions during the window only? "
-         "Default to open unless the data shows genuine risk. Reply with only the JSON.";
+    p += "Safe to let chickens out for THIS window? Default to open unless data "
+         "shows genuine risk. Reply ONLY compact JSON {\"open\":true,\"reason\":\"<=6 words\"} "
+         "or {\"open\":false,\"reason\":\"<=6 words\"} citing key value (e.g. \"clear 36F\").";
     return p;
 }
 
@@ -155,10 +155,27 @@ const char* LlmWeatherDecider::defaultJudgmentGuidance() {
            "and cite the actual values.";
 }
 
-String LlmWeatherDecider::buildRequestBody(const String& systemPrompt, const String& userPrompt) const {
+String LlmWeatherDecider::buildRequestBody(const String& systemPrompt, const String& userPrompt,
+                                           int maxTokens, bool includeReasoningEffort) const {
     JsonDocument doc;
     doc["model"] = model_;
     doc["stream"] = false;
+    if (wire_ == LlmProviderWire::OLLAMA_NATIVE) {
+        // Disable hidden chain-of-thought and cap output tokens on native Ollama.
+        doc["think"] = false;
+        JsonObject opts = doc["options"].to<JsonObject>();
+        opts["num_predict"] = maxTokens;
+        opts["temperature"] = 0;
+    } else {
+        // Standard OpenAI-compatible output cap, deterministic sampling, and
+        // disable hidden reasoning tokens (supported by Ollama /v1 and modern
+        // reasoning providers; sendRequest() auto-retries without it on 400).
+        doc["max_tokens"] = maxTokens;
+        doc["temperature"] = 0;
+        if (includeReasoningEffort) {
+            doc["reasoning_effort"] = "none";
+        }
+    }
     JsonArray messages = doc["messages"].to<JsonArray>();
     JsonObject sys = messages.add<JsonObject>();
     sys["role"] = "system";
@@ -173,20 +190,72 @@ String LlmWeatherDecider::buildRequestBody(const String& systemPrompt, const Str
 }
 
 String LlmWeatherDecider::sendRequest(const String& systemPrompt, const String& userPrompt,
-                                     unsigned long timeoutMs) const {
-    if (hal_ == nullptr) return "";
+                                     unsigned long timeoutMs, int maxTokens) const {
+    last_error_ = "";
+    if (hal_ == nullptr) {
+        last_error_ = "HAL not available";
+        return "";
+    }
     if (hal_->getFreeHeap() < LLM_MIN_FREE_HEAP) {
-        logger.logWarning("LlmWeatherDecider: skipping call, free heap too low");
+        last_error_ = "Free heap too low (" + String((unsigned)hal_->getFreeHeap()) + "B)";
+        logger.logfWarning("LlmWeatherDecider: skipping call, %s", last_error_.c_str());
         return "";
     }
 
-    String body = buildRequestBody(systemPrompt, userPrompt);
-    String responseBody = hal_->httpPostAuth(buildUrl(), body, api_key_, "", timeoutMs);
-    if (responseBody.length() == 0) return "";
+    String url = buildUrl();
+    String body = buildRequestBody(systemPrompt, userPrompt, maxTokens, true);
+    String responseBody = hal_->httpPostAuth(url, body, api_key_, "", timeoutMs);
+    if (responseBody.length() == 0) {
+        String halErr = hal_->getLastHttpError();
+        // If a strict OpenAI-compatible server rejects reasoning_effort with HTTP 400,
+        // retry once without that field so non-thinking providers still work seamlessly.
+        if (wire_ == LlmProviderWire::OPENAI_COMPATIBLE &&
+            halErr.startsWith("HTTP 400") &&
+            halErr.indexOf("reasoning_effort") >= 0) {
+            logger.logDebug("LlmWeatherDecider: provider rejected reasoning_effort, retrying without it");
+            body = buildRequestBody(systemPrompt, userPrompt, maxTokens, false);
+            responseBody = hal_->httpPostAuth(url, body, api_key_, "", timeoutMs);
+            if (responseBody.length() == 0) {
+                halErr = hal_->getLastHttpError();
+            }
+        }
+        if (responseBody.length() == 0) {
+            if (halErr.length() > 0) {
+                last_error_ = halErr;
+                logger.logfWarning("LlmWeatherDecider: provider request failed (%s)", last_error_.c_str());
+            } else {
+                logger.logWarning("LlmWeatherDecider: provider returned empty response");
+            }
+            return "";
+        }
+    }
 
     JsonDocument doc;
     if (deserializeJson(doc, responseBody) != DeserializationError::Ok) {
+        last_error_ = "Provider response was not valid JSON";
         logger.logWarning("LlmWeatherDecider: provider response was not valid JSON");
+        return "";
+    }
+
+    // Log token usage when reported so output-token cost stays verifiable in syslog
+    if (doc["usage"].is<JsonObject>()) {
+        int inTok = doc["usage"]["prompt_tokens"] | -1;
+        int outTok = doc["usage"]["completion_tokens"] | -1;
+        if (outTok >= 0) {
+            logger.logfDebug("LlmWeatherDecider: token usage prompt=%d completion=%d", inTok, outTok);
+        }
+    }
+
+    // Some OpenAI-compatible proxies return HTTP 200 with an {"error": ...} payload.
+    if (!doc["error"].isNull()) {
+        if (doc["error"]["message"].is<const char*>()) {
+            last_error_ = String("Provider error: ") + doc["error"]["message"].as<const char*>();
+        } else if (doc["error"].is<const char*>()) {
+            last_error_ = String("Provider error: ") + doc["error"].as<const char*>();
+        } else {
+            last_error_ = "Provider returned an error object";
+        }
+        logger.logfWarning("LlmWeatherDecider: %s", last_error_.c_str());
         return "";
     }
 
@@ -194,12 +263,23 @@ String LlmWeatherDecider::sendRequest(const String& systemPrompt, const String& 
     // Ollama native:      message.content
     if (wire_ == LlmProviderWire::OLLAMA_NATIVE) {
         const char* content = doc["message"]["content"] | (const char*)nullptr;
-        return content != nullptr ? String(content) : String("");
+        if (content == nullptr || content[0] == '\0') {
+            last_error_ = "Provider returned empty message content";
+            return "";
+        }
+        return String(content);
     }
     JsonArray choices = doc["choices"].as<JsonArray>();
-    if (choices.isNull() || choices.size() == 0) return "";
+    if (choices.isNull() || choices.size() == 0) {
+        last_error_ = "Provider returned no choices";
+        return "";
+    }
     const char* content = choices[0]["message"]["content"] | (const char*)nullptr;
-    return content != nullptr ? String(content) : String("");
+    if (content == nullptr || content[0] == '\0') {
+        last_error_ = "Provider returned empty choice content";
+        return "";
+    }
+    return String(content);
 }
 
 bool LlmWeatherDecider::parseReply(const String& reply, bool& outOpen, String& outReason) {
@@ -243,21 +323,19 @@ bool LlmWeatherDecider::parseReply(const String& reply, bool& outOpen, String& o
 
 WeatherDecision LlmWeatherDecider::decide(const WeatherDecisionInput& input) {
     static const char* kSystemPrompt =
-        "You are a chicken coop door safety assistant. Given weather data and the "
-        "door's open window for today, decide if it is safe to let chickens outside "
-        "during that window. Base your decision STRICTLY on the exact values "
-        "provided — never round up, exaggerate, infer, or invent numbers. Default "
-        "to open unless the actual values show genuine risk during the window. "
-        "Respond with ONLY a JSON object of the exact form "
-        "{\"open\": true, \"reason\": \"short reason\"} or {\"open\": false, \"reason\": \"short reason\"}. "
-        "No other text before or after the JSON.";
+        "Coop door safety decider. Use ONLY exact provided values; never invent "
+        "numbers. Default open unless values show genuine risk during the open "
+        "window. Respond with ONLY compact JSON: {\"open\":true,\"reason\":\"<=6 words\"} "
+        "or {\"open\":false,\"reason\":\"<=6 words\"}. No markdown or extra text.";
 
+    last_call_succeeded_ = false;
     String userPrompt = buildPrompt(input);
-    String reply = sendRequest(kSystemPrompt, userPrompt, timeout_ms_);
+    String reply = sendRequest(kSystemPrompt, userPrompt, timeout_ms_, LLM_DECIDE_MAX_TOKENS);
 
     bool open = false;
     String reason;
     if (reply.length() > 0 && parseReply(reply, open, reason)) {
+        last_call_succeeded_ = true;
         logger.logfInfo("LlmWeatherDecider: decision open=%s (%s)", open ? "yes" : "no", reason.c_str());
         return {open, reason};
     }
@@ -265,9 +343,17 @@ WeatherDecision LlmWeatherDecider::decide(const WeatherDecisionInput& input) {
     // Fall back to the rule-based decision — still safe, more informative than
     // an unconditional open=true, and consistent with "never trap the chickens
     // inside" when the model is unreachable or returns something unusable.
-    logger.logWarning("LlmWeatherDecider: no usable reply, falling back to rule-based decision");
     WeatherDecision fallbackDecision = fallback_.decide(input);
-    fallbackDecision.reason = String("llm unavailable, rule fallback: ") + fallbackDecision.reason;
+    if (last_error_.length() > 0) {
+        String shortErr = last_error_.length() > 96
+                              ? (last_error_.substring(0, 96) + "...")
+                              : last_error_;
+        logger.logfWarning("LlmWeatherDecider: falling back to rules (%s)", shortErr.c_str());
+        fallbackDecision.reason = String("llm unavailable (") + shortErr + "), rule fallback: " + fallbackDecision.reason;
+    } else {
+        logger.logWarning("LlmWeatherDecider: no usable reply, falling back to rule-based decision");
+        fallbackDecision.reason = String("llm unavailable, rule fallback: ") + fallbackDecision.reason;
+    }
     return fallbackDecision;
 }
 
@@ -275,15 +361,18 @@ String LlmWeatherDecider::testConnection() const {
     if (hal_ == nullptr) return "HAL not available";
     if (base_url_.length() == 0) return "Base URL is empty";
 
-    const char* sys = "You are a connectivity test endpoint.";
-    const char* usr = "Reply with exactly the single word OK and nothing else.";
+    const char* sys = "Connectivity test. Reply with only: OK";
+    const char* usr = "OK";
 
     // Honor the configured timeout: a real model on consumer hardware (e.g. a
     // 35B MLX model cold-starting) can take 10-15s to first token. The timeout
     // is already clamped to [5000, 60000] ms in the constructor, so the UI
     // button is still bounded.
-    String reply = sendRequest(sys, usr, timeout_ms_);
+    String reply = sendRequest(sys, usr, timeout_ms_, LLM_TEST_MAX_TOKENS);
     if (reply.length() == 0) {
+        if (last_error_.length() > 0) {
+            return last_error_;
+        }
         return "No response from provider (check URL, API key, and that the model is loaded)";
     }
     return "";  // Empty = success

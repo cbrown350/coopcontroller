@@ -48,6 +48,8 @@ void WeatherManager::configureLlmDecider(bool enabled, const String& baseUrl, co
                                          const String& promptOverride) {
     if (!enabled) {
         llm_decider_.reset();
+        llm_last_attempt_ok_ = false;
+        llm_last_error_ = "";
         setDecider(nullptr);  // restores rule-based default
         return;
     }
@@ -230,6 +232,15 @@ void WeatherManager::update() {
         return;
     }
 
+    pruneExpiredForecast();
+
+    if (current_.valid && isWeatherStale() && !stale_logged_) {
+        stale_logged_ = true;
+        logger.logfWarning(
+            "WeatherManager: cached weather expired (%lu s old, %u consecutive failures); weather gate failing open",
+            getWeatherAgeSeconds(), consecutive_failures_);
+    }
+
     if (!isReadyToFetch()) return;
 
     unsigned long now = hal_->millis();
@@ -270,13 +281,23 @@ void WeatherManager::fetchWeather() {
     String currentBody = hal_->httpGet(currentUrl, 10000);
     if (currentBody.length() == 0) {
         failed_fetches_++;
-        last_error_ = "No response from OpenWeatherMap (current)";
-        logger.logWarning("WeatherManager: current weather fetch failed (no response)");
+        consecutive_failures_++;
+        String halErr = hal_->getLastHttpError();
+        if (halErr.length() > 0) {
+            last_error_ = "No response from OpenWeatherMap (" + halErr + ")";
+        } else {
+            last_error_ = "No response from OpenWeatherMap (current)";
+        }
+        logger.logfWarning("WeatherManager: current weather fetch failed (%s, free=%u, max_alloc=%u)",
+                           last_error_.c_str(),
+                           (unsigned)hal_->getFreeHeap(),
+                           (unsigned)hal_->getMaxAllocHeap());
         return;
     }
 
     if (!parseCurrentJson(currentBody)) {
         failed_fetches_++;
+        consecutive_failures_++;
         // last_error_ set by parseCurrentJson
         return;
     }
@@ -285,17 +306,36 @@ void WeatherManager::fetchWeather() {
     // cnt=MAX_FORECAST_ENTRIES keeps the response small (a few 3-hour blocks).
     String forecastUrl = base + "forecast" + common + "&cnt=" + String((unsigned)MAX_FORECAST_ENTRIES);
     String forecastBody = hal_->httpGet(forecastUrl, 10000);
-    if (forecastBody.length() > 0) {
-        parseForecastJson(forecastBody);  // Non-fatal on failure
+    if (forecastBody.length() > 0 && parseForecastJson(forecastBody)) {
+        last_forecast_success_epoch_ = currentWallEpoch_();
+        forecast_error_ = "";
+        forecast_expired_ = false;
+    } else {
+        String halErr = hal_->getLastHttpError();
+        forecast_error_ = halErr.length() > 0
+                              ? ("Forecast fetch failed (" + halErr + ")")
+                              : String("Forecast could not be updated");
+        // Drop any old forecast blocks that have already passed in time.
+        pruneExpiredForecast();
+        if (forecast_count_ == 0) {
+            forecast_expired_ = true;
+        }
     }
 
     successful_fetches_++;
+    consecutive_failures_ = 0;
+    last_successful_fetch_ms_ = hal_->millis();
+    last_weather_success_epoch_ = currentWallEpoch_();
+    stale_logged_ = false;
     last_error_ = "";
 
     // Snapshot the current local-time anchor (epoch + DST-aware UTC offset +
     // short tz name) so the decider can render every time in the prompt on the
     // same wall clock the UI shows. Done once per fetch; cheap.
     refreshLocalTime_();
+
+    // Ensure no already-passed forecast blocks are fed into the decision engine
+    pruneExpiredForecast();
 
     // Recompute the open/no-open decision once per successful fetch. The
     // decider (rule-based today, LLM tomorrow) reasons over the fresh snapshot;
@@ -308,6 +348,54 @@ void WeatherManager::fetchWeather() {
                     current_.condition == WeatherCondition::GOOD ? "GOOD" :
                     current_.condition == WeatherCondition::INCLEMENT ? "INCLEMENT" : "UNKNOWN",
                     decision_open_ ? "yes" : "no", getDeciderName());
+}
+
+unsigned long WeatherManager::currentWallEpoch_() const {
+    if (hal_ != nullptr) {
+        unsigned long t = hal_->getTime();
+        if (t >= MIN_VALID_EPOCH) return t;
+    }
+    if (current_.valid && current_.fetch_time > 0) {
+        return static_cast<unsigned long>(current_.fetch_time);
+    }
+    return 0;
+}
+
+bool WeatherManager::isForecastEntryExpired(const WeatherForecastEntry& fe, unsigned long nowEpoch) const {
+    if (nowEpoch < MIN_VALID_EPOCH || fe.dt <= 0) return false;
+    return static_cast<unsigned long>(fe.dt) + FORECAST_BLOCK_DURATION_SECONDS <= nowEpoch;
+}
+
+void WeatherManager::pruneExpiredForecast() {
+    if (forecast_count_ == 0) return;
+
+    // If overall weather data has exceeded its staleness TTL, clear old forecast
+    if (isWeatherStale()) {
+        forecast_count_ = 0;
+        if (!forecast_expired_) {
+            forecast_expired_ = true;
+            logger.logWarning("WeatherManager: cleared expired forecast (weather data stale)");
+        }
+        return;
+    }
+
+    unsigned long nowEpoch = (hal_ != nullptr) ? hal_->getTime() : 0;
+    if (nowEpoch < MIN_VALID_EPOCH) return;
+
+    size_t kept = 0;
+    for (size_t i = 0; i < forecast_count_; i++) {
+        if (!isForecastEntryExpired(forecast_[i], nowEpoch)) {
+            if (kept != i) forecast_[kept] = forecast_[i];
+            kept++;
+        }
+    }
+    if (kept != forecast_count_) {
+        forecast_count_ = kept;
+        if (forecast_count_ == 0 && !forecast_expired_) {
+            forecast_expired_ = true;
+            logger.logWarning("WeatherManager: all cached forecast blocks have passed; cleared stale forecast");
+        }
+    }
 }
 
 void WeatherManager::recomputeDecision() {
@@ -323,6 +411,20 @@ void WeatherManager::recomputeDecision() {
     WeatherDecision decision = activeDecider().decide(input);
     decision_open_ = decision.open;
     decision_reason_ = decision.reason;
+
+    if (llm_decider_ != nullptr && decider_ == llm_decider_.get()) {
+        if (llm_decider_->lastCallSucceeded()) {
+            llm_last_attempt_ok_ = true;
+            llm_ever_succeeded_ = true;
+            llm_last_success_ms_ = hal_ ? hal_->millis() : 0;
+            llm_last_success_epoch_ = currentWallEpoch_();
+            llm_last_error_ = "";
+        } else {
+            llm_last_attempt_ok_ = false;
+            String err = llm_decider_->getLastError();
+            llm_last_error_ = err.length() > 0 ? err : String("No usable response from LLM provider");
+        }
+    }
 }
 
 // Derive the current DST-aware UTC offset from the system clock and synthesize
@@ -538,31 +640,98 @@ WeatherDecision RuleBasedWeatherDecider::decide(const WeatherDecisionInput& inpu
     return {true, "clear"};
 }
 
+unsigned long WeatherManager::getStaleThresholdMs() const {
+    unsigned long intervalBased = static_cast<unsigned long>(update_interval_minutes_) * 3UL * 60UL * 1000UL;
+    return intervalBased > WEATHER_MIN_STALE_MS ? intervalBased : WEATHER_MIN_STALE_MS;
+}
+
+unsigned long WeatherManager::getWeatherAgeSeconds() const {
+    if (!current_.valid || hal_ == nullptr) return 0;
+    return (hal_->millis() - last_successful_fetch_ms_) / 1000UL;
+}
+
+bool WeatherManager::isWeatherStale() const {
+    if (!current_.valid || hal_ == nullptr) return false;
+    return (hal_->millis() - last_successful_fetch_ms_) >= getStaleThresholdMs();
+}
+
+bool WeatherManager::isForecastExpired() const {
+    if (forecast_expired_) return true;
+    if (forecast_count_ == 0) return false;
+    if (isWeatherStale()) return true;
+    unsigned long nowEpoch = (hal_ != nullptr) ? hal_->getTime() : 0;
+    if (nowEpoch < MIN_VALID_EPOCH) return false;
+    for (size_t i = 0; i < forecast_count_; i++) {
+        if (!isForecastEntryExpired(forecast_[i], nowEpoch)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool WeatherManager::isLlmStale() const {
+    if (llm_decider_ == nullptr || decider_ != llm_decider_.get()) return false;
+    if (!llm_last_attempt_ok_) return true;
+    if (!llm_ever_succeeded_ || hal_ == nullptr) return true;
+    return (hal_->millis() - llm_last_success_ms_) >= getStaleThresholdMs();
+}
+
 bool WeatherManager::isWeatherGateActive() const {
-    return enabled_ && api_key_.length() > 0 && current_.valid;
+    return enabled_ && api_key_.length() > 0 && current_.valid && !isWeatherStale();
 }
 
 bool WeatherManager::isWeatherGoodForOpening() const {
-    // When the gate isn't active (disabled, unconfigured, or no data yet), do
-    // not block the door — fall back to schedule-only behavior. This ensures a
-    // weather API outage never traps the chickens inside. Otherwise return the
-    // cached decision the active decider computed at the last successful fetch.
+    // When the gate isn't active (disabled, unconfigured, no data yet, or
+    // cached data expired past its staleness TTL), do not block the door —
+    // fall back to schedule-only behavior. This ensures a weather API outage
+    // never traps the chickens inside. Otherwise return the cached decision
+    // the active decider computed at the last successful fetch.
     if (!isWeatherGateActive()) return true;
     return decision_open_;
 }
 
 void WeatherManager::toJson(JsonObject& json) const {
+    bool stale = isWeatherStale();
+    bool llmActive = (llm_decider_ != nullptr && decider_ == llm_decider_.get());
+    bool llmStale = isLlmStale();
+    unsigned long nowEpoch = (hal_ != nullptr) ? hal_->getTime() : 0;
+
     json["enabled"] = enabled_;
     json["configured"] = (api_key_.length() > 0);
     json["units"] = units_;
     json["gate_active"] = isWeatherGateActive();
     json["good_for_opening"] = isWeatherGoodForOpening();
+    json["stale"] = stale;
     json["decider"] = getDeciderName();
     if (decision_reason_.length() > 0) json["decision_reason"] = decision_reason_;
     json["update_interval_minutes"] = update_interval_minutes_;
     json["successful_fetches"] = successful_fetches_;
     json["failed_fetches"] = failed_fetches_;
+    json["consecutive_failures"] = consecutive_failures_;
+    if (current_.valid) {
+        json["data_age_seconds"] = getWeatherAgeSeconds();
+    }
+    if (last_weather_success_epoch_ > 0) {
+        json["last_weather_success_epoch"] = last_weather_success_epoch_;
+    }
+    if (last_forecast_success_epoch_ > 0) {
+        json["last_forecast_success_epoch"] = last_forecast_success_epoch_;
+    }
+    if (stale) {
+        json["stale_threshold_seconds"] = getStaleThresholdMs() / 1000UL;
+    }
     if (last_error_.length() > 0) json["last_error"] = last_error_;
+    if (forecast_error_.length() > 0) json["forecast_error"] = forecast_error_;
+
+    json["llm_enabled"] = llmActive;
+    if (llmActive) {
+        json["llm_ok"] = (llm_last_attempt_ok_ && !llmStale);
+        json["llm_stale"] = llmStale;
+        json["llm_last_success_epoch"] = llm_last_success_epoch_;
+        if (llm_last_error_.length() > 0) {
+            json["llm_last_error"] = llm_last_error_;
+        }
+    }
 
     if (current_.valid) {
         JsonObject cur = json["current"].to<JsonObject>();
@@ -579,17 +748,29 @@ void WeatherManager::toJson(JsonObject& json) const {
         cur["fetch_time"] = current_.fetch_time;
     }
 
-    if (forecast_count_ > 0) {
-        JsonArray fc = json["forecast"].to<JsonArray>();
+    // Only serialize non-expired forecast blocks; flag forecast_expired when
+    // cached blocks have passed or weather went stale.
+    size_t emittedForecast = 0;
+    if (!stale && forecast_count_ > 0) {
         for (size_t i = 0; i < forecast_count_; i++) {
-            JsonObject fe = fc.add<JsonObject>();
-            fe["dt"] = forecast_[i].dt;
-            if (!isnan(forecast_[i].temp)) fe["temp"] = forecast_[i].temp;
-            if (forecast_[i].wind_speed >= 0) fe["wind_speed"] = forecast_[i].wind_speed;
-            if (forecast_[i].precip_prob >= 0) fe["precip_prob"] = forecast_[i].precip_prob;
-            fe["description"] = forecast_[i].main_description;
+            if (!isForecastEntryExpired(forecast_[i], nowEpoch)) {
+                emittedForecast++;
+            }
+        }
+        if (emittedForecast > 0) {
+            JsonArray fc = json["forecast"].to<JsonArray>();
+            for (size_t i = 0; i < forecast_count_; i++) {
+                if (isForecastEntryExpired(forecast_[i], nowEpoch)) continue;
+                JsonObject fe = fc.add<JsonObject>();
+                fe["dt"] = forecast_[i].dt;
+                if (!isnan(forecast_[i].temp)) fe["temp"] = forecast_[i].temp;
+                if (forecast_[i].wind_speed >= 0) fe["wind_speed"] = forecast_[i].wind_speed;
+                if (forecast_[i].precip_prob >= 0) fe["precip_prob"] = forecast_[i].precip_prob;
+                fe["description"] = forecast_[i].main_description;
+            }
         }
     }
+    json["forecast_expired"] = isForecastExpired() || (forecast_count_ > 0 && emittedForecast == 0);
 }
 
 void WeatherManager::copyTruncated(char* dst, size_t dstSize, const char* src) {

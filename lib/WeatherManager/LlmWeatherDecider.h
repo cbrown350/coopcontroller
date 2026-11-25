@@ -80,8 +80,20 @@ public:
      */
     String testConnection() const;
 
+    /// Most recent error detail from sendRequest() (empty on success)
+    String getLastError() const { return last_error_; }
+
+    /// True if the most recent decide() call obtained a valid decision directly
+    /// from the LLM provider (false if it fell back to rules).
+    bool lastCallSucceeded() const { return last_call_succeeded_; }
+
     /// Minimum free heap to attempt an LLM call (TLS context + JSON doc + prompt)
     static constexpr uint32_t LLM_MIN_FREE_HEAP = 30000;
+
+    /// Hard output token caps (output tokens cost more than input tokens, and
+    /// the reply is just a tiny JSON object {"open":bool,"reason":"<=6 words"}).
+    static constexpr int LLM_DECIDE_MAX_TOKENS = 80;
+    static constexpr int LLM_TEST_MAX_TOKENS = 16;
 
 private:
     IHAL* hal_;
@@ -90,15 +102,19 @@ private:
     String model_;
     LlmProviderWire wire_;
     unsigned long timeout_ms_;
-    String prompt_override_;  ///< User-defined judgment-guidance text; empty = default
+    String prompt_override_;     ///< User-defined judgment-guidance text; empty = default
+    mutable String last_error_;  ///< Error detail from most recent sendRequest()
+    mutable bool last_call_succeeded_ = false;  ///< True when last decide() used LLM reply
 
     RuleBasedWeatherDecider fallback_;  ///< Used when the LLM call fails or returns junk
 
     String buildUrl() const;
     String buildPrompt(const WeatherDecisionInput& input) const;
-    String buildRequestBody(const String& systemPrompt, const String& userPrompt) const;
+    String buildRequestBody(const String& systemPrompt, const String& userPrompt,
+                            int maxTokens = LLM_DECIDE_MAX_TOKENS,
+                            bool includeReasoningEffort = true) const;
     String sendRequest(const String& systemPrompt, const String& userPrompt,
-                       unsigned long timeoutMs) const;
+                       unsigned long timeoutMs, int maxTokens = LLM_DECIDE_MAX_TOKENS) const;
 
     /**
      * @brief Parse a model reply into a decision

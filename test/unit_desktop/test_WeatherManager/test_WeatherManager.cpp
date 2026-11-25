@@ -820,3 +820,166 @@ TEST_F(WeatherManagerTest, WeatherTestReportsPendingWhileProbeIsRunning) {
     JsonDocument r = weather.getWeatherTestResultJson();
     EXPECT_NE(String(r["status"].as<const char*>()), String("idle"));
 }
+
+// ============================================================================
+// Staleness TTL & HAL error propagation tests
+// ============================================================================
+
+TEST_F(WeatherManagerTest, StaleInclementWeatherFailsGateOpen) {
+    configureWeather();
+    mockHal->setMillis(1000);
+    // Fetch inclement Snow -> gate is active and blocks opening
+    mockHal->setHttpGetResponse(buildCurrentResponse(601, "Snow", 25.0f, 5.0f));
+    weather.update();
+    ASSERT_TRUE(weather.isWeatherGateActive());
+    ASSERT_FALSE(weather.isWeatherGoodForOpening());
+    ASSERT_FALSE(weather.isWeatherStale());
+
+    // Advance 1 hour (under 2-hour TTL): still fresh, still blocks
+    mockHal->setMillis(1000 + 3600UL * 1000UL);
+    EXPECT_FALSE(weather.isWeatherStale());
+    EXPECT_TRUE(weather.isWeatherGateActive());
+    EXPECT_FALSE(weather.isWeatherGoodForOpening());
+
+    // Advance past 2-hour TTL with failing fetches: weather expires -> gate fails OPEN
+    mockHal->setHttpGetResponse("");
+    mockHal->setLastHttpError("TLS connect failed (-10368): X509 alloc failed");
+    mockHal->setMillis(1000 + 2UL * 3600UL * 1000UL + 5000UL);
+    weather.update();
+
+    EXPECT_TRUE(weather.isWeatherStale());
+    EXPECT_FALSE(weather.isWeatherGateActive());
+    EXPECT_TRUE(weather.isWeatherGoodForOpening());
+    EXPECT_EQ(weather.getConsecutiveFailures(), 1u);
+    EXPECT_GE(weather.getWeatherAgeSeconds(), 7200UL);
+    EXPECT_NE(weather.getLastError().indexOf("-10368"), -1);
+
+    // JSON exposes stale, data_age_seconds, consecutive_failures, last_error
+    JsonDocument doc;
+    JsonObject obj = doc.to<JsonObject>();
+    weather.toJson(obj);
+    EXPECT_TRUE(obj["stale"].as<bool>());
+    EXPECT_FALSE(obj["gate_active"].as<bool>());
+    EXPECT_TRUE(obj["good_for_opening"].as<bool>());
+    EXPECT_EQ(obj["consecutive_failures"].as<unsigned int>(), 1u);
+    EXPECT_GE(obj["data_age_seconds"].as<unsigned long>(), 7200UL);
+    EXPECT_NE(obj["last_error"].as<String>().indexOf("-10368"), -1);
+
+    // Fresh successful fetch clears stale state and consecutive_failures
+    mockHal->setLastHttpError("");
+    mockHal->setHttpGetResponse(buildCurrentResponse(601, "Snow", 24.0f, 5.0f));
+    mockHal->setMillis(1000 + 2UL * 3600UL * 1000UL + 11UL * 60UL * 1000UL);
+    weather.update();
+
+    EXPECT_FALSE(weather.isWeatherStale());
+    EXPECT_TRUE(weather.isWeatherGateActive());
+    EXPECT_FALSE(weather.isWeatherGoodForOpening());
+    EXPECT_EQ(weather.getConsecutiveFailures(), 0u);
+    EXPECT_EQ(weather.getLastError(), String(""));
+}
+
+TEST_F(WeatherManagerTest, StaleThresholdScalesWithLongUpdateInterval) {
+    configureWeather();
+    weather.setUpdateIntervalMinutes(60);  // 3 * 60m = 3 hours > 2h minimum
+    EXPECT_EQ(weather.getStaleThresholdMs(), 3UL * 3600UL * 1000UL);
+
+    mockHal->setMillis(1000);
+    mockHal->setHttpGetResponse(buildCurrentResponse(601, "Snow", 25.0f, 5.0f));
+    weather.update();
+
+    // At 2.5 hours, still within 3-hour TTL
+    mockHal->setMillis(1000 + 150UL * 60UL * 1000UL);
+    EXPECT_FALSE(weather.isWeatherStale());
+
+    // At 3 hours, expires
+    mockHal->setMillis(1000 + 180UL * 60UL * 1000UL);
+    EXPECT_TRUE(weather.isWeatherStale());
+}
+
+TEST_F(WeatherManagerTest, ExpiredForecastBlocksAreClearedAndFlaggedInJson) {
+    configureWeather();
+    // Valid NTP epoch (Nov 24 2026 12:00 UTC)
+    const unsigned long baseEpoch = 1795521600UL;
+    mockHal->setMillis(1000);
+    mockHal->setTime(baseEpoch);
+
+    // OWM current + forecast (single 3-hour block starting at baseEpoch)
+    // MockHAL returns same string for both GETs; craft JSON containing both fields
+    String combined = R"({"cod":200,"dt":1795521600,"main":{"temp":55.0,"feels_like":54.0,"humidity":50},"wind":{"speed":4.0},"clouds":{"all":10},"weather":[{"id":800,"main":"Clear","icon":"01d"}],"list":[{"dt":1795521600,"main":{"temp":56.0},"wind":{"speed":4.0},"pop":0.1,"weather":[{"main":"Clear"}]}]})";
+    mockHal->setHttpGetResponse(combined);
+    weather.update();
+
+    EXPECT_FALSE(weather.isForecastExpired());
+    EXPECT_EQ(weather.getLastForecastSuccessEpoch(), baseEpoch);
+    EXPECT_EQ(weather.getLastWeatherSuccessEpoch(), baseEpoch);
+
+    {
+        JsonDocument doc;
+        JsonObject obj = doc.to<JsonObject>();
+        weather.toJson(obj);
+        EXPECT_FALSE(obj["forecast_expired"].as<bool>());
+        EXPECT_EQ(obj["forecast"].as<JsonArray>().size(), 1u);
+    }
+
+    // Advance wall clock past the 3-hour forecast block (baseEpoch + 3h + 60s)
+    // without a new forecast fetch (keep millis under weather interval so no fetch triggers).
+    // Note: call setMillis() BEFORE setTime() because MockHAL::setMillis also writes mockTime.
+    mockHal->setMillis(60000);
+    mockHal->setTime(baseEpoch + 3UL * 3600UL + 60UL);
+    weather.update();
+
+    EXPECT_TRUE(weather.isForecastExpired());
+    JsonDocument doc;
+    JsonObject obj = doc.to<JsonObject>();
+    weather.toJson(obj);
+    EXPECT_TRUE(obj["forecast_expired"].as<bool>());
+    EXPECT_TRUE(obj["forecast"].isNull());
+    EXPECT_EQ(obj["last_forecast_success_epoch"].as<unsigned long>(), baseEpoch);
+}
+
+TEST_F(WeatherManagerTest, StaleLlmTracksLastSuccessEpochAndError) {
+    configureWeather();
+    const unsigned long baseEpoch = 1795521600UL;
+    mockHal->setMillis(1000);
+    mockHal->setTime(baseEpoch);
+
+    weather.configureLlmDecider(true, "https://ollama.com", "key", "deepseek-v4.1-flash:1017-cloud",
+                                "openai_compatible", 15);
+    mockHal->setHttpGetResponse(buildCurrentResponse(800, "Clear", 65.0f, 3.0f));
+    mockHal->setHttpPostAuthResponse(R"({"choices":[{"message":{"content":"{\"open\":true,\"reason\":\"clear 65F\"}"}}]})");
+    weather.update();
+
+    EXPECT_FALSE(weather.isLlmStale());
+    EXPECT_EQ(weather.getLastLlmSuccessEpoch(), baseEpoch);
+    EXPECT_EQ(weather.getLastLlmError(), String(""));
+
+    {
+        JsonDocument doc;
+        JsonObject obj = doc.to<JsonObject>();
+        weather.toJson(obj);
+        EXPECT_TRUE(obj["llm_enabled"].as<bool>());
+        EXPECT_TRUE(obj["llm_ok"].as<bool>());
+        EXPECT_FALSE(obj["llm_stale"].as<bool>());
+        EXPECT_EQ(obj["llm_last_success_epoch"].as<unsigned long>(), baseEpoch);
+    }
+
+    // Next cycle: weather fetch succeeds, LLM fails with HTTP 402
+    mockHal->setMillis(1000 + 11UL * 60UL * 1000UL);
+    mockHal->setTime(baseEpoch + 660UL);
+    mockHal->setHttpPostAuthResponse("");
+    mockHal->setLastHttpError("HTTP 402: Add usage credits");
+    weather.update();
+
+    EXPECT_TRUE(weather.isLlmStale());
+    EXPECT_EQ(weather.getLastLlmSuccessEpoch(), baseEpoch);  // preserves previous good run timestamp
+    EXPECT_NE(weather.getLastLlmError().indexOf("HTTP 402"), -1);
+
+    JsonDocument doc;
+    JsonObject obj = doc.to<JsonObject>();
+    weather.toJson(obj);
+    EXPECT_TRUE(obj["llm_enabled"].as<bool>());
+    EXPECT_FALSE(obj["llm_ok"].as<bool>());
+    EXPECT_TRUE(obj["llm_stale"].as<bool>());
+    EXPECT_EQ(obj["llm_last_success_epoch"].as<unsigned long>(), baseEpoch);
+    EXPECT_NE(obj["llm_last_error"].as<String>().indexOf("HTTP 402"), -1);
+}

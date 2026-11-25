@@ -194,10 +194,49 @@ public:
     /**
      * @brief Check if the weather gate is actively in effect
      *
-     * True only when enabled + configured + a valid snapshot exists.
-     * When false, the door should ignore weather entirely (legacy behavior).
+     * True only when enabled + configured + a fresh (non-stale) snapshot exists.
+     * When false (including when cached data has expired after repeated fetch
+     * failures), the door ignores weather so an outage never traps chickens inside.
      */
     bool isWeatherGateActive() const;
+
+    /**
+     * @brief True when a cached weather snapshot exists but has exceeded its TTL
+     *
+     * TTL is max(2 hours, 3 * update_interval_minutes). Once stale, the weather
+     * gate fails open until a fresh OpenWeatherMap fetch succeeds.
+     */
+    bool isWeatherStale() const;
+
+    /**
+     * @brief Age of the cached weather snapshot in seconds (0 if none valid)
+     */
+    unsigned long getWeatherAgeSeconds() const;
+
+    /**
+     * @brief Staleness threshold in milliseconds for the current update interval
+     */
+    unsigned long getStaleThresholdMs() const;
+
+    /**
+     * @brief True when cached forecast blocks have all passed in time (or weather
+     *        expired) and could not be refreshed, so the old forecast was cleared.
+     */
+    bool isForecastExpired() const;
+
+    /**
+     * @brief True when LLM decider is active and either the last LLM call failed
+     *        or its last successful run is older than the staleness TTL.
+     */
+    bool isLlmStale() const;
+
+    /**
+     * @brief Unix epoch (seconds) of the last successful weather / forecast / LLM runs (0 if never)
+     */
+    unsigned long getLastWeatherSuccessEpoch() const { return last_weather_success_epoch_; }
+    unsigned long getLastForecastSuccessEpoch() const { return last_forecast_success_epoch_; }
+    unsigned long getLastLlmSuccessEpoch() const { return llm_last_success_epoch_; }
+    String getLastLlmError() const { return llm_last_error_; }
 
     /**
      * @brief Serialize current weather + forecast to a JSON object
@@ -211,6 +250,7 @@ public:
     unsigned long getLastFetchTime() const { return last_fetch_attempt_ms_; }
     unsigned int getSuccessfulFetches() const { return successful_fetches_; }
     unsigned int getFailedFetches() const { return failed_fetches_; }
+    unsigned int getConsecutiveFailures() const { return consecutive_failures_; }
     String getLastError() const { return last_error_; }
 
     /// Reason string from the most recent decision (e.g. "clear", "rain")
@@ -218,6 +258,15 @@ public:
 
     /// Minimum free heap to attempt a weather fetch (TLS context + JSON doc)
     static constexpr uint32_t WEATHER_MIN_FREE_HEAP = 30000;
+
+    /// Minimum staleness TTL (2 hours): cached weather older than this fails open
+    static constexpr unsigned long WEATHER_MIN_STALE_MS = 2UL * 3600UL * 1000UL;
+
+    /// OpenWeatherMap 3-hour forecast block duration (seconds)
+    static constexpr unsigned long FORECAST_BLOCK_DURATION_SECONDS = 3UL * 3600UL;
+
+    /// Minimum plausible Unix epoch (~2020-09-13) to distinguish NTP wall clock from uptime
+    static constexpr unsigned long MIN_VALID_EPOCH = 1600000000UL;
 
 private:
     IHAL* hal_ = nullptr;
@@ -263,9 +312,23 @@ private:
 
     // Timing & stats
     unsigned long last_fetch_attempt_ms_ = 0;
+    unsigned long last_successful_fetch_ms_ = 0;
+    unsigned long last_weather_success_epoch_ = 0;
+    unsigned long last_forecast_success_epoch_ = 0;
+    bool forecast_expired_ = false;
+    String forecast_error_;
     unsigned int successful_fetches_ = 0;
     unsigned int failed_fetches_ = 0;
+    unsigned int consecutive_failures_ = 0;
+    bool stale_logged_ = false;
     String last_error_;
+
+    // LLM decider health & last-success tracking
+    bool llm_ever_succeeded_ = false;
+    bool llm_last_attempt_ok_ = false;
+    unsigned long llm_last_success_ms_ = 0;
+    unsigned long llm_last_success_epoch_ = 0;
+    String llm_last_error_;
 
     // Deferred connection-test state (issue #6 / async-tcp panic fix).
     // Pending flags are set by the async web handler; runLlmTest_() and
@@ -295,6 +358,9 @@ private:
     void fetchWeather();
     bool parseCurrentJson(const String& body);
     bool parseForecastJson(const String& body);
+    bool isForecastEntryExpired(const WeatherForecastEntry& fe, unsigned long nowEpoch) const;
+    void pruneExpiredForecast();
+    unsigned long currentWallEpoch_() const;
     void recomputeDecision();
     void refreshLocalTime_();  ///< Snapshot now_epoch_ + DST-aware tz offset/name
     IWeatherDecider& activeDecider();
