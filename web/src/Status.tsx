@@ -93,6 +93,15 @@ function Status() {
     }
   })
   const [error, setError] = createSignal('')
+  // Failures from control actions (pump/door/light/buzzer). Kept separate from
+  // the polling error so a successful poll does not wipe the message before the
+  // user can read it.
+  const [actionError, setActionError] = createSignal('')
+  const bannerError = () => error() || actionError()
+  const dismissErrors = () => {
+    setError('')
+    setActionError('')
+  }
   
   // Sunrise/sunset state
   const [sunTimes, setSunTimes] = createSignal({
@@ -105,7 +114,16 @@ function Status() {
   // Weather state (null until first fetch / when disabled)
   const [weatherStatus, setWeatherStatus] = createSignal<WeatherStatus | null>(null)
 
-   const [localBrightness, setLocalBrightness] = createSignal(0)
+  const [localBrightness, setLocalBrightness] = createSignal(0)
+  const [isDraggingBrightness, setIsDraggingBrightness] = createSignal(false)
+
+  // Polling / debounce bookkeeping. These are deliberately plain locals (not
+  // signals): they guard request pile-up and must not trigger re-renders.
+  let statusInFlight = false
+  let sensorOnlyInFlight = false
+  let weatherInFlight = false
+  let sunInFlight = false
+  let brightnessTimer: number | undefined
 
   // Helpers accept both new string enums and legacy numeric values for backward compatibility.
   const isDallasType = (t: any) => t === 1 || t === 'DALLAS_TEMP'
@@ -161,54 +179,135 @@ function Status() {
     return `${hours}${period}`
   }
 
+  // Human readable "how old is this weather snapshot" (5m ago / 2h 15m ago / 4d 10h ago)
+  const formatAge = (seconds: number) => {
+    if (!isFinite(seconds) || seconds < 0) return 'unknown'
+    const total = Math.floor(seconds)
+    if (total < 60) return `${total}s ago`
+    const minutes = Math.floor(total / 60)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    const remMinutes = minutes % 60
+    if (hours < 24) return remMinutes > 0 ? `${hours}h ${remMinutes}m ago` : `${hours}h ago`
+    const days = Math.floor(hours / 24)
+    const remHours = hours % 24
+    return remHours > 0 ? `${days}d ${remHours}h ago` : `${days}d ago`
+  }
+
+  // Compact local timestamp for "last ran" lines (e.g. "Nov 24, 7:55 PM (3m ago)")
+  const formatLastRun = (epochSeconds?: number): string => {
+    if (typeof epochSeconds !== 'number' || epochSeconds <= 0) return 'Never'
+    const d = new Date(epochSeconds * 1000)
+    const formatted = d.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    const age = Math.floor(Date.now() / 1000) - epochSeconds
+    return age >= 0 ? `${formatted} (${formatAge(age)})` : formatted
+  }
+
+  // Prefer the absolute last-success timestamp so the label advances between polls;
+  // fall back to current.fetch_time or the device-reported age.
+  const weatherDataAgeSeconds = (): number | null => {
+    const weather = weatherStatus()
+    if (!weather) return null
+    const fetchTime = weather.last_weather_success_epoch || weather.current?.fetch_time
+    if (typeof fetchTime === 'number' && fetchTime > 0) {
+      const age = Math.floor(Date.now() / 1000) - fetchTime
+      if (age >= 0) return age
+    }
+    if (typeof weather.data_age_seconds === 'number') return weather.data_age_seconds
+    return null
+  }
+
+  const weatherAgeLabel = (): string | null => {
+    const age = weatherDataAgeSeconds()
+    return age === null ? null : formatAge(age)
+  }
+
+  // Filter out any 3-hour forecast blocks that have already ended (client-side
+  // defense in depth alongside firmware pruning).
+  const activeForecast = () => {
+    const weather = weatherStatus()
+    if (!weather || weather.stale || weather.forecast_expired || !weather.forecast) return []
+    const nowSec = Math.floor(Date.now() / 1000)
+    return weather.forecast.filter((fc) => !fc.dt || fc.dt + 10800 > nowSec)
+  }
+
+  const isForecastExpired = (): boolean => {
+    const weather = weatherStatus()
+    if (!weather) return false
+    if (weather.forecast_expired || weather.stale) return true
+    if (weather.forecast && weather.forecast.length > 0 && activeForecast().length === 0) return true
+    return false
+  }
+
+  // True when the LLM decider was configured but fell back to the rule engine or went stale.
+  const llmRuleFallback = (): boolean => {
+    const weather = weatherStatus()
+    if (!weather) return false
+    if (weather.llm_enabled && weather.llm_stale) return true
+    if (weather.decider !== 'llm') return false
+    return (weather.decision_reason ?? '').toLowerCase().startsWith('llm unavailable')
+  }
+
   const refreshSunTimes = async () => {
+    if (sunInFlight) return
+    sunInFlight = true
     try {
       const response = await fetch('/sun/times')
-      if (response.ok) {
-        const data = await response.json()
-        setSunTimes(data)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`)
       }
+      const data = await response.json()
+      setSunTimes(data)
     } catch (err: any) {
       console.error('Failed to fetch sun times:', err)
+    } finally {
+      sunInFlight = false
     }
   }
 
-  const refreshSensorStatus = async () => {
+  const refreshWeatherStatus = async () => {
+    if (weatherInFlight) return
+    weatherInFlight = true
     try {
-      const [sensorResponse, systemResponse, sunResponse, weatherResponse] = await Promise.all([
+      const response = await fetch('/weather/status')
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`)
+      }
+      const weatherData = await response.json()
+      // Only show the card when the weather feature is enabled
+      setWeatherStatus(weatherData?.enabled ? weatherData : null)
+    } catch (err: any) {
+      console.error('Failed to fetch weather status:', err)
+    } finally {
+      weatherInFlight = false
+    }
+  }
+
+  // Fast poll: the two small, frequently changing endpoints only. Sun times and
+  // weather move on the order of minutes/hours, so polling them here just
+  // multiplies the request load on the ESP32.
+  const refreshFastStatus = async () => {
+    if (statusInFlight) return
+    statusInFlight = true
+    try {
+      const [sensorResponse, systemResponse] = await Promise.all([
         fetch('/sensor_status'),
-        fetch('/system_status'),
-        fetch('/sun/times'),
-        fetch('/weather/status')
+        fetch('/system_status')
       ])
-      
+
       if (!sensorResponse.ok) {
         throw new Error(`HTTP error! status: ${sensorResponse.status} ${sensorResponse.statusText}`)
       }
-      
-      const sensorData = await sensorResponse.json()
-      
-      // Add debug logging to see what's happening
-      console.log('Pump status data received:', sensorData)
-      console.log('Pump flow_error:', sensorData.pump.flow_error)
-      console.log('Pump state:', sensorData.pump.state)
-      
-      setSensorStatus(sensorData)
-      
-      if (systemResponse.ok) {
-        const systemData = await systemResponse.json()
-        setSystemStatus(systemData)
-      }
-      
-      if (sunResponse.ok) {
-        const sunData = await sunResponse.json()
-        setSunTimes(sunData)
-      }
 
-      if (weatherResponse.ok) {
-        const weatherData = await weatherResponse.json()
-        // Only show the card when the weather feature is enabled
-        setWeatherStatus(weatherData?.enabled ? weatherData : null)
+      setSensorStatus(await sensorResponse.json())
+
+      if (systemResponse.ok) {
+        setSystemStatus(await systemResponse.json())
       }
 
       setLoading(false)
@@ -218,86 +317,171 @@ function Status() {
       console.error('Failed to fetch status:', err)
       setError(`Error loading status: ${err.message || 'Unknown error'}`)
       setLoading(false)
+    } finally {
+      statusInFlight = false
     }
   }
 
-  const handlePumpControl = async (action: string) => {
+  // Lightweight post-action refresh: /sensor_status only (the fast poll picks up
+  // /system_status within a few seconds anyway).
+  const refreshSensorOnly = async () => {
+    if (sensorOnlyInFlight) return
+    sensorOnlyInFlight = true
     try {
-      const response = await authenticatedFetch(`/pump/${action}`, { method: 'GET' })
-      if (response.ok) {
-        await refreshSensorStatus() // Refresh status after action
+      const response = await fetch('/sensor_status')
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`)
       }
-    } catch (error) {
-      console.error('Pump control error:', error)
+      setSensorStatus(await response.json())
+    } catch (err: any) {
+      console.error('Failed to refresh sensor status:', err)
+    } finally {
+      sensorOnlyInFlight = false
     }
   }
 
-  const handleClearOffFlowDetected = async () => {
+  // Shared control-action runner: reports failures visibly instead of silently
+  // swallowing them, and only refreshes /sensor_status afterwards.
+  const runControlAction = async (url: string, label: string, options: RequestInit = { method: 'GET' }) => {
     try {
-      const response = await authenticatedFetch('/pump/clear_off_flow_detected', { method: 'GET' })
-      if (response.ok) {
-        await refreshSensorStatus() // Refresh status after action
+      const response = await authenticatedFetch(url, options)
+      if (!response.ok) {
+        let detail = ''
+        try {
+          detail = (await response.text()).trim()
+        } catch {
+          // ignore body read errors
+        }
+        setActionError(`${label} failed (HTTP ${response.status}${detail ? `: ${detail}` : ''})`)
+        return
       }
-    } catch (error) {
-      console.error('Clear off flow detected error:', error)
+      setActionError('')
+      await refreshSensorOnly()
+    } catch (err: any) {
+      console.error(`${label} error:`, err)
+      setActionError(`${label} failed: ${err?.message || 'Network error'}`)
     }
   }
 
-  const handleWaterReset = async (sensor: number) => {
-    try {
-      const response = await authenticatedFetch(`/water/reset/${sensor}`, { method: 'GET' })
-      if (response.ok) {
-        await refreshSensorStatus() // Refresh status after action
-      }
-    } catch (error) {
-      console.error('Water reset error:', error)
-    }
-  }
+  const handlePumpControl = (action: string) =>
+    runControlAction(`/pump/${action}`, `Pump action "${action}"`)
+
+  const handleClearOffFlowDetected = () =>
+    runControlAction('/pump/clear_off_flow_detected', 'Clear off-flow warning')
+
+  const handleWaterReset = (sensor: number) =>
+    runControlAction(`/water/reset/${sensor}`, `Water counter reset (sensor ${sensor})`)
+
+  const handleLightAction = (action: string) =>
+    runControlAction(`/light/${action}`, `Light action "${action}"`)
+
+  const handleBuzzerAction = (action: string, options: RequestInit) =>
+    runControlAction(`/buzzer/${action}`, `Buzzer action "${action}"`, options)
+
+  const handleDoorAction = (action: string, options: RequestInit = { method: 'GET' }) =>
+    runControlAction(`/door/${action}`, `Door action "${action}"`, options)
 
   const handleBrightnessChange = async (value: number) => {
-    setLocalBrightness(value)
-
     // If light is OFF and slider > 0, turn it on first
     if (sensorStatus()?.light?.state === "OFF" && value > 0) {
-      await authenticatedFetch('/light/on')
+      const onResponse = await authenticatedFetch('/light/on')
+      if (!onResponse.ok) {
+        throw new Error(`turning the light on failed (HTTP ${onResponse.status})`)
+      }
       await new Promise(resolve => setTimeout(resolve, 100))
     }
 
-    await authenticatedFetch('/light/set_brightness', {
+    const response = await authenticatedFetch('/light/set_brightness', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brightness: value })
     })
+    if (!response.ok) {
+      throw new Error(`setting brightness failed (HTTP ${response.status})`)
+    }
   }
 
+  // Debounced so dragging the slider sends one request instead of dozens.
   const debouncedBrightnessChange = (value: number) => {
     setLocalBrightness(value)
-    handleBrightnessChange(value)
+    if (brightnessTimer !== undefined) clearTimeout(brightnessTimer)
+    brightnessTimer = window.setTimeout(() => {
+      brightnessTimer = undefined
+      handleBrightnessChange(value).catch((err: any) => {
+        console.error('Brightness change error:', err)
+        setActionError(`Brightness change failed: ${err?.message || 'Network error'}`)
+      })
+    }, 250)
   }
 
   onMount(() => {
     setLoading(true)
-    refreshSensorStatus().finally(() => setLoading(false))
-    const intervalId = setInterval(refreshSensorStatus, 2500)
-    
-    // Also refresh sun times every 30 seconds
-    const sunIntervalId = setInterval(refreshSunTimes, 30000)
-    
+
+    const fastPoll = () => {
+      if (document.hidden) return
+      refreshFastStatus()
+    }
+    const weatherPoll = () => {
+      if (document.hidden) return
+      refreshWeatherStatus()
+    }
+    const sunPoll = () => {
+      if (document.hidden) return
+      refreshSunTimes()
+    }
+
+    refreshFastStatus()
+    refreshWeatherStatus()
+    refreshSunTimes()
+
+    const fastIntervalId = window.setInterval(fastPoll, 3000)
+    const weatherIntervalId = window.setInterval(weatherPoll, 30000)
+    const sunIntervalId = window.setInterval(sunPoll, 600000)
+
+    // Catch up immediately when the tab becomes visible again instead of
+    // waiting for the next interval tick.
+    const handleVisibilityChange = () => {
+      if (document.hidden) return
+      refreshFastStatus()
+      refreshWeatherStatus()
+      refreshSunTimes()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     onCleanup(() => {
-      clearInterval(intervalId)
+      clearInterval(fastIntervalId)
+      clearInterval(weatherIntervalId)
       clearInterval(sunIntervalId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (brightnessTimer !== undefined) {
+        clearTimeout(brightnessTimer)
+        brightnessTimer = undefined
+      }
     })
   })
 
   createEffect(() => {
     const light = sensorStatus()?.light
-    if (light) {
+    // Never clobber the slider value while the user is dragging it or while a
+    // debounced brightness command is still pending.
+    if (light && !isDraggingBrightness() && brightnessTimer === undefined) {
       setLocalBrightness(light.current_brightness)
     }
   })
 
   return (
     <div>
+      {/* Visible error banner for status loads and control actions */}
+      <Show when={bannerError()}>
+        <div role="alert" class="alert alert-error mt-4">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+          <span class="text-sm">{bannerError()}</span>
+          <button class="btn btn-xs btn-ghost" onClick={dismissErrors}>Dismiss</button>
+        </div>
+      </Show>
+
       {loading() ? (
         <p>Loading status... <span class="loading loading-spinner loading-xl"></span></p>
       ) : (
@@ -401,9 +585,6 @@ function Status() {
                      sensorStatus().pump.state === 'ON' ? 'Manual ON' : 
                      sensorStatus().pump.state === 'ERROR' ? 'Flow Error - Pump Off' : 'Manual OFF'}
                   </div>
-                  {error() && (
-                    <div class="stat-desc text-error">Error: {error()}</div>
-                  )}
                   <Show when={sensorStatus().pump.flow_error}>
                     <div class="stat-desc text-error">Flow Error Detected!</div>
                     <Show when={sensorStatus().pump.time_until_retry > 0}>
@@ -547,17 +728,7 @@ function Status() {
                 <div class="flex gap-2 mt-4">
                   <button
                     class="btn btn-warning btn-sm"
-                    onClick={() => {
-                      authenticatedFetch('/buzzer/silence', { method: 'POST' })
-                        .then(response => {
-                          if (response.ok) {
-                            // Status will be updated on next refresh
-                          }
-                        })
-                        .catch(error => {
-                          console.error('Buzzer silence error:', error);
-                        });
-                    }}
+                    onClick={() => handleBuzzerAction('silence', { method: 'POST' })}
                     disabled={!sensorStatus().buzzer?.has_active_alert}
                   >
                     Silence Alerts
@@ -567,26 +738,10 @@ function Status() {
                     onClick={() => {
                       if (sensorStatus().buzzer?.has_active_alert && sensorStatus().buzzer?.current_alert_type === 'TEST_ALERT') {
                         // Clear the test alert
-                        authenticatedFetch('/buzzer/clear', { method: 'POST' })
-                          .then(response => {
-                            if (response.ok) {
-                              // Status will be updated on next refresh
-                            }
-                          })
-                          .catch(error => {
-                            console.error('Buzzer clear error:', error);
-                          });
+                        handleBuzzerAction('clear', { method: 'POST' })
                       } else {
                         // Trigger test alert
-                        authenticatedFetch('/buzzer/test', { method: 'GET' })
-                          .then(response => {
-                            if (response.ok) {
-                              // Status will be updated on next refresh
-                            }
-                          })
-                          .catch(error => {
-                            console.error('Buzzer test error:', error);
-                          });
+                        handleBuzzerAction('test', { method: 'GET' })
                       }
                     }}
                   >
@@ -657,68 +812,28 @@ function Status() {
                  <div class="flex gap-2 mt-4 flex-wrap">
                    <button
                      class="btn btn-success btn-sm"
-                     onClick={() => {
-                       authenticatedFetch('/light/on', { method: 'GET' })
-                         .then(response => {
-                           if (response.ok) {
-                             // Status will be updated on next refresh
-                           }
-                         })
-                         .catch(error => {
-                           console.error('Light on error:', error);
-                         });
-                     }}
+                     onClick={() => handleLightAction('on')}
                      disabled={sensorStatus().light?.state === 'ON'}
                    >
                      Turn On
                    </button>
                    <button
                      class="btn btn-error btn-sm"
-                     onClick={() => {
-                       authenticatedFetch('/light/off', { method: 'GET' })
-                         .then(response => {
-                           if (response.ok) {
-                             // Status will be updated on next refresh
-                           }
-                         })
-                         .catch(error => {
-                           console.error('Light off error:', error);
-                         });
-                     }}
+                     onClick={() => handleLightAction('off')}
                      // disabled={sensorStatus().light?.state === 'OFF'} (reverted)
                    >
                      Turn Off
                    </button>
                    <button
                      class="btn btn-primary btn-sm"
-                     onClick={() => {
-                       authenticatedFetch('/light/fade_in', { method: 'GET' })
-                         .then(response => {
-                           if (response.ok) {
-                             // Status will be updated on next refresh
-                           }
-                         })
-                         .catch(error => {
-                           console.error('Light fade in error:', error);
-                         });
-                     }}
+                     onClick={() => handleLightAction('fade_in')}
                      disabled={sensorStatus().light?.state === 'ON'}
                    >
                      Fade In
                    </button>
                    <button
                      class="btn btn-primary btn-sm"
-                     onClick={() => {
-                       authenticatedFetch('/light/fade_out', { method: 'GET' })
-                         .then(response => {
-                           if (response.ok) {
-                             // Status will be updated on next refresh
-                           }
-                         })
-                         .catch(error => {
-                           console.error('Light fade out error:', error);
-                         });
-                     }}
+                     onClick={() => handleLightAction('fade_out')}
                      disabled={sensorStatus().light?.state === 'OFF'}
                    >
                      Fade Out
@@ -737,6 +852,10 @@ function Status() {
                      value={localBrightness()}
                      class="range range-primary"
                      aria-label="Light brightness control"
+                     onPointerDown={() => setIsDraggingBrightness(true)}
+                     onPointerUp={() => setIsDraggingBrightness(false)}
+                     onPointerCancel={() => setIsDraggingBrightness(false)}
+                     onBlur={() => setIsDraggingBrightness(false)}
                      onInput={(e) => {
                        const brightness = parseInt((e.target as HTMLInputElement).value);
                        debouncedBrightnessChange(brightness);
@@ -760,17 +879,7 @@ function Status() {
                      </div>
                      <button
                        class="btn btn-xs btn-outline mt-2"
-                       onClick={() => {
-                         authenticatedFetch('/light/reset_stats', { method: 'GET' })
-                           .then(response => {
-                             if (response.ok) {
-                               // Status will be updated on next refresh
-                             }
-                           })
-                           .catch(error => {
-                             console.error('Light reset stats error:', error);
-                           });
-                       }}
+                       onClick={() => handleLightAction('reset_stats')}
                      >
                        Reset Statistics
                      </button>
@@ -862,86 +971,35 @@ function Status() {
                 <div class="flex gap-2 mt-4">
                   <button
                     class="btn btn-success btn-sm"
-                    onClick={() => {
-                      authenticatedFetch('/door/open', { method: 'GET' })
-                        .then(response => {
-                          if (response.ok) {
-                            // Status will be updated on next refresh
-                          }
-                        })
-                        .catch(error => {
-                          console.error('Door open error:', error);
-                        });
-                    }}
+                    onClick={() => handleDoorAction('open')}
                     disabled={sensorStatus().door?.lockout_enabled || sensorStatus().door?.state === 'OPENING' || sensorStatus().door?.state === 'OPEN'}
                   >
                     Open
                   </button>
                   <button
                     class="btn btn-error btn-sm"
-                    onClick={() => {
-                      authenticatedFetch('/door/close', { method: 'GET' })
-                        .then(response => {
-                          if (response.ok) {
-                            // Status will be updated on next refresh
-                          }
-                        })
-                        .catch(error => {
-                          console.error('Door close error:', error);
-                        });
-                    }}
+                    onClick={() => handleDoorAction('close')}
                     disabled={sensorStatus().door?.lockout_enabled || sensorStatus().door?.state === 'CLOSING' || sensorStatus().door?.state === 'CLOSED'}
                   >
                     Close
                   </button>
                   <button
                     class="btn btn-warning btn-sm"
-                    onClick={() => {
-                      authenticatedFetch('/door/stop', { method: 'GET' })
-                        .then(response => {
-                          if (response.ok) {
-                            // Status will be updated on next refresh
-                          }
-                        })
-                        .catch(error => {
-                          console.error('Door stop error:', error);
-                        });
-                    }}
+                    onClick={() => handleDoorAction('stop')}
                     disabled={sensorStatus().door?.lockout_enabled || sensorStatus().door?.state === 'IDLE' || sensorStatus().door?.state === 'OPEN' || sensorStatus().door?.state === 'CLOSED'}
                   >
                     Stop
                   </button>
                   <button
                     class={`btn btn-sm ${sensorStatus().door?.lockout_enabled ? 'btn-error' : 'btn-outline'}`}
-                    onClick={() => {
-                      const endpoint = sensorStatus().door?.lockout_enabled ? '/door/lockout/off' : '/door/lockout/on';
-                      authenticatedFetch(endpoint, { method: 'GET' })
-                        .then(response => {
-                          if (response.ok) {
-                            // Status will be updated on next refresh
-                          }
-                        })
-                        .catch(error => {
-                          console.error('Door lockout toggle error:', error);
-                        });
-                    }}
+                    onClick={() => handleDoorAction(sensorStatus().door?.lockout_enabled ? 'lockout/off' : 'lockout/on')}
                   >
                     {sensorStatus().door?.lockout_enabled ? 'Unlock Door' : 'Lock Door'}
                   </button>
                   <Show when={sensorStatus().door?.state === 'FAULT'}>
                     <button
                       class="btn btn-outline btn-sm"
-                      onClick={() => {
-                        authenticatedFetch('/door/clear_fault', { method: 'POST' })
-                          .then(response => {
-                            if (response.ok) {
-                              // Status will be updated on next refresh
-                            }
-                          })
-                          .catch(error => {
-                            console.error('Door clear fault error:', error);
-                          });
-                      }}
+                      onClick={() => handleDoorAction('clear_fault', { method: 'POST' })}
                     >
                       Clear Fault
                     </button>
@@ -988,17 +1046,7 @@ function Status() {
                     </div>
                     <button
                       class="btn btn-xs btn-outline mt-2"
-                      onClick={() => {
-                        authenticatedFetch('/door/reset_stats', { method: 'GET' })
-                          .then(response => {
-                            if (response.ok) {
-                              // Status will be updated on next refresh
-                            }
-                          })
-                          .catch(error => {
-                            console.error('Door reset stats error:', error);
-                          });
-                      }}
+                      onClick={() => handleDoorAction('reset_stats')}
                     >
                       Reset Statistics
                     </button>
@@ -1088,12 +1136,34 @@ function Status() {
               <div class="card-body">
                 <h2 class="card-title">
                   Weather
+                  <Show when={weatherStatus()!.stale}>
+                    <span class="badge badge-error badge-sm">STALE</span>
+                  </Show>
                   <Show when={weatherStatus()!.gate_active}>
                     <span class={`badge badge-sm ${weatherStatus()!.good_for_opening ? 'badge-success' : 'badge-warning'}`}>
                       {weatherStatus()!.good_for_opening ? 'OK to open' : 'Hold door'}
                     </span>
                   </Show>
                 </h2>
+
+                {/* Stale data: the gate failed open, so the door is schedule-only */}
+                <Show when={weatherStatus()!.stale}>
+                  <div role="alert" class="alert alert-warning text-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.008v.008H12v-.008z" />
+                    </svg>
+                    <span>
+                      <span class="font-semibold">Weather data is stale</span> — weather gate failed open, so the
+                      door will follow the normal schedule until fresh data arrives.
+                      <Show when={weatherAgeLabel()}>
+                        {' '}Last successful fetch: {weatherAgeLabel()}.
+                      </Show>
+                      <Show when={weatherStatus()!.stale_threshold_seconds}>
+                        {' '}(data goes stale after {(weatherStatus()!.stale_threshold_seconds! / 60).toFixed(0)} min without a successful fetch)
+                      </Show>
+                    </span>
+                  </div>
+                </Show>
 
                 {/* Not yet configured / no data */}
                 <Show when={!weatherStatus()!.configured}>
@@ -1104,9 +1174,26 @@ function Status() {
                 <Show when={weatherStatus()!.configured && !weatherStatus()!.current}>
                   <div class="text-sm opacity-70">
                     Waiting for first weather update…
-                    <Show when={weatherStatus()!.last_error}>
-                      <span class="text-error"> ({weatherStatus()!.last_error})</span>
-                    </Show>
+                  </div>
+                </Show>
+
+                {/* Last fetch error — shown even when cached data exists, otherwise
+                    a multi-day outage stays invisible. */}
+                <Show when={weatherStatus()!.last_error}>
+                  <div
+                    role="alert"
+                    class={`alert text-sm ${weatherStatus()!.current ? 'alert-warning' : 'alert-error'}`}
+                  >
+                    <span>
+                      <span class="font-semibold">Last weather fetch failed:</span>{' '}
+                      {weatherStatus()!.last_error}
+                      <Show when={weatherStatus()!.consecutive_failures}>
+                        {' '}({weatherStatus()!.consecutive_failures} consecutive failures)
+                      </Show>
+                      <Show when={weatherAgeLabel()}>
+                        {' '}· cached data is {weatherAgeLabel()}.
+                      </Show>
+                    </span>
                   </div>
                 </Show>
 
@@ -1118,12 +1205,22 @@ function Status() {
                       <div class={`stat-value text-lg ${weatherStatus()!.current!.condition === 'GOOD' ? 'text-success' : 'text-warning'}`}>
                         {weatherStatus()!.current!.description || weatherStatus()!.current!.condition}
                       </div>
-                      <Show when={weatherStatus()!.decision_reason}>
+                      <Show when={weatherStatus()!.last_weather_success_epoch || weatherStatus()!.current!.fetch_time}>
+                        <div class="text-xs opacity-60 mt-0.5">
+                          Weather last ran: {formatLastRun(weatherStatus()!.last_weather_success_epoch || weatherStatus()!.current!.fetch_time)}
+                        </div>
+                      </Show>
+                      <Show when={weatherStatus()!.decision_reason && !(weatherStatus()!.llm_enabled && weatherStatus()!.llm_stale)}>
                         <div class="stat-desc">
                           Decision: {weatherStatus()!.decision_reason}
                           <Show when={weatherStatus()!.decider}>
                             {' '}({weatherStatus()!.decider === 'llm' ? 'LLM' : 'rules'})
                           </Show>
+                        </div>
+                      </Show>
+                      <Show when={weatherStatus()!.llm_enabled && !weatherStatus()!.llm_stale}>
+                        <div class="text-xs opacity-60 mt-0.5">
+                          LLM last ran: {formatLastRun(weatherStatus()!.llm_last_success_epoch)}
                         </div>
                       </Show>
                     </div>
@@ -1153,12 +1250,49 @@ function Status() {
                     </Show>
                   </div>
 
-                  {/* Short-term forecast */}
-                  <Show when={weatherStatus()!.forecast && weatherStatus()!.forecast!.length > 0}>
+                  {/* Stale / unavailable LLM connection notice */}
+                  <Show when={weatherStatus()!.llm_enabled && (weatherStatus()!.llm_stale || llmRuleFallback())}>
+                    <div role="alert" class="alert alert-warning text-sm mt-2">
+                      <div>
+                        <span class="font-semibold">LLM weather check is unavailable or stale</span> — cleared outdated LLM decision and using rule-based fallback.
+                        <Show when={weatherStatus()!.llm_last_error}>
+                          <div class="text-xs mt-0.5 opacity-90">{weatherStatus()!.llm_last_error}</div>
+                        </Show>
+                        <div class="text-xs opacity-70 mt-0.5">
+                          LLM last ran: {formatLastRun(weatherStatus()!.llm_last_success_epoch)}
+                        </div>
+                      </div>
+                    </div>
+                  </Show>
+
+                  {/* Short-term forecast (cleared automatically when blocks have passed) */}
+                  <Show
+                    when={activeForecast().length > 0}
+                    fallback={
+                      <Show when={isForecastExpired()}>
+                        <div role="alert" class="alert alert-warning text-sm mt-2">
+                          <div>
+                            <span class="font-semibold">Forecast expired</span> — previous forecast has already passed and could not be updated.
+                            <Show when={weatherStatus()!.forecast_error}>
+                              <div class="text-xs mt-0.5 opacity-90">{weatherStatus()!.forecast_error}</div>
+                            </Show>
+                            <div class="text-xs opacity-70 mt-0.5">
+                              Forecast last ran: {formatLastRun(weatherStatus()!.last_forecast_success_epoch)}
+                            </div>
+                          </div>
+                        </div>
+                      </Show>
+                    }
+                  >
                     <div class="mt-2">
-                      <div class="text-sm font-semibold mb-1">Short-term forecast</div>
+                      <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+                        <span class="text-sm font-semibold">Short-term forecast</span>
+                        <span class="text-xs opacity-60">
+                          Forecast last ran: {formatLastRun(weatherStatus()!.last_forecast_success_epoch)}
+                        </span>
+                      </div>
                       <div class="flex flex-wrap gap-2">
-                        <For each={weatherStatus()!.forecast}>
+                        <For each={activeForecast()}>
                           {(fc) => (
                             <div class="badge badge-outline badge-lg gap-1">
                               <span>{formatForecastTime(fc.dt)}</span>
@@ -1178,8 +1312,14 @@ function Status() {
                 </Show>
 
                 <div class="text-xs opacity-50 mt-1">
-                  Updates every {weatherStatus()!.update_interval_minutes} min · engine: {weatherStatus()!.decider ?? 'rules'} ·
+                  Updates every {weatherStatus()!.update_interval_minutes} min · engine:{' '}
+                  {llmRuleFallback()
+                    ? 'llm (fallback to rules)'
+                    : (weatherStatus()!.decider ?? 'rules')} ·
                   {' '}{weatherStatus()!.successful_fetches} ok / {weatherStatus()!.failed_fetches} failed
+                  <Show when={weatherStatus()!.consecutive_failures}>
+                    {' '}· {weatherStatus()!.consecutive_failures} consecutive failures
+                  </Show>
                 </div>
               </div>
             </div>

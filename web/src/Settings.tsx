@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js'
+import { createSignal, onMount, onCleanup, Show } from 'solid-js'
 import { authenticatedFetch, setAuthCredentials, clearAuthCredentials } from './utils/api'
 
 // Built-in LLM judgment-guidance default. Must stay in sync with
@@ -197,11 +197,31 @@ function Settings() {
   // Unsaved changes tracking
   const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false)
 
+  // Timer bookkeeping (debounced sunrise/sunset preview + auto-dismissing test results)
+  let sunriseDebounceTimer: number | undefined
+  let weatherTestClearTimer: number | undefined
+  let llmTestClearTimer: number | undefined
+  let telegramTestClearTimer: number | undefined
+  let emailTestClearTimer: number | undefined
+
+  const clearTimer = (timer: number | undefined) => {
+    if (timer !== undefined) clearTimeout(timer)
+    return undefined
+  }
+
+  onCleanup(() => {
+    sunriseDebounceTimer = clearTimer(sunriseDebounceTimer)
+    weatherTestClearTimer = clearTimer(weatherTestClearTimer)
+    llmTestClearTimer = clearTimer(llmTestClearTimer)
+    telegramTestClearTimer = clearTimer(telegramTestClearTimer)
+    emailTestClearTimer = clearTimer(emailTestClearTimer)
+  })
+
   // Load settings from server
   onMount(async () => {
     try {
       setLoading(true)
-      const response = await fetch('/get_settings')
+      const response = await authenticatedFetch('/get_settings')
       if (!response.ok) {
         throw new Error(`Failed to load settings: ${response.status} ${response.statusText}`)
       }
@@ -644,7 +664,7 @@ function Settings() {
       setBackupLoading(true)
       setError('')
 
-      const response = await fetch('/settings/backup')
+      const response = await authenticatedFetch('/settings/backup')
       if (!response.ok) {
         throw new Error(`Failed to backup settings: ${response.status} ${response.statusText}`)
       }
@@ -721,7 +741,19 @@ function Settings() {
     }
   }
 
+  // Debounced so typing in the latitude/longitude fields does not fire an HTTP
+  // request per keystroke.
+  const debouncedFetchSunriseSunsetData = () => {
+    sunriseDebounceTimer = clearTimer(sunriseDebounceTimer)
+    sunriseDebounceTimer = window.setTimeout(() => {
+      sunriseDebounceTimer = undefined
+      fetchSunriseSunsetData()
+    }, 600)
+  }
+
   const handleTestWeather = async () => {
+    if (weatherTestLoading()) return
+    weatherTestClearTimer = clearTimer(weatherTestClearTimer)
     setWeatherTestLoading(true)
     setWeatherTestResult(null)
     try {
@@ -761,11 +793,16 @@ function Settings() {
       setWeatherTestResult({ success: false, message: err.message || 'Request failed' })
     } finally {
       setWeatherTestLoading(false)
-      setTimeout(() => setWeatherTestResult(null), 6000)
+      weatherTestClearTimer = window.setTimeout(() => {
+        weatherTestClearTimer = undefined
+        setWeatherTestResult(null)
+      }, 6000)
     }
   }
 
   const handleTestLlmConnection = async () => {
+    if (llmTestLoading()) return
+    llmTestClearTimer = clearTimer(llmTestClearTimer)
     setLlmTestLoading(true)
     setLlmTestResult(null)
     try {
@@ -807,11 +844,16 @@ function Settings() {
       setLlmTestResult({ success: false, message: err.message || 'Request failed' })
     } finally {
       setLlmTestLoading(false)
-      setTimeout(() => setLlmTestResult(null), 8000)
+      llmTestClearTimer = window.setTimeout(() => {
+        llmTestClearTimer = undefined
+        setLlmTestResult(null)
+      }, 8000)
     }
   }
 
   const handleTestTelegram = async () => {
+    if (telegramTestLoading()) return
+    telegramTestClearTimer = clearTimer(telegramTestClearTimer)
     setTelegramTestLoading(true)
     setTelegramTestResult(null)
     try {
@@ -819,25 +861,46 @@ function Settings() {
       const body: Record<string, string> = {}
       if (telegramBotToken()) body.telegram_bot_token = telegramBotToken()
       if (telegramChatId()) body.telegram_chat_id = telegramChatId()
+      // Enqueue only; the blocking TLS send runs from the device's main loop,
+      // not the async web-server task. This returns 202 immediately.
       const response = await authenticatedFetch('/notifications/test/telegram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
-      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status} ${response.statusText}`)
+      }
+      // Poll the result endpoint until the loop task finishes the send.
+      let data: any = { status: 'pending' }
+      for (let attempt = 0; attempt < 60; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const poll = await authenticatedFetch('/notifications/test/telegram_result')
+        if (!poll.ok) continue
+        data = await poll.json()
+        if (data.status !== 'pending') break
+      }
+      if (data.status === 'pending') {
+        throw new Error('Telegram test timed out')
+      }
       setTelegramTestResult({
-        success: data.success,
+        success: !!data.success,
         message: data.success ? 'Test message sent!' : (data.error || 'Failed to send')
       })
     } catch (err: any) {
       setTelegramTestResult({ success: false, message: err.message || 'Request failed' })
     } finally {
       setTelegramTestLoading(false)
-      setTimeout(() => setTelegramTestResult(null), 5000)
+      telegramTestClearTimer = window.setTimeout(() => {
+        telegramTestClearTimer = undefined
+        setTelegramTestResult(null)
+      }, 5000)
     }
   }
 
   const handleTestEmail = async () => {
+    if (emailTestLoading()) return
+    emailTestClearTimer = clearTimer(emailTestClearTimer)
     setEmailTestLoading(true)
     setEmailTestResult(null)
     try {
@@ -849,21 +912,40 @@ function Settings() {
       if (emailSmtpPassword()) body.email_smtp_password = emailSmtpPassword()
       if (emailFrom()) body.email_from = emailFrom()
       if (emailTo()) body.email_to = emailTo()
+      // Enqueue only; the blocking SMTP/TLS send runs from the device's main
+      // loop, not the async web-server task. This returns 202 immediately.
       const response = await authenticatedFetch('/notifications/test/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
-      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status} ${response.statusText}`)
+      }
+      // Poll the result endpoint until the loop task finishes the send.
+      let data: any = { status: 'pending' }
+      for (let attempt = 0; attempt < 60; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const poll = await authenticatedFetch('/notifications/test/email_result')
+        if (!poll.ok) continue
+        data = await poll.json()
+        if (data.status !== 'pending') break
+      }
+      if (data.status === 'pending') {
+        throw new Error('Email test timed out')
+      }
       setEmailTestResult({
-        success: data.success,
+        success: !!data.success,
         message: data.success ? 'Test email sent!' : (data.error || 'Failed to send')
       })
     } catch (err: any) {
       setEmailTestResult({ success: false, message: err.message || 'Request failed' })
     } finally {
       setEmailTestLoading(false)
-      setTimeout(() => setEmailTestResult(null), 5000)
+      emailTestClearTimer = window.setTimeout(() => {
+        emailTestClearTimer = undefined
+        setEmailTestResult(null)
+      }, 5000)
     }
   }
 
@@ -1653,7 +1735,7 @@ function Settings() {
         <fieldset class="fieldset">
           <legend class="fieldset-legend">Latitude</legend>
           <Show when={loaded()}>
-            <input type="number" value={latitude()!} onInput={(e) => { setLatitude(parseFloat(e.target.value)); fetchSunriseSunsetData() }} placeholder="40.7128" step="0.0001" min="-90" max="90" class="input" />
+            <input type="number" value={latitude()!} onInput={(e) => { setLatitude(parseFloat(e.target.value)); debouncedFetchSunriseSunsetData() }} placeholder="40.7128" step="0.0001" min="-90" max="90" class="input" />
           </Show>
           <Show when={!loaded()}>
             <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />
@@ -1664,7 +1746,7 @@ function Settings() {
         <fieldset class="fieldset">
           <legend class="fieldset-legend">Longitude</legend>
           <Show when={loaded()}>
-            <input type="number" value={longitude()!} onInput={(e) => { setLongitude(parseFloat(e.target.value)); fetchSunriseSunsetData() }} placeholder="-74.0060" step="0.0001" min="-180" max="180" class="input" />
+            <input type="number" value={longitude()!} onInput={(e) => { setLongitude(parseFloat(e.target.value)); debouncedFetchSunriseSunsetData() }} placeholder="-74.0060" step="0.0001" min="-180" max="180" class="input" />
           </Show>
           <Show when={!loaded()}>
             <input type="text" value="--" placeholder="--" disabled class="input input-disabled" />

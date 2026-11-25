@@ -41,6 +41,7 @@ declare const __BUILD_TIME__: string;
 function Update() {
   const [loading, setLoading] = createSignal(true);
   const [versionInfo, setVersionInfo] = createSignal<VersionInfo | null>(null);
+  const [versionError, setVersionError] = createSignal('');
   const [checking, setChecking] = createSignal(false);
   const [checkResult, setCheckResult] = createSignal<UpdateCheckResult | null>(null);
   const [checkError, setCheckError] = createSignal('');
@@ -57,9 +58,20 @@ function Update() {
   onMount(() => {
     setLoading(true);
     fetch('/version')
-      .then((response) => response.json())
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+      })
       .then((data) => {
         setVersionInfo(data);
+        setVersionError('');
+        setLoading(false);
+      })
+      .catch((err: any) => {
+        console.error('Failed to load version info:', err);
+        setVersionError(err?.message || 'Unknown error');
         setLoading(false);
       });
   });
@@ -90,7 +102,8 @@ function Update() {
       // async web-server task. This endpoint returns 202 immediately.
       const response = await fetch('/update/check');
       if (!response.ok) {
-        throw new Error(`Check failed: ${response.status} ${response.statusText}`);
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || data.message || `Check failed: ${response.status} ${response.statusText}`);
       }
 
       // Poll lightweight status until the main-loop check finishes.
@@ -126,37 +139,98 @@ function Update() {
   const startStatusPolling = () => {
     if (statusInterval) clearInterval(statusInterval);
     pollFailCount = 0;
+    let sawActiveState = false;
+    let notStartedTicks = 0;
     setDeviceRestarting(false);
-    statusInterval = window.setInterval(async () => {
-      try {
-        const response = await fetch('/update/status');
-        if (response.ok) {
-          pollFailCount = 0;
-          setDeviceRestarting(false);
-          const status: UpdateStatus = await response.json();
-          setUpdateStatus(status);
-          if (status.status === 'complete' || status.status === 'error' || status.status === 'idle') {
-            clearInterval(statusInterval);
-            statusInterval = undefined;
-            setInstalling(false);
-            if (status.status === 'error' && status.error) {
-              setInstallError(status.error);
-            }
-          }
-        }
-      } catch {
-        pollFailCount++;
-        if (pollFailCount >= 2) {
-          setDeviceRestarting(true);
-          setUpdateStatus({ status: 'installing', progress: 100, phase: 'restarting', last_check: 0, error: '' });
-        }
-        if (pollFailCount >= 8) {
-          // Device should have rebooted by now, try reloading
-          clearInterval(statusInterval);
-          statusInterval = undefined;
-          window.location.reload();
-        }
+
+    // A failed or non-OK poll while the device flashes/reboots is expected.
+    // The ESP32 needs roughly 20-25s to reboot and serve requests again after
+    // flashing, so only reload once it has had time to finish.
+    const RELOAD_AFTER_FAILURES = 12; // 12 * 2s = 24s
+    const MAX_NOT_STARTED_TICKS = 30; // 60s with no install progress -> give up
+
+    const stopStatusPolling = () => {
+      if (statusInterval) clearInterval(statusInterval);
+      statusInterval = undefined;
+    };
+
+    const handlePollFailure = () => {
+      pollFailCount++;
+      if (pollFailCount >= 2) {
+        setDeviceRestarting(true);
+        setUpdateStatus({ status: 'installing', progress: 100, phase: 'restarting', last_check: 0, error: '' });
       }
+      if (pollFailCount >= RELOAD_AFTER_FAILURES) {
+        stopStatusPolling();
+        window.location.reload();
+      }
+    };
+
+    statusInterval = window.setInterval(async () => {
+      let response: Response;
+      try {
+        response = await fetch('/update/status');
+      } catch {
+        // Network error: the device is almost certainly rebooting.
+        handlePollFailure();
+        return;
+      }
+
+      if (!response.ok) {
+        // 5xx/503 while flashing or rebooting is expected -- same handling as a
+        // dropped connection instead of silently spinning forever.
+        handlePollFailure();
+        return;
+      }
+
+      let status: UpdateStatus;
+      try {
+        status = await response.json();
+      } catch (err: any) {
+        console.error('Failed to parse update status:', err);
+        handlePollFailure();
+        return;
+      }
+
+      pollFailCount = 0;
+      setDeviceRestarting(false);
+      setUpdateStatus(status);
+
+      if (status.status === 'downloading' || status.status === 'verifying' ||
+          status.status === 'installing' || status.status === 'checking') {
+        sawActiveState = true;
+        return;
+      }
+
+      if (status.status === 'error') {
+        stopStatusPolling();
+        setInstalling(false);
+        setInstallError(status.error || 'Update failed');
+        return;
+      }
+
+      if (status.status === 'complete') {
+        // Firmware is written; the device reboots ~5s later. Keep polling so the
+        // connection drop is detected and this page reloads once it is back.
+        sawActiveState = true;
+        return;
+      }
+
+      if (!sawActiveState) {
+        // 'idle'/'available'/'current' before the install ever started just
+        // means the main loop has not picked up the request yet.
+        notStartedTicks++;
+        if (notStartedTicks >= MAX_NOT_STARTED_TICKS) {
+          stopStatusPolling();
+          setInstalling(false);
+          setInstallError('Update did not start - try again');
+        }
+        return;
+      }
+
+      // Back to idle/available/current after the install ran: nothing left to wait for.
+      stopStatusPolling();
+      setInstalling(false);
     }, 2000);
   };
 
@@ -172,8 +246,8 @@ function Update() {
         body: JSON.stringify({ skip_filesystem: skipFilesystem(), force: forceUpdate() }),
       });
       if (!response.ok) {
-        const data = await response.json().catch(() => ({ message: response.statusText }));
-        throw new Error(data.message || `Install failed: ${response.status}`);
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || data.message || `Install failed: ${response.status} ${response.statusText}`);
       }
       startStatusPolling();
     } catch (err: any) {
@@ -203,6 +277,11 @@ function Update() {
 
   return (
     <div class="card w-full max-w-full min-w-0">
+      <Show when={versionError()}>
+        <div role="alert" class="alert alert-warning mb-4">
+          <span>Could not read firmware version info: {versionError()}</span>
+        </div>
+      </Show>
       {loading() ? (
         <p>Loading version info... <span class="loading loading-spinner loading-xl"></span></p>
       ) : (

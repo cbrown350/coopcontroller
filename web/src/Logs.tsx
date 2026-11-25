@@ -7,11 +7,17 @@ interface LogEntry {
 }
 
 function Logs() {
+  // Bound the client-side list so a tab left open for days cannot grow memory forever.
+  const MAX_LOG_ENTRIES = 500
+
   const [loading, setLoading] = createSignal(true)
   const [logs, setLogs] = createSignal<LogEntry[]>([])
   const [error, setError] = createSignal('')
   const [isAtBottom, setIsAtBottom] = createSignal(true)
   let intervalId: number | null = null
+  let scrollTimerId: number | null = null
+  let initialScrollTimerId: number | null = null
+  let inFlight = false
   let logContainerRef: HTMLDivElement | undefined
 
   const formatTimestamp = (timestamp: number): string => {
@@ -24,6 +30,9 @@ function Logs() {
   }
 
   const fetchLogs = async () => {
+    // Skip overlapping ticks instead of stacking requests on the ESP32.
+    if (inFlight) return
+    inFlight = true
     try {
       const response = await fetch('/logs')
       if (!response.ok) {
@@ -44,11 +53,10 @@ function Logs() {
       }
 
       if (parsedLogs.length > 0) {
-        // Add new logs to existing logs and sort by timestamp (newest first)
-        const allLogs = [...logs(), ...parsedLogs].sort((a, b) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        )
-        setLogs(allLogs)
+        // Chronological order (oldest first) so new entries appear at the bottom.
+        // Timestamps are epoch seconds — compare numerically, not via Date.
+        const allLogs = [...logs(), ...parsedLogs].sort((a, b) => a.timestamp - b.timestamp)
+        setLogs(allLogs.length > MAX_LOG_ENTRIES ? allLogs.slice(-MAX_LOG_ENTRIES) : allLogs)
       }
 
       setError('')
@@ -57,6 +65,8 @@ function Logs() {
       setError(`Error fetching logs: ${err.message || 'Unknown error'}`)
       console.error('Failed to fetch logs:', err)
       setLoading(false)
+    } finally {
+      inFlight = false
     }
   }
 
@@ -95,23 +105,49 @@ function Logs() {
   createEffect(() => {
     logs()
     if (isAtBottom()) {
-      setTimeout(scrollToBottom, 0)
+      if (scrollTimerId !== null) clearTimeout(scrollTimerId)
+      scrollTimerId = window.setTimeout(() => {
+        scrollTimerId = null
+        scrollToBottom()
+      }, 0)
     }
   })
+
+  const handleVisibilityChange = () => {
+    if (document.hidden) {
+      // Pause polling for background tabs.
+      stopAutoRefresh()
+    } else {
+      fetchLogs()
+      startAutoRefresh()
+    }
+  }
 
   onMount(async () => {
     setLoading(true)
     await fetchLogs()
     startAutoRefresh()
     // Ensure we start at the bottom
-    setTimeout(() => {
+    initialScrollTimerId = window.setTimeout(() => {
+      initialScrollTimerId = null
       scrollToBottom()
       setIsAtBottom(true)
     }, 100)
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
   })
 
   onCleanup(() => {
     stopAutoRefresh()
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    if (scrollTimerId !== null) {
+      clearTimeout(scrollTimerId)
+      scrollTimerId = null
+    }
+    if (initialScrollTimerId !== null) {
+      clearTimeout(initialScrollTimerId)
+      initialScrollTimerId = null
+    }
   })
 
   return (

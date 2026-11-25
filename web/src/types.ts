@@ -203,6 +203,23 @@ export interface WeatherStatus {
   update_interval_minutes: number;
   successful_fetches: number;
   failed_fetches: number;
+  /** True when the cached snapshot is older than the staleness TTL (gate fails open). */
+  stale?: boolean;
+  /** Age of the cached snapshot in seconds (present only when a snapshot exists). */
+  data_age_seconds?: number;
+  /** Consecutive failed fetches since the last success. */
+  consecutive_failures?: number;
+  /** Staleness TTL in seconds (present only when `stale` is true). */
+  stale_threshold_seconds?: number;
+  last_weather_success_epoch?: number;
+  last_forecast_success_epoch?: number;
+  forecast_expired?: boolean;
+  forecast_error?: string;
+  llm_enabled?: boolean;
+  llm_ok?: boolean;
+  llm_stale?: boolean;
+  llm_last_success_epoch?: number;
+  llm_last_error?: string;
   last_error?: string;
   current?: WeatherCurrent;
   forecast?: WeatherForecast[];

@@ -75,6 +75,28 @@ function History() {
   let lightChart: Chart | null = null
   let doorChart: Chart | null = null
 
+  // Chart retry-chain bookkeeping. Every timer is tracked so onCleanup can
+  // clear it — otherwise navigating away leaves timers that build Chart.js
+  // instances on detached canvases.
+  let isMounted = true
+  const pendingTimeouts = new Set<number>()
+  let lastChartSignature = ''
+
+  const scheduleTimeout = (fn: () => void, ms: number) => {
+    const id = window.setTimeout(() => {
+      pendingTimeouts.delete(id)
+      if (!isMounted) return
+      fn()
+    }, ms)
+    pendingTimeouts.add(id)
+    return id
+  }
+
+  const clearPendingTimeouts = () => {
+    pendingTimeouts.forEach(id => clearTimeout(id))
+    pendingTimeouts.clear()
+  }
+
   const fetchHistoryData = async () => {
     try {
       const response = await fetch('/data/history')
@@ -157,6 +179,7 @@ function History() {
   }
 
   const updateCharts = () => {
+    if (!isMounted) return
     const data = filteredData()
     if (data.length === 0) return
 
@@ -437,18 +460,26 @@ function History() {
     const data = filteredData()
     if (data.length === 0) return
 
+    // Skip the destroy/rebuild cycle when the data is effectively unchanged
+    // and every chart has already been built successfully.
+    const signature = `${data.length}:${data[0]?.timestamp ?? 0}:${data[data.length - 1]?.timestamp ?? 0}:${timePeriod()}`
+    const allChartsBuilt = !!(tempChart && pumpChart && flowChart && lightChart && doorChart)
+    if (signature === lastChartSignature && allChartsBuilt) return
+    lastChartSignature = signature
+
     // Retry mechanism to ensure refs are set before rendering charts
     const tryUpdateCharts = (attempts = 0) => {
+      if (!isMounted) return
       if (tempChartRef && pumpChartRef && flowChartRef && lightChartRef && doorChartRef) {
         updateCharts()
       } else if (attempts < 10) {
         // Retry after a short delay if refs aren't ready yet
-        setTimeout(() => tryUpdateCharts(attempts + 1), 50)
+        scheduleTimeout(() => tryUpdateCharts(attempts + 1), 50)
       }
     }
 
     // Start the retry process
-    setTimeout(() => tryUpdateCharts(), 0)
+    scheduleTimeout(() => tryUpdateCharts(), 0)
   })
 
   createEffect(() => {
@@ -470,12 +501,15 @@ function History() {
     }, 30000) // Refresh every 30 seconds if enabled
 
     onCleanup(() => {
+      isMounted = false
       clearInterval(intervalId)
+      clearPendingTimeouts()
       if (tempChart) tempChart.destroy()
       if (pumpChart) pumpChart.destroy()
       if (flowChart) flowChart.destroy()
       if (lightChart) lightChart.destroy()
       if (doorChart) doorChart.destroy()
+      tempChart = pumpChart = flowChart = lightChart = doorChart = null
     })
   })
 
