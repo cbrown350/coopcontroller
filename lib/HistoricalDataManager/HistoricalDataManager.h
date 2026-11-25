@@ -2,6 +2,9 @@
 #define HISTORICAL_DATA_MANAGER_H
 
 #include <Arduino.h>
+#include "IHAL.h"  // Must precede <mutex> on desktop test builds (undefs ArduinoFake round/abs)
+#include <memory>
+#include <mutex>
 #include <vector>
 #include "config.h"
 
@@ -63,10 +66,34 @@ struct DataPoint {
  */
 class HistoricalDataManager {
 private:
-    std::vector<DataPoint> buffer;           ///< Circular buffer for data points
+    /// Compact 20-byte internal representation (vs 116-byte DataPoint).
+    /// Stored in fixed 32-entry chunks (640 bytes each) so the history buffer
+    /// NEVER makes a large contiguous heap allocation. Previously a single
+    /// std::vector<DataPoint> doubled 128->256 (29,696 bytes contiguous) ~16h
+    /// after boot, shattering the ESP32's 45KB largest contiguous heap block
+    /// down to 28KB permanently and breaking all outbound HTTPS/TLS until reboot.
+    struct CompactDataPoint {
+        uint32_t timestamp = 0;
+        float temperature_f = NAN;
+        float flow_rate = 0.0f;
+        uint8_t light_brightness = 0;
+        uint8_t flags = 0;          ///< bit 0: pump_active; bits 1..4: event_type index
+        uint8_t door_state_idx = 0;
+        uint8_t door_pos_idx = 0;
+        uint8_t pump_trig_idx = 0;
+        uint8_t door_trig_idx = 0;
+        uint8_t light_trig_idx = 0;
+        uint8_t reserved = 0;
+    };
+    static_assert(sizeof(CompactDataPoint) == 20, "CompactDataPoint must remain compact (20 bytes)");
+    static constexpr size_t CHUNK_SIZE = 32;  ///< 32 * 20B = 640B max single heap allocation
+
+    std::vector<std::unique_ptr<CompactDataPoint[]>> chunks_;  ///< Fixed-size chunked circular buffer
+    size_t count_;                           ///< Number of stored points (<= maxSize)
     size_t maxSize;                          ///< Maximum buffer size
-    size_t currentIndex;                     ///< Current write position
+    size_t currentIndex;                     ///< Next write position when circular buffer is full
     bool enabled;                            ///< Enable/disable data collection
+    mutable std::mutex mutex_;               ///< Protects buffer across loopTask and async_tcp
 
     // Change detection tracking
     float prevTemperature;
@@ -81,12 +108,24 @@ private:
     unsigned int flowMinIntervalSeconds;     ///< Min interval for flow recordings (default 10)
     bool firstUpdate;                        ///< Always record on first call
 
-    void addPoint(const DataPoint& point);
-    DataPoint createPoint(float temperature_f, bool pump_active, float flow_rate,
-                          uint8_t light_brightness, const char* door_state,
-                          const char* door_position, const char* pump_trigger,
-                          const char* door_trigger, const char* light_trigger,
-                          const char* eventType);
+    // Scratch copy for legacy getDataPointAt() API (prefer getOrderedDataPoint())
+    mutable DataPoint legacyReadScratch_;
+
+    void addPointLocked(const CompactDataPoint& point);
+    CompactDataPoint& slotAtLocked(size_t rawIndex);
+    const CompactDataPoint& slotAtLocked(size_t rawIndex) const;
+    bool ensureCapacityForSlotLocked(size_t rawIndex);
+    static CompactDataPoint packPoint(unsigned long timestamp, float temperature_f, bool pump_active,
+                                      float flow_rate, uint8_t light_brightness, const char* door_state,
+                                      const char* door_position, const char* pump_trigger,
+                                      const char* door_trigger, const char* light_trigger,
+                                      const char* eventType);
+    static DataPoint unpackPoint(const CompactDataPoint& compact);
+    CompactDataPoint createCompactPoint(float temperature_f, bool pump_active, float flow_rate,
+                                        uint8_t light_brightness, const char* door_state,
+                                        const char* door_position, const char* pump_trigger,
+                                        const char* door_trigger, const char* light_trigger,
+                                        const char* eventType);
 
 public:
     HistoricalDataManager();
@@ -121,29 +160,39 @@ public:
     String getDataAsCsv() const;
 
     /**
+     * @brief Thread-safe snapshot of the i-th oldest data point (0 = oldest).
+     *
+     * Locks internally, checks bounds against the live count (never divides by
+     * zero even if cleared concurrently), and unpacks by value into `out`.
+     * @return true if `orderedIdx` was valid and `out` was populated.
+     */
+    bool getOrderedDataPoint(size_t orderedIdx, DataPoint& out) const;
+
+    /**
      * @brief Get ordered index for iteration (handles circular buffer wrapping)
      * @param i Sequential index (0 = oldest point)
-     * @return Raw buffer index
+     * @return Raw buffer index (0 if buffer is empty)
      */
     size_t getOrderedIndex(size_t i) const;
 
     /**
      * @brief Get const reference to a data point by raw buffer index
+     * @deprecated Prefer getOrderedDataPoint() for thread-safe by-value access.
      * @param rawIndex Raw buffer index from getOrderedIndex()
-     * @return Reference to the data point
+     * @return Reference to unpacked data point
      */
     const DataPoint& getDataPointAt(size_t rawIndex) const;
 
     void clear();
     size_t getDataPointCount() const;
-    size_t getBufferCapacity() const { return maxSize; }
+    size_t getBufferCapacity() const;
     void setBufferSize(size_t newSize);
-    bool isEnabled() const { return enabled; }
-    void setEnabled(bool enable) { enabled = enable; }
-    unsigned int getTempMinInterval() const { return tempMinIntervalSeconds; }
-    void setTempMinInterval(unsigned int seconds) { tempMinIntervalSeconds = seconds; }
-    unsigned int getFlowMinInterval() const { return flowMinIntervalSeconds; }
-    void setFlowMinInterval(unsigned int seconds) { flowMinIntervalSeconds = seconds; }
+    bool isEnabled() const;
+    void setEnabled(bool enable);
+    unsigned int getTempMinInterval() const;
+    void setTempMinInterval(unsigned int seconds);
+    unsigned int getFlowMinInterval() const;
+    void setFlowMinInterval(unsigned int seconds);
 };
 
 #endif // HISTORICAL_DATA_MANAGER_H
